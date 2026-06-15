@@ -18,22 +18,15 @@
 
 ## 提交前最少检查
 
-前端工作区：
+完整产品源码随仓库发布于 `local/workspace/Horosa-Web-…/`。前端改动请在其工作区构建 + 自检：
 
 ```bash
 cd local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/astrostudyui
 npm ci
-npm test -- --runInBand src/utils/__tests__/aiAnalysisContext.test.js src/utils/__tests__/aiAnalysisRetrieval.test.js src/utils/__tests__/aiAnalysisStore.test.js src/utils/__tests__/aiProviderAdapters.test.js
 npm run build:file
 ```
 
-桌面打包：
-
-```bash
-cd desktop_installer_bundle
-npm ci
-npm run pack:win
-```
+文档 / 治理 / [`prepareruntime/`](prepareruntime/) / [`windows-adaptations/`](windows-adaptations/) 改动，核对链接与相对路径仍有效即可。（桌面打包工程 —— Electron + NSIS —— 私有维护、不在本仓库。）
 
 ## 必须同步的文档
 

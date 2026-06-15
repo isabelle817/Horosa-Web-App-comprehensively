@@ -1,0 +1,36 @@
+// perfFlags.js —— 流畅度优化项的独立开关(默认全开,调用时读取)。
+//
+// 每项优化只动「时机/调度」不动「内容/语义」,但仍各配 kill-switch:现场发现异常时
+// 单项关闭立即回到旧行为,无需回滚代码。关闭方法(控制台执行后刷新):
+//   localStorage.setItem('horosa.perf.lazySnapshot', '0')   // 快照惰性构建
+//   localStorage.setItem('horosa.perf.ziweiRulesCache', '0')// 紫微 rules 会话缓存
+//   localStorage.setItem('horosa.perf.chartDrawGuard', '0') // 图面重绘签名守卫
+//   localStorage.setItem('horosa.perf.hookRaf', '0')        // 排盘 hook rAF 化
+// 恢复:对应 key removeItem 或设 '1'。
+
+function flagEnabled(key){
+	try{
+		if(typeof window !== 'undefined' && window.localStorage){
+			return window.localStorage.getItem(key) !== '0';
+		}
+	}catch(e){
+		// localStorage 不可用时按默认开
+	}
+	return true;
+}
+
+export function lazySnapshotBuildEnabled(){
+	return flagEnabled('horosa.perf.lazySnapshot');
+}
+
+export function ziweiRulesCacheEnabled(){
+	return flagEnabled('horosa.perf.ziweiRulesCache');
+}
+
+export function chartDrawGuardEnabled(){
+	return flagEnabled('horosa.perf.chartDrawGuard');
+}
+
+export function hookRafEnabled(){
+	return flagEnabled('horosa.perf.hookRaf');
+}

@@ -2,7 +2,7 @@
 
 简体中文 · [English](README_EN.md)
 
-<img src="desktop_installer_bundle/assets/horosa_setup_badge.png" alt="星阙 Horosa" width="128" />
+<img src="assets/horosa_setup_badge.png" alt="星阙 Horosa" width="128" />
 
 # 星阙 Horosa
 
@@ -44,13 +44,13 @@
 ## 截图 · Screenshots
 
 <div align="center">
-<img src="docs/assets/screenshots/horosa-2.0-main-workspace.png" alt="Astrology workspace" width="900" />
+<img src="assets/screenshots/horosa-2.0-main-workspace.png" alt="Astrology workspace" width="900" />
 <p><em>占星工作区 — 左侧起盘参数，中间图盘画布，右侧信息 / 相位 / 行星 / 古典 / 格局页签。</em><br /><em>Astrology workspace — chart controls on the left, the wheel in the center, detail tabs on the right.</em></p>
 
-<img src="docs/assets/screenshots/horosa-2.0-sanshi-workspace.png" alt="Sanshi workspace" width="900" />
+<img src="assets/screenshots/horosa-2.0-sanshi-workspace.png" alt="Sanshi workspace" width="900" />
 <p><em>三式工作区 — 起盘参数、九宫盘面、概览 / 太乙 / 神煞 / 六壬 / 八宫页签同屏。</em><br /><em>Sanshi workspace — setup, the nine-palace plate, and overview tabs in one view.</em></p>
 
-<img src="docs/assets/screenshots/horosa-2.0-module-navigator.png" alt="Module navigator" width="900" />
+<img src="assets/screenshots/horosa-2.0-module-navigator.png" alt="Module navigator" width="900" />
 <p><em>导航弹层 — 命盘推运、易与三式、工具工作台分组，支持搜索与最近使用。</em><br /><em>Command overlay — charts, Yi & Sanshi, and tools, with search and recents.</em></p>
 </div>
 
@@ -167,7 +167,7 @@
 - **多盘 / 多时段补全** —— 占星各推运 builder、主限法盘表拆分、紫微 / 八字挂载、六爻三卦全装卦 + 一键挂载
 - **跨模块修复** —— 辅盘样式切换失效（误把事件对象当值）、三式「时空」中点盘端口兜底（:9999→:8899）、主题 / 布局 / 暗黑双色快修
 
-完整改动见 [v2.6.7 Beta Release](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.7) 与 [本地发布说明](docs/releases/2.6.7.md)（v2.6.6 见 [docs/releases/2.6.6.md](docs/releases/2.6.6.md), v2.6.5 见 [docs/releases/2.6.5.md](docs/releases/2.6.5.md), v2.6.4 见 [docs/releases/2.6.4.md](docs/releases/2.6.4.md), v2.6.3 见 [docs/releases/2.6.3.md](docs/releases/2.6.3.md), v2.6.2 安装器补丁见 [docs/releases/2.6.2.md](docs/releases/2.6.2.md), v2.6.1 功能见 [docs/releases/2.6.1.md](docs/releases/2.6.1.md)）；上一版 v2.6.0（六壬毕法100法 + 紫微 P0–P2 + 奇门法奇门 + 占星 buildout + #16/#17/#18 修复）详见 [docs/releases/2.6.0.md](docs/releases/2.6.0.md)。
+完整改动与历史发布说明见 [GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)（每个版本的 Release 页面附完整 changelog 与资产）。
 
 > v2.6.1 polishes **AI-mount full options** (a per-technique settings drawer driven by a schema) plus **multi-moment / range-scan output**, adds a **Feng Shui "Bagua Yang-dwelling" method v2** (front-end only, default unchanged — byte-identical). The one backend change forwards `pdYears` (+ `pdDirect/pdConverse/pdAntiscia/pdTerms`) in `ChartController.getParams()` so the jar is rebuilt. Full log: [v2.6.7 release](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.7).
 
@@ -179,46 +179,24 @@
 - **运行时 Runtime** — 内置 Python 采用固定版本的 python-build-standalone（可复现、自包含），随包附带 VC++ 运行时、离线 wheels 与后端 jar；构建期有原生依赖与发布前自检闸门。
 - **发布 Distribution** — 面向 Windows 10/11（`x64`）的离线 NSIS 安装包，支持选择安装目录与升级；附 `latest.yml` / `.blockmap` / `SHA256SUMS.txt` 更新与校验资产。
 
-## 从源码本地部署 · Deploy from Source
+## 部署与源码 · Source & Deployment
 
-> 普通用户用上面的安装包即可——运行时随包自带，无需任何手动配置。本节面向想**自行构建或自托管网页端**的开发者：完整产品源码（前端 / Java 后端 / Python 排盘 / 术数引擎 / 星历表）现已随仓库发布，克隆即可在本地拉起整套网页服务。
->
-> Regular users should just use the installer above — the runtime is bundled, no setup needed. This section is for developers who want to **build or self-host the web stack**: the full product source (frontend / Java backend / Python charting / metaphysics engines / ephemeris) now ships in the repo, so a clone is all you need to run it locally.
+普通用户从上方 [Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest) 下载安装包即可——运行时随包自带，无需任何手动配置。
 
-**源码位置 · Source** — [`local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/)
-前端 `astrostudyui/` · Java 后端 `astrostudysrv/` · Python 排盘 `astropy/` · 传统术数引擎 `vendor/` · flatlib 星历 `flatlib-ctrad2/`。
+想自行构建或自托管网页端的开发者：完整产品源码随仓库发布于 [`local/workspace/Horosa-Web-…/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/)（前端 `astrostudyui` · Java 后端 `astrostudysrv` · Python 排盘 `astropy` · 术数引擎 `vendor` · 星历 `flatlib-ctrad2`）；运行时准备脚本见 [`prepareruntime/`](prepareruntime/)，Windows 适配层见 [`windows-adaptations/`](windows-adaptations/)。桌面打包工程（Electron + NSIS）私有维护、不在本仓库。Windows 下用 **Git Bash** 或 **WSL** 跑 `*.sh`：
 
-**前置依赖 · Prerequisites**
-- Windows 下用 **Git Bash** 或 **WSL** 运行下列 `*.sh` 脚本（脚本为 bash）。
-- 工具链 · toolchain：Java 17、Maven、Node 18+、Python 3.11。
-- Python 排盘依赖 · chart deps：`cherrypy jsonpickle pyswisseph cn2an sxtwl cnlunar`。
-- 可选 · optional：Redis / MongoDB（账号与存档的完整功能；缺失时自动降级）。
+- 工具链：Java 17 / Maven / Node 18+ / Python 3.11
+- 用 Maven 构建 `astrostudysrv/` 产出 `astrostudyboot/target/astrostudyboot.jar`（仓库发布源码，不含预编译 jar）
+- `bash start_horosa_local.sh`（构建前端 + 拉起 Python `8899` / Java `9999` + 打开页面）· `verify_horosa_local.sh` · `stop_horosa_local.sh`
 
-**步骤 · Steps**
-1. **构建后端 jar**：用 Maven 构建 `astrostudysrv/`，产出 `astrostudysrv/astrostudyboot/target/astrostudyboot.jar`（启动脚本据此定位后端；仓库不含预编译 jar）。
-   *Build the backend with Maven so that `astrostudysrv/astrostudyboot/target/astrostudyboot.jar` exists — the repo ships source, not a prebuilt jar.*
-2. **启动**（前端由脚本自动构建，随后拉起 Python `8899` / Java `9999` 服务并打开页面）：
-   ```bash
-   cd local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c
-   bash start_horosa_local.sh      # 构建前端 + 启动服务 + 打开页面
-   bash verify_horosa_local.sh     # 验收：服务可用 + 排盘/主限法链路结果正确
-   bash stop_horosa_local.sh       # 停止本工作区拉起的服务
-   ```
-
-**端口 · Ports** — 前端 `8000` · Java 后端 `9999` · Python 图表 `8899`（被占用时自动顺延到空闲端口）。
-
-> 完整的环境变量、慢机首启调参与常见问题排查，以源码目录内的 [`README.md`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/README.md) 为准（该文档为本工作流的部署权威说明）。
-> Full env-vars, slow-machine tuning, and troubleshooting are authoritative in the [in-source README](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/README.md).
+> The full product source ships under [`local/workspace/Horosa-Web-…/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/) (frontend `astrostudyui` / Java `astrostudysrv` / Python `astropy` / engines `vendor` / ephemeris `flatlib-ctrad2`); runtime-prep in [`prepareruntime/`](prepareruntime/), Windows patches in [`windows-adaptations/`](windows-adaptations/). The desktop packaging project (Electron + NSIS) is maintained privately. On Windows use **Git Bash** or **WSL**; toolchain Java 17 / Maven / Node 18+ / Python 3.11; build the backend jar with Maven, then `bash start_horosa_local.sh`.
 
 ## 文档 · Documentation
 
-- [README_ZH.md](README_ZH.md) — 中文完整说明
-- [README_EN.md](README_EN.md) — Full English guide
-- [desktop_installer_bundle/README.md](desktop_installer_bundle/README.md) — 桌面打包与安装器说明 / installer internals
-- [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) — 项目结构说明 / project structure
-- [docs/CLEAN_MACHINE_NATIVE_RUNTIME_FIX.md](docs/CLEAN_MACHINE_NATIVE_RUNTIME_FIX.md) — 干净 Windows 运行时修复与发布注意点 / clean-machine runtime notes
-- [docs/releases/2.2.0.md](docs/releases/2.2.0.md) · [docs/releases/2.1.8.md](docs/releases/2.1.8.md) · [docs/releases/2.1.7.md](docs/releases/2.1.7.md) · [docs/releases/2.1.6.md](docs/releases/2.1.6.md) · [docs/releases/2.1.5.md](docs/releases/2.1.5.md) · [docs/releases/2.1.4.md](docs/releases/2.1.4.md) · [docs/releases/2.1.3.md](docs/releases/2.1.3.md) · [docs/releases/2.1.2.md](docs/releases/2.1.2.md) · [docs/releases/2.1.1.md](docs/releases/2.1.1.md) · [SECURITY.md](SECURITY.md) · [SUPPORT.md](SUPPORT.md) · [CONTRIBUTING.md](CONTRIBUTING.md) · [CITATION.cff](CITATION.cff)
-- 源码 / source: `local/workspace/Horosa-Web-*/`（前端 `astrostudyui`，后端 `astrostudysrv` / `astropy`，引擎 `vendor`）
+- [README_ZH.md](README_ZH.md) — 中文完整说明 / full Chinese guide
+- [README_EN.md](README_EN.md) — full English guide
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [SUPPORT.md](SUPPORT.md) · [CITATION.cff](CITATION.cff) · [LICENSE](LICENSE)
+- 历史版本与完整发布说明 / release history & notes: [GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
 
 ## 致谢 · Acknowledgements
 

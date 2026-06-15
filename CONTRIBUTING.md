@@ -18,22 +18,15 @@ Thank you for contributing to Horosa for Windows.
 
 ## Minimum checks before submitting
 
-Frontend workspace:
+The full product source ships under `local/workspace/Horosa-Web-…/`. For a frontend change, build + test from its workspace:
 
 ```bash
 cd local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/astrostudyui
 npm ci
-npm test -- --runInBand src/utils/__tests__/aiAnalysisContext.test.js src/utils/__tests__/aiAnalysisRetrieval.test.js src/utils/__tests__/aiAnalysisStore.test.js src/utils/__tests__/aiProviderAdapters.test.js
 npm run build:file
 ```
 
-Desktop bundle:
-
-```bash
-cd desktop_installer_bundle
-npm ci
-npm run pack:win
-```
+For docs / governance / [`prepareruntime/`](prepareruntime/) / [`windows-adaptations/`](windows-adaptations/) changes, verify links and relative paths still resolve. (The desktop packaging project — Electron + NSIS — is maintained privately and is not part of this repo.)
 
 ## Required doc sync
 

@@ -1,0 +1,44 @@
+import { buildXiangContext, WUXING_XIANG } from './LRXiangDoc';
+
+describe('LRXiangDoc · buildXiangContext 取象聚合', ()=>{
+	it('子 + 日干甲 + 五行土：神名/类象/五行/六亲/方位/驿马/刑冲合害正确', ()=>{
+		const ctx = buildXiangContext('子', '甲', '土');
+		expect(ctx).toBeTruthy();
+		expect(ctx.branch).toBe('子');
+		expect(ctx.shenName).toBe('神后');
+		expect(ctx.wuxing).toBe('水');
+		expect(ctx.liuqin).toBe('父母');           // 子(水) 生 甲(木) → 生我者为父母
+		expect(ctx.direction).toBe('正北');
+		expect(ctx.yima).toBe('寅');
+		expect(ctx.symbol).toContain('盗贼');
+		expect(ctx.wuxingXiang).toBe(WUXING_XIANG['水']);
+		const rels = ctx.relations.join(' ');
+		expect(rels).toContain('刑：卯');
+		expect(rels).toContain('冲：午');
+		expect(rels).toContain('六合：丑');
+		expect(rels).toContain('害：未');
+		expect(rels).toContain('破：酉');
+		expect(rels).toContain('三合：申、辰');
+		expect(typeof ctx.zhangsheng).toBe('string');
+	});
+
+	it('六亲随日干变化：申 + 日干甲 = 官鬼（申金克甲木）', ()=>{
+		const ctx = buildXiangContext('申', '甲', '土');
+		expect(ctx.wuxing).toBe('金');
+		expect(ctx.liuqin).toBe('官鬼');
+	});
+
+	it('缺日干时六亲为空、其余仍在', ()=>{
+		const ctx = buildXiangContext('午', '', '火');
+		expect(ctx).toBeTruthy();
+		expect(ctx.liuqin).toBe('');
+		expect(ctx.wuxing).toBe('火');
+		expect(ctx.direction).toBe('正南');
+	});
+
+	it('无效地支返回 null', ()=>{
+		expect(buildXiangContext('X', '甲', '土')).toBeNull();
+		expect(buildXiangContext('', '甲', '土')).toBeNull();
+		expect(buildXiangContext(null, '甲', '土')).toBeNull();
+	});
+});
