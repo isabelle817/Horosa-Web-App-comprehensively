@@ -121,7 +121,7 @@ function pushAntisciaArray(lines, title, arr, typeLabel){
 	});
 }
 
-function buildRelativeSnapshotText(comp){
+export function buildRelativeSnapshotText(comp){
 	const lines = [];
 	const relationName = relationNameByKey(comp.currentTab);
 	const res = comp.result || {};

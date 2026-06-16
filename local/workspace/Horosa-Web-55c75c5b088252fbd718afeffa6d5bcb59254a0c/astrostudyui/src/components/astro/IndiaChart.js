@@ -176,6 +176,44 @@ function ensureSection(lines, title, body){
 	lines.push('');
 }
 
+// Vimshottari 大运（120 年周期）：后端 jyotish.dasha.vimshottari 已算好，挂载快照一并输出。
+// 字段形态与命盘 Dasha 面板(buildVimshottariDasha)一致;无数据则返回空(快照跳过该段)。
+function buildDashaSnapshotLines(chartObj){
+	const v = chartObj && chartObj.jyotish && chartObj.jyotish.dasha && chartObj.jyotish.dasha.vimshottari;
+	if(!v || !v.available || !Array.isArray(v.mahadashas) || !v.mahadashas.length){
+		return [];
+	}
+	const nameOf = (lord)=>(lord && (lord.label || lord.key)) || '—';
+	const fmtDate = (d)=>{ const s = `${d || ''}`; const m = s.match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : (s || '—'); };
+	const n1 = (x)=>(Number.isFinite(+x) ? (+x) : 0);
+	const out = [];
+	const nak = v.moonNakshatra || {};
+	out.push('系统：Vimshottari（120 年周期）');
+	out.push(`月宿：${nak.label || nak.name || nak.key || '—'}（宿主星 ${nameOf(v.firstLord)}）`);
+	out.push(`首运：已历 ${n1(v.firstElapsedYears).toFixed(1)} 年、余 ${n1(v.firstBalanceYears).toFixed(1)} 年`);
+	const active = v.mahadashas.find((m)=>m && m.active);
+	if(active){
+		out.push(`当前大运（Mahadasha）：${nameOf(active.lord)}（${fmtDate(active.start)} → ${fmtDate(active.end)}，${n1(active.startAge).toFixed(0)}–${n1(active.endAge).toFixed(0)} 岁）`);
+		if(Array.isArray(active.antardashas) && active.antardashas.length){
+			const now = new Date();
+			const sub = active.antardashas.find((s)=>{
+				if(!s || !s.start || !s.end){ return false; }
+				const st = new Date(s.start); const en = new Date(s.end);
+				return st <= now && now < en;
+			});
+			if(sub){
+				out.push(`当前小运（Antardasha）：${nameOf(sub.lord)}（${fmtDate(sub.start)} → ${fmtDate(sub.end)}）`);
+			}
+		}
+	}
+	out.push('大运序列：');
+	v.mahadashas.forEach((m)=>{
+		const mark = m.active ? '▶ ' : (m.birthBalance ? '· ' : '  ');
+		out.push(`${mark}${nameOf(m.lord)} ${fmtDate(m.start)} → ${fmtDate(m.end)}（${n1(m.years).toFixed(1)} 年，${n1(m.startAge).toFixed(0)}–${n1(m.endAge).toFixed(0)} 岁）`);
+	});
+	return out;
+}
+
 function buildIndiaSnapshotText(chartObj, fields, chartnum, hook){
 	if(!chartObj || !chartObj.chart){
 		return '';
@@ -210,6 +248,10 @@ function buildIndiaSnapshotText(chartObj, fields, chartnum, hook){
 	ensureSection(lines, '行星', planets);
 	ensureSection(lines, '希腊点', lots);
 	ensureSection(lines, '可能性', possibility);
+	const dashaLines = buildDashaSnapshotLines(chartObj);
+	if(dashaLines.length){
+		ensureSection(lines, '大运Dasha', dashaLines);
+	}
 	return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 

@@ -19,7 +19,7 @@ import * as Constants from '../../utils/constants';
 import { randomStr, randomNum, gcj02ToGps,} from '../../utils/helper';
 import { buildMeaningTipByCategory, } from '../astro/AstroMeaningData';
 import { isMeaningEnabled, wrapWithMeaning, } from '../astro/AstroMeaningPopover';
-import { saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
 import styles from '../../css/styles.less';
 import DateTime from '../comp/DateTime';
 
@@ -140,6 +140,12 @@ class DiceMain extends Component{
 			this.getChartDisplay = this.getChartDisplay.bind(this);
 			this.getPlanetsDisplay = this.getPlanetsDisplay.bind(this);
 			this.showMeaning = this.showMeaning.bind(this);
+			this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
+
+			// AI 导出实时取数:requestDirection 的 params/result 是请求局部量(date/time 来自当次
+			// new DateTime(),从不入 state),refresh 时无法从 state 字节等价重建 → 留存最近一次成功
+			// 起盘的构建入参,refresh 监听据此即时重建快照(显示什么就导出什么)。
+			this._lastDiceSnapshotInput = null;
 
 		let fld = this.props.fields;
 		this.state = {
@@ -238,6 +244,7 @@ class DiceMain extends Component{
 
 		this.setState(st);
 		const diceTxt = this.state.txt;
+		this._lastDiceSnapshotInput = { params, result, text: diceTxt };
 		saveModuleAISnapshotLazy('otherbu', ()=>buildDiceSnapshotText(params, result, diceTxt), {
 			date: params.date,
 			time: params.time,
@@ -484,12 +491,44 @@ class DiceMain extends Component{
 		return res;
 	}
 
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用最近一次起盘的构建入参即时重建快照
+	// 并回填,保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(rehydrate/未重排时缓存
+	// 可能为空,此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'otherbu'){
+			return;
+		}
+		const last = this._lastDiceSnapshotInput;
+		if(!last || !last.result){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildDiceSnapshotText(last.params, last.result, last.text) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('otherbu', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
+	}
+
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 

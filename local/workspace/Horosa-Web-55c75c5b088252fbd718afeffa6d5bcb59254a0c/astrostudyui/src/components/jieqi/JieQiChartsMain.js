@@ -896,6 +896,7 @@ export class JieQiChartsMain extends Component{
 		this.renderBottomQuickDock = this.renderBottomQuickDock.bind(this);
 		this.saveCurrentJieQiSnapshot = this.saveCurrentJieQiSnapshot.bind(this);
 		this.scheduleJieqiSnapshotSave = this.scheduleJieqiSnapshotSave.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		let params = this.genSeedParams();
 		this.state.fields = paramsToFields(params);
@@ -1216,6 +1217,33 @@ export class JieQiChartsMain extends Component{
 		saveModuleAISnapshot('jieqi_current', txt, {
 			currentTab: tab,
 		});
+	}
+
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'jieqi' && moduleName !== 'jieqi_current'){
+			return;
+		}
+		const result = this.state ? this.state.result : null;
+		const fields = this.state ? this.state.fields : null;
+		const jieqis = this.state ? this.state.jieqis : null;
+		const currentTab = this.state ? this.state.currentTab : null;
+		let text = '';
+		try{
+			if(moduleName === 'jieqi_current'){
+				text = `${buildJieQiCurrentSnapshotText(currentTab, result, fields, jieqis, this.props.planetDisplay) || ''}`.trim();
+			}else{
+				text = `${buildJieQiSnapshotText(result, fields, jieqis, this.props.planetDisplay) || ''}`.trim();
+			}
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot(moduleName, text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	onAdChanged(value){
@@ -1570,6 +1598,9 @@ export class JieQiChartsMain extends Component{
 
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		if(this.props.fields){
 			let st = fieldsToState(this.props.fields);
 			this.setState(st, ()=>{
@@ -1596,6 +1627,9 @@ export class JieQiChartsMain extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		if(this.snapshotTimer){
 			if(typeof window !== 'undefined' && typeof window.cancelIdleCallback === 'function'){
 				window.cancelIdleCallback(this.snapshotTimer);

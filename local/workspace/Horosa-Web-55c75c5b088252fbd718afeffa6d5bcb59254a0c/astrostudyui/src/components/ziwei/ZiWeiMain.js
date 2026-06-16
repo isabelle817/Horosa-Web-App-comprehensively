@@ -23,7 +23,7 @@ import * as ZiWeiHelper from './ZiWeiHelper';
 import * as ZWText from '../../constants/ZWText';
 import * as ZWConst from '../../constants/ZWConst';
 import DateTime from '../comp/DateTime';
-import { saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { ziweirulesCached } from '../../services/rules';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
 
@@ -318,7 +318,7 @@ function buildZiWeiSnapshotText(params, result){
 	lines.push(`日期：${params.date} ${params.time}`);
 	lines.push(`时区：${params.zone}`);
 	lines.push(`经纬度：${params.lon} ${params.lat}`);
-	lines.push(`性别：${params.gender}`);
+	lines.push(`性别：${`${params.gender}` === '1' ? '男' : (`${params.gender}` === '0' ? '女' : '未知')}`);
 	lines.push(`时间算法：${params.timeAlg === 1 ? '直接时间' : '真太阳时'}`);
 	const schoolLabel = { beipai: '北派·飞星', zhongzhou: '中州派', custom: '自定义' }[ZWConst.ZWSchool.school] || '北派·飞星';
 	lines.push(`四化流派：${schoolLabel}`);
@@ -503,6 +503,7 @@ class ZiWeiMain extends Component{
 		this.navigateDirectionTool = this.navigateDirectionTool.bind(this);
 		this.renderBottomQuickDock = this.renderBottomQuickDock.bind(this);
 		this.onLuckChange = this.onLuckChange.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (fields)=>{
@@ -841,6 +842,7 @@ class ZiWeiMain extends Component{
 				}
 			};
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 		if(this.props.fields){
 			this.requestZiWei(this.props.fields);
@@ -854,6 +856,38 @@ class ZiWeiMain extends Component{
 		}
 		if(typeof window !== 'undefined' && this._lateZiHourListener){
 			window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+		}
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	// 数据源与 requestZiWei 里 saveModuleAISnapshotLazy 同口径:result=this.state.result(盘渲染读的同一份),
+	// params=genParams(this.props.fields)(与 render 里 luckParams 同口径,含运限/流派,故 period 段一并保真)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'ziwei'){
+			return;
+		}
+		const result = this.state ? this.state.result : null;
+		if(!result || !result.chart){
+			return;
+		}
+		let text = '';
+		try{
+			const params = this.genParams(this.props.fields);
+			text = `${buildZiWeiSnapshotText(params, result) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('ziwei', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
 		}
 	}
 

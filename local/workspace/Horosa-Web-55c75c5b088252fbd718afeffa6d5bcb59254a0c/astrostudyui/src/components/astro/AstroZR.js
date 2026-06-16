@@ -348,6 +348,7 @@ class AstroZR extends Component{
 		this.changeAIL3 = this.changeAIL3.bind(this);
 		this.genAIOutputDom = this.genAIOutputDom.bind(this);
 		this.saveAISnapshot = this.saveAISnapshot.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		let qryparam = {};
 		if(this.props.value){
@@ -390,6 +391,9 @@ class AstroZR extends Component{
 		this.unmounted = false;
 		this.requestData();
 		this.saveAISnapshot();
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	componentDidUpdate(prevProps, prevState){
@@ -408,6 +412,9 @@ class AstroZR extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	requestData(){
@@ -472,6 +479,37 @@ class AstroZR extends Component{
 			l2: this.state.aiL2Idx,
 			l3: this.state.aiL3Idx,
 		});
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的盘即时重建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖快照缓存是否已物化(reload/rehydrate 后缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。构建逻辑与 saveAISnapshot 完全一致。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'zodialrelease'){
+			return;
+		}
+		if(!this.props.value || !Array.isArray(this.state.list) || this.state.list.length === 0){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildZRAISnapshot(
+				this.props.value,
+				this.state.params,
+				this.state.basePoint,
+				this.state.list,
+				this.state
+			) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('zodialrelease', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	changePoint(e){

@@ -12,7 +12,7 @@ import * as Constants from '../../utils/constants';
 import { randomStr, convertToArray} from '../../utils/helper';
 import styles from '../../css/styles.less';
 import DateTime from '../comp/DateTime';
-import { saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
 import { buildPredictiveSnapshotText, } from '../../utils/predictiveAiSnapshot';
 import { appendPlanetHouseInfoById, splitPlanetHouseInfoText, } from '../../utils/planetHouseInfo';
 
@@ -34,6 +34,7 @@ class AstroLunarReturn extends Component{
 		this.genAspectDom = this.genAspectDom.bind(this);
 		this.changeDblChartType = this.changeDblChartType.bind(this);
 		this.renderPlanetLabel = this.renderPlanetLabel.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		let qryparam = this.genNatalParams(this.props.value);
 		let dt = new DateTime();
@@ -327,10 +328,41 @@ class AstroLunarReturn extends Component{
 	componentDidMount(){
 		this.unmounted = false;
 		this.requestData();
+		// 实时刷新:AI 导出/分析前广播 horosa:refresh-module-snapshot 时,用「当前显示盘」同步重建快照,
+		// 避免 reload/缓存为空时导出报「当前页面没有可导出文本」。
+		if(typeof window !== 'undefined' && window.addEventListener){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined' && window.removeEventListener){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'lunarreturn'){
+			return;
+		}
+		const result = this.state ? this.state.dirChart : null;
+		if(!result){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildPredictiveSnapshotText(this.props.value, this.state.params, result) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('lunarreturn', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	render(){

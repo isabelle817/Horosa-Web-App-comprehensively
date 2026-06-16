@@ -156,6 +156,64 @@
         color-scheme: dark;
     }
 
+    /* ── 暗黑模式可读性兜底 ──
+       根因:antd 的全局 h1-h6 reset、Alert/Typography 默认文字色都硬编码成浅色模式的
+       rgba(0,0,0,0.85),而本应用走 CSS 变量暗黑模式 → 这些字不翻转,出现「深色字 + 深底」一片看不清。
+       统一改用主题文字色 var(--horosa-text)(亮色模式=深字、暗色模式=浅字,两边都正确)。 */
+    .xq-markdown {
+        color: var(--horosa-text);
+        h1, h2, h3, h4, h5, h6 { color: var(--horosa-text); }
+        strong, b { color: inherit; }
+        code, kbd, pre, samp { color: var(--horosa-text); }
+        blockquote { color: var(--horosa-text-soft); border-left-color: var(--horosa-border); }
+        table, th, td { color: var(--horosa-text); border-color: var(--horosa-border); }
+        a { color: var(--horosa-accent); }
+        hr { border-color: var(--horosa-border); }
+    }
+
+    :root[data-horosa-appearance='dark'] {
+        /* antd 信息提示条(Alert)默认深色文字,暗黑下不可见 → 强制主题色 */
+        .ant-alert-info .ant-alert-message,
+        .ant-alert-info .ant-alert-description,
+        .ant-alert-info .ant-alert-message strong { color: var(--horosa-text); }
+        /* 根因:antd 的 .ant-form / .ant-tabs / .ant-drawer-body / .ant-modal-body / .ant-card 等
+           容器各自硬编码 color:rgba(0,0,0,0.85);CSS 变量暗黑模式不翻转它们 → 容器内未显式着色的
+           纯文字(开关标签、设置项标签等)继承成黑字、暗底下看不见。
+           统一兜底成主题文字色(刻意着色的元素自带 color,不受影响)。 */
+        .ant-form,
+        .ant-tabs,
+        .ant-drawer-body,
+        .ant-modal-body,
+        .ant-modal-confirm-content,
+        .ant-card,
+        .ant-card-body,
+        .ant-collapse,
+        .ant-collapse-content,
+        .ant-list,
+        .ant-list-item,
+        .ant-typography,
+        .ant-popover-inner-content,
+        .ant-progress-text,
+        .ant-statistic-content,
+        .ant-steps-item-title,
+        .ant-empty-description,
+        .ant-descriptions-item-content,
+        .ant-descriptions-item-label { color: var(--horosa-text); }
+        /* 分页跳页省略号默认近黑(rgba(0,0,0,.25)),暗底不可见 → 次级文字色 */
+        .ant-pagination-item-ellipsis { color: var(--horosa-text-soft); }
+    }
+
+    /* 图表内行星/度数文字:浅色模式单色调色板(如 #3b3b3b)在暗底不可见 → 暗黑下回落主题文字色、去浅色描边 */
+    :root[data-horosa-appearance='dark'] {
+        .horosa-india-square-object,
+        .horosa-india-square-object-name,
+        .horosa-india-square-object-degree,
+        .horosa-india-square-retro {
+            color: var(--horosa-text);
+            text-shadow: none;
+        }
+    }
+
     body {
         letter-spacing: 0;
         -webkit-font-smoothing: antialiased;

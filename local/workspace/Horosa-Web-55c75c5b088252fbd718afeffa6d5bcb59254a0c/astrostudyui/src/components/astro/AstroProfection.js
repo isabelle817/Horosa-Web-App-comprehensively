@@ -10,7 +10,7 @@ import * as Constants from '../../utils/constants';
 import { randomStr, convertToArray} from '../../utils/helper';
 import styles from '../../css/styles.less';
 import DateTime from '../comp/DateTime';
-import { saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
 import { buildPredictiveSnapshotText, } from '../../utils/predictiveAiSnapshot';
 import { appendPlanetHouseInfoById, splitPlanetHouseInfoText, } from '../../utils/planetHouseInfo';
 
@@ -67,6 +67,7 @@ class AstroProfection extends Component{
 		this.requestData = this.requestData.bind(this);
 		this.genAspectDom = this.genAspectDom.bind(this);
 		this.renderPlanetLabel = this.renderPlanetLabel.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (chartObj)=>{
@@ -286,11 +287,43 @@ class AstroProfection extends Component{
 
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		this.requestData();
 	}
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的推运盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'profection'){
+			return;
+		}
+		// 空值守卫:推运盘(dirChart)未算出时不构建,避免把占位/空盘存进去。
+		if(!this.props.value || !this.state.dirChart){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildPredictiveSnapshotText(this.props.value, this.state.params, this.state.dirChart) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('profection', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	render(){

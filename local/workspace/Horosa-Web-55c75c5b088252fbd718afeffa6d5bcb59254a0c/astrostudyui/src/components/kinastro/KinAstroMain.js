@@ -797,6 +797,7 @@ class KinAstroMain extends Component{
 		this.setRightPanelTab = this.setRightPanelTab.bind(this);
 		this.openCenterInfo = this.openCenterInfo.bind(this);
 		this.closeCenterInfo = this.closeCenterInfo.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 		if(this.props.hook){
 			this.props.hook.fun = (fields)=>{
 				if(this.unmounted){
@@ -839,6 +840,7 @@ class KinAstroMain extends Component{
 				}
 			};
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 		this.setState(nextState, ()=>this.fetchPan(this.props.fields));
 	}
@@ -887,6 +889,39 @@ class KinAstroMain extends Component{
 		}
 		if(typeof window !== 'undefined' && this._lateZiHourListener){
 			window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+		}
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(rehydrate/未重排时缓存可能为空,
+	// 缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	// 本组件渲染整个铁板神数家族,每实例按 this.config 对应一个技法;
+	// 导出侧对 kinastro 走 kinastro-{serviceKey},故 kinKey 与 moduleKey 两个键都响应。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		const cfg = this.config || {};
+		const kinKey = `kinastro-${cfg.serviceKey || 'unknown'}`;
+		if(moduleName !== kinKey && moduleName !== cfg.moduleKey){
+			return;
+		}
+		const pan = this.state ? this.state.pan : null;
+		if(!pan){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildSnapshotText(pan) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text && text !== '暂无 kinastro 数据'){
+			saveModuleAISnapshot(moduleName, text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
 		}
 	}
 

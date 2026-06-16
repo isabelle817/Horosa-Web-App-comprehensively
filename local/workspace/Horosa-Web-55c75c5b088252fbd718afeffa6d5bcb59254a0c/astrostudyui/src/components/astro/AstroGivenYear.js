@@ -12,7 +12,7 @@ import * as Constants from '../../utils/constants';
 import { randomStr, convertToArray} from '../../utils/helper';
 import styles from '../../css/styles.less';
 import DateTime from '../comp/DateTime';
-import { saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
 import { buildPredictiveSnapshotText, } from '../../utils/predictiveAiSnapshot';
 import { appendPlanetHouseInfoById, splitPlanetHouseInfoText, } from '../../utils/planetHouseInfo';
 
@@ -34,6 +34,7 @@ class AstroGivenYear extends Component{
 		this.genAspectDom = this.genAspectDom.bind(this);
 		this.changeDblChartType = this.changeDblChartType.bind(this);
 		this.renderPlanetLabel = this.renderPlanetLabel.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		let qryparam = this.genNatalParams(this.props.value);
 		let dt = new DateTime();
@@ -318,13 +319,46 @@ class AstroGivenYear extends Component{
 		});
 	}
 
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'givenyear'){
+			return;
+		}
+		const chartValue = this.props.value;
+		const result = this.state ? this.state.dirChart : null;
+		if(!chartValue || !result){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildPredictiveSnapshotText(chartValue, this.state.params, result) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('givenyear', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
+	}
+
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		this.requestData();
 	}
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	render(){

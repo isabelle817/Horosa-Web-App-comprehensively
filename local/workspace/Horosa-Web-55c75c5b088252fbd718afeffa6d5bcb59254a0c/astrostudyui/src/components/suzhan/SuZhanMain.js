@@ -436,6 +436,7 @@ class SuZhanMain extends Component{
 		this.clickSaveCase = this.clickSaveCase.bind(this);
 		this.setRightPanelTab = this.setRightPanelTab.bind(this);
 		this.navigateFeature = this.navigateFeature.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (fields)=>{
@@ -533,6 +534,9 @@ class SuZhanMain extends Component{
 
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		if(this.restoreFromCurrentCase(true)){
 			return;
 		}
@@ -564,6 +568,40 @@ class SuZhanMain extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		let text = '';
+		try{
+			if(moduleName === 'suzhan'){
+				const value = this.props.value;
+				const fields = this.props.fields;
+				const planetDisplay = this.props.planetDisplay;
+				if(fields){
+					text = `${buildSuzhanSnapshotText(value, fields, planetDisplay) || ''}`.trim();
+				}
+			}else if(moduleName === 'qimen'){
+				const value = this.props.value;
+				const fields = this.props.fields;
+				if(fields && fields.szchart && fields.szchart.value === SZConst.SZChart_DunJiaChart){
+					text = `${buildQimenSnapshotText(value, fields) || ''}`.trim();
+				}
+			}else{
+				return;
+			}
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot(moduleName, text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	setRightPanelTab(key){

@@ -1910,6 +1910,7 @@ class GuoLaoChartMain extends Component{
 		this.onKinastroOptionChange = this.onKinastroOptionChange.bind(this);
 		this.requestKinastroQizheng = this.requestKinastroQizheng.bind(this);
 		this.onQizhengKinTabChange = this.onQizhengKinTabChange.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (fields, chartObj)=>{
@@ -2288,6 +2289,37 @@ class GuoLaoChartMain extends Component{
 		});
 	}
 
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(rehydrate/未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」,Win 用户实测)。
+	// 本组件含两个 key:guolao(果老星宗,实时构建)与 guolao-qizhengkin(七政果老,取后端预置快照)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		let text = '';
+		try{
+			if(moduleName === 'guolao'){
+				const p = this.genParams();
+				const r = this.state ? this.state.chartObj : null;
+				if(p && r){
+					text = `${buildGuolaoSnapshotTextV2(p, r, this.props.planetDisplay, this.props.fields) || ''}`.trim();
+				}
+			}else if(moduleName === 'guolao-qizhengkin'){
+				const pan = this.state ? this.state.qizhengKinPan : null;
+				text = `${(pan && pan.snapshot) || ''}`.trim();
+			}else{
+				return;
+			}
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot(moduleName, text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
+	}
+
 	requestChartObj(fields, chartObj){
 		// v-guolao-moira: 收口到单闸门，禁止分步 setState（见 requestGuolaoBundle）。
 		this.requestGuolaoBundle(chartObj || this.props.value);
@@ -2475,6 +2507,7 @@ class GuoLaoChartMain extends Component{
 			this._lateZiHourListener = refetch;
 			window.addEventListener('horosa:day-boundary-changed', this._dayBoundaryListener);
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 		if(this.state.engineMode === 'kinastro'){
 			this.requestKinastroQizheng();
@@ -2518,6 +2551,7 @@ class GuoLaoChartMain extends Component{
 			if(this._lateZiHourListener){
 				window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
 			}
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 		if(this.prefetchTimer){
 			clearTimeout(this.prefetchTimer);

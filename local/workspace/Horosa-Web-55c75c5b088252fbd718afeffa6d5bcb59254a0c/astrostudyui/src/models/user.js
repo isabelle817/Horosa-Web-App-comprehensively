@@ -931,6 +931,15 @@ export default {
 			if(values.pos !== undefined){
 				flds.pos.value = values.pos;
 			}
+			// 储存全字段保真:与 astro/fetchByChartData(命盘还原)同口径,案例/事盘还原也补回性别 +
+			// 影响盘的设置(日界点/晚子时/时间算法/容许度),否则沿用当前全局值致还原盘错位
+			// (如保存时求测人性别=女、还原时全局=男 → 用神/乾坤造错位)。存档无该字段则跳过、不改现状。
+			if(values.gender !== undefined && values.gender !== null && flds.gender){ flds.gender.value = parseInt(values.gender + '', 10); }
+			if(values.after23NewDay !== undefined && values.after23NewDay !== null && flds.after23NewDay){ flds.after23NewDay.value = parseInt(values.after23NewDay + '', 10); }
+			if(values.lateZiHourUseNextDay !== undefined && values.lateZiHourUseNextDay !== null && flds.lateZiHourUseNextDay){ flds.lateZiHourUseNextDay.value = parseInt(values.lateZiHourUseNextDay + '', 10); }
+			if(values.timeAlg !== undefined && values.timeAlg !== null && flds.timeAlg){ flds.timeAlg.value = parseInt(values.timeAlg + '', 10); }
+			if(values.orbs && typeof values.orbs === 'object'){ if(!flds.orbs){ flds.orbs = { name: ['orbs'] }; } flds.orbs.value = values.orbs; }
+			if(values.orbScale !== undefined && values.orbScale !== null){ if(!flds.orbScale){ flds.orbScale = { name: ['orbScale'] }; } flds.orbScale.value = values.orbScale; }
 			const typeMeta = getCaseTypeMeta(values.caseType || values.sourceModule);
 			const nextTab = typeMeta.tab ? typeMeta.tab : (typeMeta.module === 'sanshiunited' ? 'sanshiunited' : 'cnyibu');
 			const nextSubTab = typeMeta.subTab || null;

@@ -320,6 +320,7 @@ class AstroDecennials extends Component{
 		this.genTreeNodes = this.genTreeNodes.bind(this);
 		this.renderPlanetToken = this.renderPlanetToken.bind(this);
 		this.saveAISnapshot = this.saveAISnapshot.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 		this.showMeaning = this.showMeaning.bind(this);
 
 		const qryparam = this.props.value ? this.genNatalParams(this.props.value) : {};
@@ -359,6 +360,9 @@ class AstroDecennials extends Component{
 
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		this.rebuildTimeline(this.props.value);
 		this.saveAISnapshot();
 	}
@@ -388,6 +392,9 @@ class AstroDecennials extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	showMeaning(){
@@ -441,6 +448,38 @@ class AstroDecennials extends Component{
 			l3: this.state.aiL3Idx,
 			mode: this.state.aiMode,
 		});
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示盘(this.props.value + 当前
+	// settings/aiState)即时重建快照并回填,保证「显示什么就导出什么」——不依赖任何缓存是否已物化
+	// (reload/缓存空时此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。构建逻辑与 saveAISnapshot 同源。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'decennials'){
+			return;
+		}
+		if(!this.props.value || !Array.isArray(this.state.list) || this.state.list.length === 0){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildDecennialAISnapshot(
+				this.props.value,
+				this.state.params,
+				this.state.settings,
+				this.state.timelineMeta,
+				this.state.list,
+				this.state
+			) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('decennials', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	changeStartMode(value){
