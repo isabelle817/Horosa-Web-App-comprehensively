@@ -19,7 +19,25 @@ def _bd(date, time):
     return pc.besiegementDetail(), pc
 
 
+def _bd_at(date, time, zone, lat, lon):
+    pc = perchart.PerChart(astroextra.base_params({
+        'date': date, 'time': time, 'zone': zone, 'lat': lat, 'lon': lon, 'ad': 1, 'hsys': 'ALCABITUS',
+    }))
+    pc.getChartObj()
+    return pc.besiegementDetail(), pc
+
+
 TYPE_MAP = {'MarsSaturn': ('围攻', '凶'), 'VenusJupiter': ('围荣', '富'), 'SunMoon': ('围耀', '贵')}
+
+
+def test_lacan_body_shield():
+    # 拉康(1901/04/13 14:20 巴黎):火土围攻日金,金日相距约 4°、互以身作盾(《围攻》:金身卫日/日身卫金)。
+    # 旧 1° 阈值误判遥光;修后——合相点(本体)落在围攻区内截击 → byBody=True 身盾。
+    bd, _ = _bd_at('1901/04/13', '14:20:00', '+00:09', '48N51', '2E21')
+    sun = [b for b in bd if b['type'] == 'MarsSaturn' and b['target'] == 'Sun']
+    assert sun, [(b['kind'], b['target']) for b in bd]
+    ven = [y for y in sun[0]['defense'] if y['id'] == 'Venus']
+    assert ven and ven[0]['byBody'] is True and ven[0]['aspect'] == 0       # 金身卫日 = 以身作盾
 
 
 def test_structure_invariants():
@@ -51,14 +69,28 @@ def test_severe_double_dominant():
 
 
 def test_defense_present():
-    # 2000/01/01:火土围月,有强吉星协防(木/日),且每条注明"防御哪颗围攻星"(against)。
+    # 2000/01/01:火土围月,有协防星(木/日/金强 + 水/月弱·自陷),且每条注明"防御哪颗围攻星"(against)。
     bd, _ = _bd('2000/01/01', '00:00:00')
     atk = [b for b in bd if b['type'] == 'MarsSaturn' and b['target'] == 'Moon']
     assert atk and len(atk[0]['defense']) >= 1
     bes_ids = {x['id'] for x in atk[0]['besiegers']}
     for y in atk[0]['defense']:
-        assert y['id'] in ('Jupiter', 'Sun', 'Venus') and y['side'] in ('春', '秋')
+        assert y['id'] in ('Jupiter', 'Sun', 'Venus', 'Moon', 'Mercury') and y['side'] in ('春', '秋')
         assert y['against'] in bes_ids                    # 防御的是该盘的某颗围攻火/土
+        # 水/月协防恒弱且自陷;日木金方可为强(《围攻》:水月软弱无力、得不偿失)。
+        assert y['selfTrap'] == (y['id'] in ('Moon', 'Mercury'))
+        if y['selfTrap']:
+            assert y['strong'] is False
+
+
+def test_byBody_iff_conjunction():
+    # 身盾判据修正:以身作盾 ⟺ 截击的相位为合相(吉星本体落在围攻区内),否则遥光。
+    # 跨多盘断言 byBody === (aspect == 0)——拉康金 4° 离日,合相点(本体)截击 → 身盾(旧 1° 阈值误判遥光)。
+    for d in [('2000/01/01', '00:00:00'), ('2028/06/14', '01:04:44'), ('2026/06/14', '12:00:00'), ('1993/06/15', '12:00:00')]:
+        bd, _ = _bd(*d)
+        for b in bd:
+            for y in b.get('defense', []):
+                assert y['byBody'] == (y['aspect'] == 0), (d, y)
 
 
 def test_three_kinds_reachable():

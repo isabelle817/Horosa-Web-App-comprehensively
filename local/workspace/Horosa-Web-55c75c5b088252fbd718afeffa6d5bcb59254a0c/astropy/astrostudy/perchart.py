@@ -1592,9 +1592,10 @@ class PerChart:
             return False
 
     def _besiege_defense(self, target_id, target_lon, attacker_eps):
-        """协防(《围攻》弃车保帅):吉星 木/日/金 的相位点须落入「围攻区域」截击某围攻者——
+        """协防(《围攻》弃车保帅):吉星 木/日/金(及弱势水/月) 的相位点须落入「围攻区域」截击某围攻者——
         即与该侧围攻者相位点同侧、且更靠近被围星(距≤围攻者距,挡在被围星与围攻者之间),方成协防。
-        以身作盾=吉星本体(合相点)贴被围星≤1°;否则遥光。强=主/落强宫(除3/6/8/12外;日木金可任,水月不计)。"""
+        以身作盾=截击的相位为合相(吉星本体落在围攻区内,如金身卫日);否则遥光(本体在它处、仅远程光线抵达)。
+        强=主/落强宫(除3/6/8/12外;日木金可任,水月恒弱且协防常自陷、得不偿失)。"""
         aspectlist = [-120, -90, -60, 0, 60, 90, 120, 180]
 
         def sd(x):
@@ -1609,7 +1610,7 @@ class PerChart:
                 side_attacker[s] = (ep['id'], abs(d))
 
         out = []
-        for yid in (const.JUPITER, const.SUN, const.VENUS):
+        for yid in (const.JUPITER, const.SUN, const.VENUS, const.MOON, const.MERCURY):
             if yid == target_id:
                 continue
             try:
@@ -1629,8 +1630,10 @@ class PerChart:
             if not atkr or abs(best_d) > atkr[1] + 1e-6:
                 continue
             out.append({'id': yid, 'aspect': best_asp, 'side': side, 'against': atkr[0],
-                        'orb': round(abs(best_d), 2), 'byBody': abs(sd(y.lon)) <= 1.0,
-                        'strong': self._is_strong_house(y)})
+                        'orb': round(abs(best_d), 2),
+                        'byBody': best_asp == 0,   # 截击相位=合相 ⇒ 吉星本体落在围攻区内 = 身盾;否则遥光
+                        'strong': self._is_strong_house(y) and yid in (const.JUPITER, const.SUN, const.VENUS),
+                        'selfTrap': yid in (const.MOON, const.MERCURY)})   # 水月协防得不偿失、反自陷
         return out
 
     def besiegementDetail(self):

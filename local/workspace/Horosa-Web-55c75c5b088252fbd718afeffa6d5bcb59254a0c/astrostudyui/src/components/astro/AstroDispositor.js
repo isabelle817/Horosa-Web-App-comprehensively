@@ -2,47 +2,19 @@
 // 主宰星链（dispositor chains）+ 宫神星（各宫主星及其落点）。纯前端派生，嵌于本命「古典」tab。
 import { Component } from 'react';
 import { astroSymbol, cardStyle, SmallTable } from './AstroExtraCommon';
-import { SIGNS, SIGN_ORDER } from '../../divination/data/signs';
-import { chartIdOfKey, keyOfChartId } from '../../divination/engine/utils';
+import { SIGNS } from '../../divination/data/signs';
+import { computeDispositors, signOf, houseNum, chartIdOfKey } from '../../utils/dispositorChain';
 
-function norm360(x){ return ((x % 360) + 360) % 360; }
-function signOf(lon){ return SIGN_ORDER[Math.floor(norm360(lon) / 30)]; }
 const sn = (s) => (SIGNS[s] && SIGNS[s].cn) || s || '-';
 const symKey = (k) => astroSymbol(chartIdOfKey(k) || k);
-const houseNum = (id) => { const m = /House\s*(\d+)/.exec(String(id || '')); return m ? parseInt(m[1], 10) : null; };
 const TRAD = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn'];
 
 class AstroDispositor extends Component {
 	render(){
 		const chartObj = this.props.value;
 		if(!chartObj || !chartObj.chart) return null;
-		// 行星落点 key -> {sign, house}
-		const pos = {};
-		(chartObj.chart.objects || []).forEach((o) => {
-			if(!o || !o.id) return;
-			const k = keyOfChartId(o.id);
-			const sign = o.sign ? String(o.sign).toLowerCase() : (o.lon != null ? signOf(o.lon) : null);
-			pos[k] = { sign, house: houseNum(o.house) };
-		});
-		// 单步主宰：行星 → 其所落星座的本垣主
-		const step = {};
-		TRAD.forEach((k) => { const p = pos[k]; if(p && p.sign) step[k] = (SIGNS[p.sign] || {}).domicile || null; });
-		// 走链：至自指(终极主宰)或成环(互容)
-		const chains = {}; const finals = new Set(); const loops = [];
-		TRAD.forEach((start) => {
-			if(step[start] === undefined) return;
-			const path = []; const seen = new Set(); let cur = start;
-			while(cur && step[cur] !== undefined){
-				if(seen.has(cur)){ loops.push(path.slice(path.indexOf(cur))); path.push(cur); break; }
-				seen.add(cur); path.push(cur);
-				const nxt = step[cur];
-				if(nxt === cur){ finals.add(cur); break; }
-				cur = nxt;
-			}
-			chains[start] = path;
-		});
-		const seenLoop = new Set(); const uniqLoops = [];
-		loops.forEach((c) => { const key = [...c].sort().join('>'); if(!seenLoop.has(key)){ seenLoop.add(key); uniqLoops.push(c); } });
+		// 主宰链/终极主宰/互容环 + 落点 pos —— 复用共享 computeDispositors（与格局速览/格局 tab 同源）。
+		const { pos, chains, finals, loops: uniqLoops } = computeDispositors(chartObj.chart.objects);
 		// 宫神星：各宫头星座的本垣主 + 该主星落宫/落座
 		const houseRows = [];
 		(chartObj.chart.houses || []).forEach((h) => {
