@@ -137,26 +137,33 @@ class HeLuoMain extends Component {
 			after23NewDay: defaultAfter23NewDay(),
 			lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
 		};
+		// 实例 memo:输入签名(四柱参数+日界/晚子+取化工法)不变即返缓存,避免 render/componentDidUpdate→saveSnap/
+		// 快照 handler 多处反复跑「八字+calc+daYun+solarTerm+judge+extras」全量重算(卡顿根因)。算法不变。
+		const sig = JSON.stringify({ ...params, quHuaGong: this.props.quHuaGong || '' });
+		if (this._modelKey === sig && Object.prototype.hasOwnProperty.call(this, '_modelCache')) {
+			return this._modelCache;
+		}
+		const cache = (v) => { this._modelKey = sig; this._modelCache = v; return v; };
 		let bazi;
-		try { bazi = buildLocalBaziResult(params).bazi; } catch (e) { return null; }
+		try { bazi = buildLocalBaziResult(params).bazi; } catch (e) { return cache(null); }
 		const fc = (bazi && bazi.fourColumns) || {};
 		const gz = (p) => (p && (p.ganzi || p.ganZhi)) || '';
 		const fourPillars = { year: gz(fc.year), month: gz(fc.month), day: gz(fc.day), hour: gz(fc.time) };
-		if (!fourPillars.year || !fourPillars.month || !fourPillars.day || !fourPillars.hour) return null;
+		if (!fourPillars.year || !fourPillars.month || !fourPillars.day || !fourPillars.hour) return cache(null);
 		const monthZhi = fourPillars.month.charAt(1);
 		const hourZhi = fourPillars.hour.charAt(1);
 		const birthYear = parseInt(dateStr.slice(0, 4), 10) || 0;
 		const gender = bazi.gender === 'Female' ? '女' : '男';
 		let chart;
-		try { chart = calc({ fourPillars, gender, hourZhi, birthYear, monthZhi }); } catch (e) { return null; }
-		if (!chart.xian.name || !chart.hou.name) return null;
+		try { chart = calc({ fourPillars, gender, hourZhi, birthYear, monthZhi }); } catch (e) { return cache(null); }
+		if (!chart.xian.name || !chart.hou.name) return cache(null);
 		const dy = daYun(chart.xian, chart.hou, birthYear);
 		const st = this.solarTerm(dateStr);
 		const jg = judge(chart, fourPillars, monthZhi, st);
 		const nayinStr = (fc.year && (fc.year.naying || fc.year.nayin)) || '';
 		const nayin = '金木水火土'.includes(nayinStr.slice(-1)) ? nayinStr.slice(-1) : '';
 		const extras = chartExtras(chart, fourPillars, monthZhi, jg, { sanhou: st ? st.houLabel : '', nayin });
-		return { fourPillars, monthZhi, hourZhi, birthYear, gender, chart, dy, jg, st, nayin: nayinStr, extras };
+		return cache({ fourPillars, monthZhi, hourZhi, birthYear, gender, chart, dy, jg, st, nayin: nayinStr, extras });
 	}
 
 	saveSnap() {
@@ -252,7 +259,7 @@ class HeLuoMain extends Component {
 
 	liShuCell(lines, jg, chart) { return this.liShuChips(lines, jg, chart); }
 
-	// 爻辞：命卦对体关系 + 摘要(河洛爻辞详解) + 诗歌(卦訣) + 倪海厦·易经推命(按 slot 取先天/后天/流年)
+	// 爻辞：命卦对体关系 + 摘要(河洛爻辞详解) + 诗歌(卦訣) + 易经爻辞推命(按 slot 取先天/后天/流年)
 	renderYaoci(guaName2, pos, lines, slot, chart) {
 		const info = guaInfo(guaName2) || {};
 		const yt = yaoText(guaName2, pos) || {};
@@ -264,7 +271,7 @@ class HeLuoMain extends Component {
 				<div className="horosa-heluo-yaoci-head">{guaName2} · {yaoName(lines, pos)} <span className="horosa-heluo-verdict">{yt.verdict}</span>{rels.length ? <span className="horosa-heluo-yaoci-rel"> · {rels.join('，')}</span> : null}</div>
 				{yt.detail ? <div className="horosa-heluo-yaoci-detail"><b>摘要</b>{yt.detail}</div> : null}
 				{yt.shige ? <div className="horosa-heluo-yaoci-shige"><b>诗歌</b>{yt.shige}</div> : null}
-				{ni ? <div className="horosa-heluo-yaoci-simple"><b>倪海厦·易经推命</b>{ni}</div> : null}
+				{ni ? <div className="horosa-heluo-yaoci-simple"><b>易经爻辞推命</b>{ni}</div> : null}
 			</div>
 		);
 	}

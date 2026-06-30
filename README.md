@@ -9,13 +9,13 @@
 **把占星与中国术数，收进一个原生 Windows 工作站**<br />
 *Western astrology and Chinese metaphysics, in one native Windows workstation*
 
-[![Version](https://img.shields.io/badge/version-2.6.9%20beta-b45309?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
+[![Version](https://img.shields.io/badge/version-3.0.0%20beta-b45309?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-dc2626?style=flat-square)](LICENSE)
-[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
-[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
+[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
+[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
 [![Stars](https://img.shields.io/github/stars/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/stargazers)
 
-[下载安装包](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-2.6.9.exe) ·
+[下载安装包](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-3.0.0.exe) ·
 [完整中文说明](README_ZH.md) ·
 [English Guide](README_EN.md) ·
 [所有版本](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
@@ -34,7 +34,7 @@
 
 > Regular users grab the offline installer and open it like any finished Windows app. No Python or Java to install yourself—the runtime ships inside the package—and updates replace the program and shared runtime without wiping your saved charts. The first launch is a little slower while the runtime is extracted and verified; later launches reuse the local cache.
 
-**[⬇︎ Horosa-Setup-2.6.9.exe](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-2.6.9.exe)**
+**[⬇︎ Horosa-Setup-3.0.0.exe](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-3.0.0.exe)**
 
 适合：Windows 10/11 · `x64` · 弱网 / 离线环境 · 首次安装 · 转发给他人。
 
@@ -60,6 +60,8 @@
 
 > Everything lives under three groups: **命** charts & timing, **卜** divination, and **工具** tools. Here is what each one actually ships.
 
+> v3.0.0 起，命系与卜系多门技法的各派分歧均做成左栏可选项，默认值与既有结果一致，默认排盘路径字节级不变。<br />As of v3.0.0, where schools disagree across the fate and divination sets the differences are exposed as left-panel options whose defaults match prior results, with the default chart path byte-for-byte unchanged.
+
 ### 命 · Charts & Timing
 
 这一层的强项是连贯：读本命、沿时间把它推开、再带进第二个人，全程不离开同一个工作面。
@@ -83,7 +85,8 @@
 | --- | --- |
 | **三式 Sanshi United** | 奇门、太乙、六壬整合面：概览、太乙、神煞、六壬、大格、小局、参考、八宫 |
 | **遁甲 Qimen · 六壬 Liuren · 太乙 Taiyi** | 三式各自的独立排盘入口 |
-| **六爻 Liuyao · 分至 Jieqi · 风水 Feng Shui** | 纳甲六爻、节气盘、风水工具 |
+| **六爻 Liuyao · 分至 Jieqi · 风水 Feng Shui** | 纳甲六爻、节气盘、风水（理气六派）工具 |
+| **塔罗 Tarot · 天文地占 Geomancy** | 塔罗牌阵（RWS / 埃及 / 马赛 / 维尔特 四套图集）、天文地占（星象地占） |
 | **其他 More** | 宿盘、金口诀、统摄法、皇极经世、五兆、太玄、荆诀、神易数 |
 
 ### 工具 · Tools
@@ -91,7 +94,8 @@
 | 模块 | 说明 |
 | --- | --- |
 | **AI 分析 AI Analysis** | 接入 OpenAI / Anthropic / Gemini / Ollama / OpenRouter / 自定义端点；流式对话、历史记录、资料库（向量检索）、把任一技法的盘面挂载进上下文、按技法 / 页签结构化导出，并可生成八字 / 紫微分节命理报告 |
-| **天文馆 Planetarium** | Babylon.js 实时三维天象 |
+| **玄学史 Xuanxue History** | 以二十四史、太平广记等公有古籍为底，汇编历代玄学人物、故事、术数源流与天象记录；离线历史地图 + 人物关系力导图 + 编年时间轴，按朝代 / 技法 / 人物检索，并与排盘联动 |
+| **天文馆 Planetarium** | 完整星官、升落 / 中天精确时刻、宿度网格与连续时间播放实时同步（Babylon.js 实时三维天象） |
 | **黄历 Almanac** | 农历 / 节气 / 择日 |
 | **辅助 References** | 八卦类象、十二宫、规则速查 |
 

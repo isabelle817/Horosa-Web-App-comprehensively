@@ -36,6 +36,18 @@ describe('LRXiangDoc · buildXiangContext 取象聚合', ()=>{
 		expect(ctx.direction).toBe('正南');
 	});
 
+	it('WP-D2 刑冲破害合断语 relationNotes(§22.2)+蜜中砒霜特例', ()=>{
+		const cx = buildXiangContext('子', '甲', '土');
+		const types = (cx.relationNotes || []).map((r)=>r.type);
+		expect(types).toEqual(expect.arrayContaining(['刑', '冲', '六合', '害', '破', '三合']));
+		// 子:六合丑 + 刑卯 → 蜜中砒霜
+		expect(types).toContain('蜜中砒霜');
+		const miz = cx.relationNotes.find((r)=>r.type === '蜜中砒霜');
+		expect(miz.note).toMatch(/外合内离|合中带刑害/);
+		// 每条断语非空
+		cx.relationNotes.forEach((r)=>expect(typeof r.note === 'string' && r.note.length > 0).toBe(true));
+	});
+
 	it('无效地支返回 null', ()=>{
 		expect(buildXiangContext('X', '甲', '土')).toBeNull();
 		expect(buildXiangContext('', '甲', '土')).toBeNull();

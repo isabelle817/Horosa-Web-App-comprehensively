@@ -8,6 +8,8 @@ import {randomStr,} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import DateTime from '../comp/DateTime';
 import GuoLaoInput from './GuoLaoInput';
+import { SU28_MODE_LABEL } from './guolaoData';
+import { computeDongwei as glDongwei, computeTongxian as glTongxian } from './guolaoTransit';
 import GuoLaoChart from './GuoLaoChart';
 import GuoLaoMoiraPanel from './GuoLaoMoiraPanel';
 import GuoLaoMoiraWheel, {
@@ -16,7 +18,7 @@ import GuoLaoMoiraWheel, {
 } from './GuoLaoMoiraWheel';
 import GuoLaoMoiraPickWheel from './GuoLaoMoiraPickWheel';
 import GuoLaoQizhengWheel from './GuoLaoQizhengWheel';
-import { GUOLAO_CHART_STYLE_MOIRA, GUOLAO_CHART_STYLE_PICK, GUOLAO_CHART_STYLE_QIZHENG, GUOLAO_LIFE_MODE_COTRANS, GUOLAO_LIFE_MODE_YUMAO, GUOLAO_NODE_MODE_NORTH_RAHU, getStoredGuolaoChartStyle, getStoredGuolaoLifeMode, getStoredGuolaoNodeMode, getStoredGuolaoSu28Mode, getStoredGuolaoDisplay, getStoredMoiraTransitGodsVisible, normalizeGuolaoLifeMode, normalizeGuolaoNodeMode, setStoredGuolaoChartStyle, setStoredGuolaoLifeMode, setStoredGuolaoNodeMode, setStoredGuolaoSu28Mode, setStoredMoiraTransitGodsVisible, setStoredGuolaoDisplay, } from './GuoLaoChartStyle';
+import { GUOLAO_CHART_STYLE_MOIRA, GUOLAO_CHART_STYLE_PICK, GUOLAO_CHART_STYLE_QIZHENG, GUOLAO_LIFE_MODE_COTRANS, GUOLAO_LIFE_MODE_YUMAO, GUOLAO_NODE_MODE_NORTH_RAHU, getStoredGuolaoChartStyle, getStoredGuolaoLifeMode, getStoredGuolaoNodeMode, getStoredGuolaoSu28Mode, getStoredGuolaoAyanamsa, getStoredGuolaoDisplay, getStoredMoiraTransitGodsVisible, getStoredGuolaoTrueSolarTime, getStoredGuolaoNodeType, getStoredGuolaoLilithType, getStoredGuolaoBodyMode, getStoredGuolaoTuibianMethod, getStoredGuolaoGufaPrecess, getStoredGuolaoEqTropicalAnchor, normalizeGuolaoLifeMode, normalizeGuolaoNodeMode, setStoredGuolaoChartStyle, setStoredGuolaoLifeMode, setStoredGuolaoNodeMode, setStoredGuolaoSu28Mode, setStoredMoiraTransitGodsVisible, setStoredGuolaoDisplay, } from './GuoLaoChartStyle';
 import { fetchKinastroQizheng, fetchMoiraQizhengRules, } from '../../services/qizheng';
 import { saveModuleAISnapshot, saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
 import * as AstroText from '../../constants/AstroText';
@@ -271,8 +273,10 @@ const MOIRA_OVERCOMING = {
 };
 
 const GUOLAO_CACHE_MAX = 96;
-const GUOLAO_SU28_CACHE_REV = 'guolao_moira_su28_v7_zheng_yumao_rise_set';
+const GUOLAO_SU28_CACHE_REV = 'guolao_moira_su28_v9_eqtropical7';
 const GUOLAO_SU28_MODE_ZHENG_SIDEREAL = 4;
+const GUOLAO_SU28_MODE_GUFA_LICHENG = 6;   // WP-D 授时历古法立成(推变黄道·古法不等宫)
+const GUOLAO_SU28_MODE_EQUATORIAL_TROPICAL = 7;   // 额外档 赤道回归制(固定古度宿界·春分/牛前冬至锚)
 const guolaoMem = new Map();
 const guolaoInflight = new Map();
 
@@ -1070,9 +1074,23 @@ function normalizeGodRows(rows, order){
 	}));
 }
 
+// 🆕 中文相位名(含度数)用于 AI 挂载快照 + AI 导出 + AI 报告 — 避免输出占星字体字形码(R/W/P/M 等)给 LLM 看成乱码。
+// UI 内部渲染走 AstroMsg 字形码 + 占星字体不受影响(各自管线分离)。
+const GUOLAO_ASPECT_LABEL_CN = {
+	Asp0: '合 (0°)',
+	Asp30: '半六合 (30°)',
+	Asp45: '半方 (45°)',
+	Asp60: '六合 (60°)',
+	Asp90: '方 (90°)',
+	Asp120: '三合 (120°)',
+	Asp135: '补半方 (135°)',
+	Asp150: '梅花 (150°)',
+	Asp180: '冲 (180°)',
+};
 function aspectName(deg){
-	const val = AstroText.AstroMsg[`Asp${deg}`] || AstroText.AstroTxtMsg[`Asp${deg}`] || '';
-	return val || `${deg}度`;
+	if(GUOLAO_ASPECT_LABEL_CN[`Asp${deg}`]){ return GUOLAO_ASPECT_LABEL_CN[`Asp${deg}`]; }
+	if(AstroText.AstroTxtMsg && AstroText.AstroTxtMsg[`Asp${deg}`]){ return AstroText.AstroTxtMsg[`Asp${deg}`]; }
+	return Number.isFinite(Number(deg)) ? `${deg}°` : '';
 }
 
 function buildAspectRows(aspects){
@@ -1304,6 +1322,15 @@ function normalizeChartParams(input){
 		tradition: normalizeNumText(src.tradition, 0),
 		doubingSu28: normalizeNumText(src.doubingSu28, 0),
 		guolaoZhengSidereal: normalizeNumText(src.guolaoZhengSidereal, 0),
+		siderealAyanamsa: src.siderealAyanamsa ? `${src.siderealAyanamsa}` : '',   // G2 恒星制岁差进缓存键(否则切 ayan 命中旧盘)
+		guolaoTrueSolarTime: (src.trueSolarTime === 'mean' || src.trueSolarTime === 'off') ? src.trueSolarTime : 'true',  // G6 报时星太阳时进缓存键
+		guolaoNodeType: src.guolaoNodeType === 'true' ? 'true' : 'mean',      // G10 罗计交点 真/平
+		guolaoLilithType: src.guolaoLilithType === 'true' ? 'true' : 'mean',  // G11 月孛远地点 真/平
+		guolaoZiqiMode: 'real',  // G12 紫炁仅今法真算;'tablet'(28年立成)假档已隐藏,旧快照残留一律归一回 real
+		guolaoTuibianMethod: (src.guolaoTuibianMethod === 'jintui' || src.guolaoTuibianMethod === 'huiyuan') ? src.guolaoTuibianMethod : 'jiyuan',  // WP-D 授时历古法推变法进缓存键
+		guolaoGufaPrecess: (src.guolaoGufaPrecess === 1 || src.guolaoGufaPrecess === '1') ? 1 : 0,  // WP-D 古宿岁差进缓存键(否则切则命中旧盘)
+		guolaoEqTropicalAnchor: src.guolaoEqTropicalAnchor === 'chunfen' ? 'chunfen' : 'dongzhi',  // 赤道回归锚点进缓存键
+		guolaoBodyMode: `${src.guolaoBodyMode || 'taiyin'}`,  // G20/R3 身宫法(taiyin/youjin/地支自定);进缓存键→切则重取 moira
 		guolaoLifeMode: normalizeGuolaoLifeMode(src.guolaoLifeMode),
 		strongRecption: normalizeNumText(src.strongRecption, 0),
 		simpleAsp: normalizeNumText(src.simpleAsp, 0),
@@ -1495,7 +1522,7 @@ function guolaoLifeModeFromFields(fields){
 function guolaoSu28ModeFromFields(fields){
 	if(fields && fields.doubingSu28 && fields.doubingSu28.value !== undefined && fields.doubingSu28.value !== null){
 		const v = Number(fields.doubingSu28.value);
-		if([0, 1, 2, 3, 4].indexOf(v) >= 0){
+		if([0, 1, 2, 3, 4, 5, 6, 7].indexOf(v) >= 0){
 			return v;
 		}
 	}
@@ -1505,10 +1532,16 @@ function guolaoSu28ModeFromFields(fields){
 function guolaoLifeModeName(mode){
 	const normalized = normalizeGuolaoLifeMode(mode);
 	if(normalized === GUOLAO_LIFE_MODE_YUMAO){
-		return '遇卯安命';
+		return '日出安命';
 	}
 	if(normalized === GUOLAO_LIFE_MODE_COTRANS){
 		return '赤黄转换';
+	}
+	if(normalized === 'gumao'){
+		return '遇卯安命(古法)';
+	}
+	if('子丑寅卯辰巳午未申酉戌亥'.indexOf(normalized) >= 0){
+		return `自定命宫·${normalized}`;
 	}
 	return '占星上升';
 }
@@ -1716,6 +1749,21 @@ function buildGuolaoSnapshotTextV2(params, result, planetDisplay, fields){
 	lines.push(`经纬度：${params.lon} ${params.lat}`);
 	lines.push(`七政命度：${guolaoLifeModeName(guolaoLifeModeFromFields(fields))}`);
 	lines.push(`罗计：${guolaoNodeModeName(guolaoNodeModeFromFields(fields))}`);
+	// G6/G10/G11 起盘设置注入快照(AI 报告据此解读报时星/四余取法)。
+	const _gTs = guolaoFieldValue(fields, 'guolaoTrueSolarTime', getStoredGuolaoTrueSolarTime);
+	const _gNt = guolaoFieldValue(fields, 'guolaoNodeType', getStoredGuolaoNodeType);
+	const _gLt = guolaoFieldValue(fields, 'guolaoLilithType', getStoredGuolaoLilithType);
+	lines.push(`报时星太阳时：${_gTs === 'off' ? '钟表时' : (_gTs === 'mean' ? '平太阳时(仅经度)' : '真太阳时(经度+均时差)')}`);
+	lines.push(`罗计取法：${_gNt === 'true' ? '真交点' : '平交点'}；月孛取法：${_gLt === 'true' ? '真远地点' : '平远地点'}`);
+	// G20/G22/G31/G3 身宫法/命主取法/行运法/宿度制 注入快照。身宫法读 fields(类A);命主取法/行运法读全局显示偏好(类B)。
+	const _gBody = guolaoFieldValue(fields, 'guolaoBodyMode', getStoredGuolaoBodyMode);
+	const _gDisp = getStoredGuolaoDisplay() || {};
+	const _su28Name = SU28_MODE_LABEL[guolaoSu28ModeFromFields(fields)] || '回归今宿';   // 单源 SU28_MODE_LABEL(WP-A,消第三套漂移)
+	const _lmName = { gong: '宫主', du: '度主', dudegrade: '贬宫主专度主' }[_gDisp.lifeMasterMode || 'gong'] || '宫主';
+	const _mlName = { '': '古度限度法', dongwei: '洞微大限', minor: '小限', month: '月限', tong: '童限' }[_gDisp.minorLimitType || ''] || '古度限度法';
+	const _gBodyName = _gBody === 'youjin' ? '逢酉(琴堂)' : ('子丑寅卯辰巳午未申酉戌亥'.indexOf(_gBody) >= 0 ? `自定身宫·${_gBody}` : '太阴落宫(果老)');
+	lines.push(`宿度制：${_su28Name}；身宫法：${_gBodyName}`);
+	lines.push(`命主取法：${_lmName}；行运法：${_mlName}`);
 	lines.push('');
 
 	lines.push('[七政四余宫位与二十八宿星曜]');
@@ -1725,7 +1773,7 @@ function buildGuolaoSnapshotTextV2(params, result, planetDisplay, fields){
 	lines.push(buildHouseGodsSection(result, fields) || '无');
 	lines.push('');
 	lines.push('[大限]');
-	lines.push(buildGuolaoLimitSection(chart, fields, params) || '无');
+	lines.push(buildGuolaoLimitSection(chart, fields, params, _gDisp.minorLimitType || '', _gDisp.tongxianBase || 'tong10') || '无');
 	lines.push('');
 	lines.push('[政余格局]');
 	lines.push(buildGuolaoPatternSection(result, fields, params) || '无');
@@ -1779,17 +1827,45 @@ function buildGuolaoAspectSection(result){
 
 // AI 快照·大限段：复用 Moira 命盘轮的命度→十二宫大限算法（moiraBuildLimitTable/lifeDegree），
 // 保证导出/挂载与盘面「命身与限度·大限」列表完全同口径。出生年取自 params.date（YYYY/MM/DD）。
-function buildGuolaoLimitSection(chart, fields, params){
+function buildGuolaoLimitSection(chart, fields, params, minorLimitType, tongxianBase){
 	try{
 		const lifeDeg = lifeDegree(chart, fields);
 		const birthYear = Number(String(params.date || '').split('/')[0]) || 0;
 		const rows = buildLimitTable(lifeDeg, birthYear);
-		if(!rows || !rows.length){
-			return '';
+		const out = [];
+		if(rows && rows.length){
+			out.push('古度限度法（命度十二宫大限）：');
+			out.push(rows.map((row)=>(
+				`第${row.index}限 ${row.palace}：${row.fromAge}-${row.toAge}岁（${row.fromYear}-${row.toYear}年），约${row.years}年`
+			)).join('\n'));
 		}
-		return rows.map((row)=>(
-			`第${row.index}限 ${row.palace}：${row.fromAge}-${row.toAge}岁（${row.fromYear}-${row.toYear}年），约${row.years}年`
-		)).join('\n');
+		// WP-E：所选行运法(类B minorLimitType)结构同入快照——洞微大限含飞星吊度,童限顺排,小限/月限注明法。
+		const mlt = String(minorLimitType || '');
+		if(mlt === 'dongwei'){
+			const sun = findChartObject(chart, AstroConst.SUN);
+			if(sun && Number.isFinite(Number(sun.lon))){
+				const dw = glDongwei(((Number(sun.lon) % 30) + 30) % 30);
+				out.push('');
+				out.push(`洞微大限（命宫顺行·飞星吊度·起限${dw.startAge}岁）：`);
+				out.push(dw.rows.map((r)=>(
+					`第${r.index}限 ${r.palace}：${r.fromAge}-${r.toAge}岁，${r.years}年（入${r.entryDeg}°·每年吊度${r.perYearDeg}°）`
+				)).join('\n'));
+			}
+		}else if(mlt === 'tong'){
+			const sun = findChartObject(chart, AstroConst.SUN);
+			if(sun && Number.isFinite(Number(sun.lon))){
+				const tx = glTongxian(Number(sun.lon), tongxianBase || 'tong10');
+				out.push('');
+				out.push(`童限：命财疾妻福顺排（${tx.palaces.join('→')}），出童限约${tx.exitAge}岁。`);
+			}
+		}else if(mlt === 'minor'){
+			out.push('');
+			out.push('小限：生年支加命宫逆数（age1=命宫宫支，逐年逆行一宫，12年一轮）。');
+		}else if(mlt === 'month'){
+			out.push('');
+			out.push('月限：由当年小限宫起生月、按月逆寻（节气月口径）。');
+		}
+		return out.join('\n');
 	}catch(e){
 		return '';
 	}
@@ -1822,7 +1898,58 @@ function fieldsToParams(fields){
 		_su28Rev: GUOLAO_SU28_CACHE_REV,
 	};
 
+	// G2 恒星制岁差:仅恒星宿度制 + 用户选了 ayanāṃśa 才透传(复用既有 siderealAyanamsa 键;服务端已转发并采用;缺=郑氏默认零回归)。
+	const guolaoAyan = guolaoAyanamsaFromFields(fields);
+	if(su28Mode === GUOLAO_SU28_MODE_ZHENG_SIDEREAL && guolaoAyan){
+		params.siderealAyanamsa = guolaoAyan;
+	}
+
+	// G6 报时星太阳时:仅非默认(真)才透传,默认 true → perchart 缺键即 true → 零回归。
+	const trueSolar = guolaoFieldValue(fields, 'guolaoTrueSolarTime', getStoredGuolaoTrueSolarTime);
+	if(trueSolar === 'mean' || trueSolar === 'off'){
+		params.trueSolarTime = trueSolar;
+	}
+	// G10-13 四余取法:仅非默认才透传(罗计/月孛默认平 mean),默认=零回归。
+	// 紫炁取法只有「今法真算」一档生效('tablet' 假档已隐藏),故永不透传 guolaoZiqiMode → 后端始终走真算。
+	if(guolaoFieldValue(fields, 'guolaoNodeType', getStoredGuolaoNodeType) === 'true'){
+		params.guolaoNodeType = 'true';
+	}
+	if(guolaoFieldValue(fields, 'guolaoLilithType', getStoredGuolaoLilithType) === 'true'){
+		params.guolaoLilithType = 'true';
+	}
+	// WP-D 授时历古法(用制 6):推变黄道术法(纪元闭式默认/进退/会圆)+ 古宿随岁差。仅 mode6 且非默认才透传 → 缺=纪元·不随岁差零回归。
+	if(su28Mode === GUOLAO_SU28_MODE_GUFA_LICHENG){
+		const _tuibian = guolaoFieldValue(fields, 'guolaoTuibianMethod', getStoredGuolaoTuibianMethod);
+		if(_tuibian === 'jintui' || _tuibian === 'huiyuan'){ params.guolaoTuibianMethod = _tuibian; }
+		if(guolaoFieldValue(fields, 'guolaoGufaPrecess', getStoredGuolaoGufaPrecess)){ params.guolaoGufaPrecess = 1; }
+	}
+	// 额外档 赤道回归制(用制 7)锚点:仅 mode7 且非默认(牛前冬至)才透传 → 缺=牛前冬至零回归。
+	if(su28Mode === GUOLAO_SU28_MODE_EQUATORIAL_TROPICAL){
+		const _anchor = guolaoFieldValue(fields, 'guolaoEqTropicalAnchor', getStoredGuolaoEqTropicalAnchor);
+		if(_anchor === 'chunfen'){ params.guolaoEqTropicalAnchor = 'chunfen'; }
+	}
+	// G20/R3 身宫法:琴堂(youjin)或自定身宫(地支子~亥)透传(进 moira params);默认果老(taiyin)不发=零回归。
+	const bodyMode = guolaoFieldValue(fields, 'guolaoBodyMode', getStoredGuolaoBodyMode);
+	if(bodyMode && bodyMode !== 'taiyin'){
+		params.guolaoBodyMode = bodyMode;
+	}
+	// R2 自定命宫:命度法值=地支(子~亥)即自定命宫,已随 guolaoLifeMode 透传(BaZi 按地支当 custom 算),无需额外键。
+
 	return params;
+}
+
+function guolaoFieldValue(fields, key, fallbackGetter){
+	if(fields && fields[key] && fields[key].value !== undefined && fields[key].value !== null && `${fields[key].value}` !== ''){
+		return `${fields[key].value}`;
+	}
+	return fallbackGetter ? fallbackGetter() : '';
+}
+
+function guolaoAyanamsaFromFields(fields){
+	if(fields && fields.guolaoAyanamsa && fields.guolaoAyanamsa.value !== undefined && fields.guolaoAyanamsa.value !== null && `${fields.guolaoAyanamsa.value}` !== ''){
+		return `${fields.guolaoAyanamsa.value}`;
+	}
+	return getStoredGuolaoAyanamsa();
 }
 
 function makeDefaultMoiraTransitTime(fields){
@@ -2336,18 +2463,19 @@ class GuoLaoChartMain extends Component{
 			return;
 		}
 		const style = this.state.chartStyle;
-		const needTransit = (style === GUOLAO_CHART_STYLE_MOIRA || style === GUOLAO_CHART_STYLE_PICK);
+		// 流年盘:Moira/天星择日 在转盘上画;Horosa原盘 不画转盘但右栏「流年星曜/流年七政动态/流年落入」仍需流年盘数据,
+		// 故所有样式都取流年盘(否则 classic 下右栏流年段空白显示「无数据」)。坚七政自有流年路径,不在此分支。
+		const needTransit = (style !== GUOLAO_CHART_STYLE_QIZHENG);
 		const seq = ++this.bundleSeq;
 		this.setState({ bundleLoading: true });
 		const transitParams = paramsWithMoiraTransit(this.props.fields, this.state.moiraTransitTime);
 		const reuse = srcChart && isChartObjMatchParams(srcChart, params) && hasGuolaoRiseSetFields(srcChart);
+		// 阶段一(冷加载性能):只取本命盘并立即上屏——命盘轮完整、绝不画半成品。
+		// 此前 Promise.all([本命,流年]) 把两冷盘塞同一阻塞段(后端冷算串行≈2×单盘=撞 <1s 红线);拆两段后首屏只等本命盘。
+		// 流年环/流曜/格局走既有 transitLoading/moiraLoading 过渡态稍后毫秒级补入,默认显示口径不变,缓存键(byte-perfect)不动。
 		let natalRaw = null;
-		let transitRaw = null;
 		try{
-			[natalRaw, transitRaw] = await Promise.all([
-				reuse ? Promise.resolve(srcChart) : fetchGuolaoChartCached(params, {silent: true}),
-				needTransit ? fetchGuolaoChartCached(transitParams, {silent: true}) : Promise.resolve(null),
-			]);
+			natalRaw = reuse ? srcChart : await fetchGuolaoChartCached(params, {silent: true});
 		}catch(e){
 			natalRaw = reuse ? srcChart : (this.state.chartObj || null);
 		}
@@ -2355,46 +2483,69 @@ class GuoLaoChartMain extends Component{
 			return;
 		}
 		const chartObj = natalRaw ? applyGuolaoNodeMode(natalRaw, this.props.fields) : (this.state.chartObj || null);
-		const transitObj = transitRaw ? applyGuolaoNodeMode(transitRaw, this.props.fields) : null;
-		let rules = null;
-		if(chartObj){
-			let rsp = null;
-			let fallbackReason = 'empty-response';
-			try{
-				rsp = await fetchMoiraQizhengRules({
-					params,
-					chartObj,
-					transitParams,
-					transitChartObj: transitObj,
-				}, {
-					silent: true,
-					timeoutMs: 12000,
-				});
-			}catch(e){
-				fallbackReason = e && e.message ? e.message : 'request-error';
-			}
-			if(seq !== this.bundleSeq || this.unmounted){
-				return;
-			}
-			const remoteRules = rsp && rsp[Constants.ResultKey] ? rsp[Constants.ResultKey] : null;
-			rules = isIncompleteMoiraRules(remoteRules)
-				? buildLocalMoiraRules(params, chartObj, this.props.fields, fallbackReason)
-				: remoteRules;
-		}
 		this.setState({
 			chartObj,
-			moiraTransitChartObj: transitObj,
-			moiraRules: rules,
 			moiraPanelChartObj: chartObj,
-			moiraPanelTransitChartObj: transitObj,
-			moiraPanelTransitParams: transitParams,
 			bundleLoading: false,
-			moiraLoading: false,
-			moiraTransitLoading: false,
+			// 流年/规则后台计算中:流曜区/右栏显示过渡态,不画半成品。
+			moiraLoading: !!chartObj,
+			moiraTransitLoading: needTransit,
 		});
 		if(chartObj){
 			this.saveGuolaoAISnapshot(params, chartObj);
 		}
+		if(!chartObj){
+			this.setState({ moiraLoading: false, moiraTransitLoading: false });
+			return;
+		}
+
+		// 阶段二(后台非阻塞):流年盘(needTransit 时)+ Moira 规则,取齐后合并。
+		let transitRaw = null;
+		if(needTransit){
+			try{
+				transitRaw = await fetchGuolaoChartCached(transitParams, {silent: true});
+			}catch(e){
+				transitRaw = null;
+			}
+			if(seq !== this.bundleSeq || this.unmounted){
+				return;
+			}
+		}
+		const transitObj = transitRaw ? applyGuolaoNodeMode(transitRaw, this.props.fields) : null;
+		this.setState({
+			moiraTransitChartObj: transitObj,
+			moiraTransitLoading: false,
+		});
+		let rsp = null;
+		let fallbackReason = 'empty-response';
+		try{
+			rsp = await fetchMoiraQizhengRules({
+				params,
+				chartObj,
+				transitParams,
+				transitChartObj: transitObj,
+			}, {
+				silent: true,
+				timeoutMs: 12000,
+			});
+		}catch(e){
+			fallbackReason = e && e.message ? e.message : 'request-error';
+		}
+		if(seq !== this.bundleSeq || this.unmounted){
+			return;
+		}
+		const remoteRules = rsp && rsp[Constants.ResultKey] ? rsp[Constants.ResultKey] : null;
+		const rules = isIncompleteMoiraRules(remoteRules)
+			? buildLocalMoiraRules(params, chartObj, this.props.fields, fallbackReason)
+			: remoteRules;
+		this.setState({
+			moiraRules: rules,
+			moiraPanelChartObj: chartObj,
+			moiraPanelTransitChartObj: transitObj,
+			moiraPanelTransitParams: transitParams,
+			moiraLoading: false,
+			moiraTransitLoading: false,
+		});
 	}
 
 	genParams(){
@@ -3378,11 +3529,12 @@ class GuoLaoChartMain extends Component{
 							{useKinastroQizheng ? this.renderQizhengKinInfoPanel() : (
 									<GuoLaoMoiraPanel
 										value={this.state.moiraRules}
-										loading={this.state.bundleLoading}
+										loading={this.state.bundleLoading || this.state.moiraLoading}
 										rootValue={moiraPanelChartObj}
 										transitValue={moiraPanelTransitChartObj}
 										transitParams={moiraPanelTransitParams}
 										fields={this.props.fields}
+										display={this.state.guolaoDisplay}
 										chartMode={usePickWheel ? 'pick' : 'moira'}
 									/>
 							)}

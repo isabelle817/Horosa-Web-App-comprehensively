@@ -106,6 +106,8 @@ function isNeedLoginLikeValue(val){
 	const txt = `${val}`.toLowerCase();
 	return txt.indexOf('need.login') >= 0 ||
 		txt.indexOf('need login') >= 0 ||
+		txt.indexOf('must.login') >= 0 ||  // 🆕 后端 /bazi/pattern/update 等接口返回 "must.login" raw code,加入识别 → 不再 toast 显示英文 raw 字符串。
+		txt.indexOf('must login') >= 0 ||
 		txt.indexOf('请重新登录') >= 0;
 }
 
@@ -139,9 +141,10 @@ export function innerHandleError(err) {
         if(needLoginByHeader || needLoginByBody){
             const hasToken = !!safeGetLocalItem(Constants.TokenKey, '');
             const now = new Date().getTime();
-            if(hasToken && now - lastNeedLoginTs > 8000){
+            // 🆕 未登录用户也给中文提示(原代码只对 hasToken=true 显示),否则点了「提交」毫无反馈,以为按钮坏了。
+            if(now - lastNeedLoginTs > 8000){
                 lastNeedLoginTs = now;
-                safeErrorToast('请重新登录', 8000);
+                safeErrorToast(hasToken ? '请重新登录' : '此操作需要登录后才能使用', 8000);
             }
             logout();
             return;

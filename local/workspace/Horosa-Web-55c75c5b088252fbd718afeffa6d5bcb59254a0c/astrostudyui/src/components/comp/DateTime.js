@@ -73,6 +73,7 @@ class DateTime {
 	genParams(){
 		let params = {
 			jdn: this.jdn,
+			zone: this.zone || '+08:00',  // /jdn/date(JdnController)必需 zone,缺则 miss.zone 致古代日期转换失败/时间播放卡死
 		};
 		return params;
 	}
@@ -82,6 +83,8 @@ class DateTime {
 		const data = await request(`${Constants.ServerRoot}/jdn/date`, {
 			body: JSON.stringify(params),
 		});
+		// 防御:/jdn/date 失败/空(古代日期或服务异常)→ 保留现有 year/month/date,不崩
+		if(!data || data[Constants.ResultKey] == null){ return; }
 		const result = data[Constants.ResultKey];
 		let date = result.date;
 		let parts = date.split(' ');
@@ -135,9 +138,17 @@ class DateTime {
 	}
 
 	calDateFromJdn(jdn){
-		let a = Math.floor(jdn + 32044);
-		let b = Math.floor((4*a + 3) / 146097);
-		let c = Math.floor(a - Math.floor(146097*b / 4));
+		// jdn→历日:1582-10-15(jdn≥2299161)起格里历,之前用儒略历(否则古代日期错算)
+		let jd = Math.floor(jdn);
+		let a, b, c;
+		if(jd >= 2299161){
+			a = jd + 32044;
+			b = Math.floor((4*a + 3) / 146097);
+			c = a - Math.floor(146097*b / 4);
+		} else {
+			b = 0;
+			c = jd + 32082;
+		}
 		let d = Math.floor((4*c + 3) / 1461);
 		let e = Math.floor(c - Math.floor(1461*d / 4));
 		let m = Math.floor((5*e + 2) / 153);
@@ -156,11 +167,7 @@ class DateTime {
 	}
 
 	calcDateTime(){
-		if(this.jdn < 2299160.1666666665){
-			this.requestJdnDate();
-			return;
-		}
-
+		// 全本地同步计算(calDateFromJdn 已兼容儒略历)→ 古代日期连续播放可逐帧更新,不依赖异步 /jdn/date
 		let jdn = this.jdn;
 		let zonejdn = this.getZoneJdn();
 		let locjdn = this.jdn + zonejdn + 0.5;

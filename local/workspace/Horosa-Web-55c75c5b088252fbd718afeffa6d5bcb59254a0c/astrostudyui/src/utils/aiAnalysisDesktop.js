@@ -69,6 +69,19 @@ export async function saveDesktopFile(payload){
 	return invoke('save_ai_analysis_file_command', { payload });
 }
 
+// 桌面剪贴板:webview 的 navigator.clipboard/execCommand 被拦,走原生 pbcopy 命令。成功 true / 不可用或失败 false。
+export async function copyDesktopClipboard(text){
+	if(!hasTauriInvoke()){
+		return false;
+	}
+	try{
+		await invoke('copy_text_to_clipboard_command', { text: `${text == null ? '' : text}` });
+		return true;
+	}catch(e){
+		return false;
+	}
+}
+
 export async function openDesktopBackup(){
 	if(!hasTauriInvoke()){
 		throw new Error('desktop.bridge.unavailable');

@@ -8,8 +8,42 @@ import DateTime from '../comp/DateTime';
 import { getHousesOption } from '../comp/CompHelper'
 import { XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
 import * as AstroConst from '../../constants/AstroConst';
+import { sameDisplayList, shallowPropsEqual } from '../../utils/chartUpdateGuard';
+import { chartSCUEnabled } from '../../utils/perfFlags';
 
 const TabPane = Tabs.TabPane;
+
+// 量化(德/汉堡 90°中点)盘 sCU(根因 E):MidpointMain 是中点盘渲染主体(内含重组件 AstroChart + 中点/相位列表)。
+// 逐项核 render 消费 props(grep this.props.* 全集 = 12,无 state):
+//   value          → 内为 {midpoints, chartObj};父 AstroMidpoint.render 每帧重建字面量(外层引用恒变),
+//                     故按其两个内部引用比(midpoints / chartObj 数据变才换引用)→ 既不漏渲又能真短路。
+//   chartDisplay   → 透传给 AstroChart 的显示项(数组,内容比)
+//   planetDisplay  → AstroChart + Midpoint + AspectToMidpoint(数组,内容比)
+//   lotsDisplay    → AstroChart(数组,内容比)
+//   showAstroMeaning / height → 透传(标量,Object.is)
+//   onChange       → 子控件回调(函数,Object.is)
+//   fields         → 日期/黄道/宫制等受控值来源(对象引用比:dva/父 state 稳定)
+//   hidezodiacal / hidehsys / hidedateselector / indiahsys → 控制侧栏控件显隐(标量,Object.is)
+// 子组件(AstroChart 各有 sCU / Midpoint·AspectToMidpoint 为纯列表)随本组件渲染而渲染,本 sCU 拦住冗余整树重渲。
+function sameMidpointValue(a, b){
+	if(a === b){
+		return true;
+	}
+	if(!a || !b){
+		return false;
+	}
+	return a.midpoints === b.midpoints && a.chartObj === b.chartObj;
+}
+const MIDPOINTMAIN_SCU_KEYS = [
+	'value', 'chartDisplay', 'planetDisplay', 'lotsDisplay', 'showAstroMeaning', 'height',
+	'onChange', 'fields', 'hidezodiacal', 'hidehsys', 'hidedateselector', 'indiahsys',
+];
+const MIDPOINTMAIN_SCU_COMPARATORS = {
+	value: sameMidpointValue,
+	chartDisplay: sameDisplayList,
+	planetDisplay: sameDisplayList,
+	lotsDisplay: sameDisplayList,
+};
 const Option = Select.Option;
 const OptGroup = Select.OptGroup;
 
@@ -25,6 +59,13 @@ class MidpointMain extends Component{
 		this.changeZodiacal = this.changeZodiacal.bind(this);
 		this.changeHsys = this.changeHsys.bind(this);
 		this.changeSouthChart = this.changeSouthChart.bind(this);
+	}
+
+	shouldComponentUpdate(nextProps){
+		if(!chartSCUEnabled()){
+			return true; // kill-switch
+		}
+		return !shallowPropsEqual(this.props, nextProps, MIDPOINTMAIN_SCU_KEYS, MIDPOINTMAIN_SCU_COMPARATORS);
 	}
 
 	changeTime(tm){

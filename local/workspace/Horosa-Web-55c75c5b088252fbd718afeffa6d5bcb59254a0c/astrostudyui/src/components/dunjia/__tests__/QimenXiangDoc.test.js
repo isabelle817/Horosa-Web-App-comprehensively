@@ -35,4 +35,16 @@ describe('QimenXiangDoc 简体化', ()=>{
 		expect(content).toContain('乾，亥，火墓');
 		expect(content).not.toContain('干，亥，火墓');
 	});
+
+	test('飞盘九神 勾陈/太常/朱雀 应有词条(单字与全名均可查)', ()=>{
+		[['勾', '勾陈', '牵连'], ['常', '太常', '福德'], ['雀', '朱雀', '文书']].forEach(([abbr, full, keyword])=>{
+			const byAbbr = buildQimenXiangTipObj('god', abbr);
+			expect(byAbbr).toBeTruthy();
+			expect(byAbbr.title).toBe(full);
+			expect(joinTextBlocks(byAbbr)).toContain(keyword);
+			const byFull = buildQimenXiangTipObj('god', full);
+			expect(byFull).toBeTruthy();
+			expect(byFull.title).toBe(full);
+		});
+	});
 });

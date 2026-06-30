@@ -1,0 +1,23 @@
+{
+ "schema": "geomancy.names_hebrew/v1",
+ "attested": false,
+ "note": "义译(意义对应转写),非历史实证抄本。",
+ "names": {
+  "Via": "Derekh",
+  "Populus": "ʿAm",
+  "Albus": "Lavan",
+  "Rubeus": "Adom",
+  "Puer": "Naʿar",
+  "Puella": "Naʿara",
+  "Coniunctio": "Ḥibbur",
+  "Caput Draconis": "Rosh ha-Teli",
+  "Cauda Draconis": "Zanav ha-Teli",
+  "Acquisitio": "Revaḥ",
+  "Amissio": "Hefsed",
+  "Fortuna Maior": "Mazzal Gadol",
+  "Fortuna Minor": "Mazzal Katan",
+  "Laetitia": "Simḥa",
+  "Tristitia": "ʿEtsev",
+  "Carcer": "Maʾasar"
+ }
+}

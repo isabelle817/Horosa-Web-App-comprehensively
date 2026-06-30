@@ -6,6 +6,7 @@ import request from '../../utils/request';
 import * as Constants from '../../utils/constants';
 import {BaziMonthTime, SixtyJiaZi} from '../../constants/ZWConst';
 import MainDirectionSimple from '../cntradition/MainDirectionSimple';
+import { safeLocalStorageGet, safeLocalStorageSet } from '../../utils/safeStorage';
 
 const { Option } = Select;
 
@@ -15,7 +16,8 @@ export default class InverseBazi extends Component{
 	constructor(props) {
 		super(props);
 
-        let json = localStorage.getItem(BaziInverseKey);
+        // 🛡 safeStorage:浏览器存储配额满 / 隐私模式 getItem 抛错也不让 constructor 崩 → 整个 commtools 抽屉黑屏。
+        let json = safeLocalStorageGet(BaziInverseKey);
         let st = {};
         if(json){
             try{
@@ -56,8 +58,13 @@ export default class InverseBazi extends Component{
     }
 
     saveState(){
-        let json = JSON.stringify(this.state);
-        localStorage.setItem(BaziInverseKey, json);
+        // 🛡 safeStorage:setItem 在 setState callback 内被调,配额满抛 QuotaExceededError → React 把异常冒到 ErrorBoundary → 组件崩。包 try/catch + 配额满自动清理重试。
+        try{
+            const json = JSON.stringify(this.state);
+            safeLocalStorageSet(BaziInverseKey, json);
+        }catch(e){
+            // 静默
+        }
     }
 
 	async requestDates(){
@@ -93,7 +100,9 @@ export default class InverseBazi extends Component{
 		const data = await request(`${Constants.ServerRoot}/common/inversebazi`, {
 			body: JSON.stringify(params),
 		});
-		const result = data[Constants.ResultKey];
+		// 🔒 接口不可达/出错 → request 已 toast 提示;此处静默退出避免 data[ResultKey] 崩页(打包发行版更易触发白屏)
+		const result = data && data[Constants.ResultKey];
+        if(!result || !result.Dates || !result.Dates.length){ return; }
         let dates = result.Dates;
         let dtparts = dates[0].split(' ');
 
@@ -112,7 +121,7 @@ export default class InverseBazi extends Component{
 
 		this.setState({
             dates: result.Dates,
-            paibazi: pbzres[Constants.ResultKey],
+            paibazi: pbzres && pbzres[Constants.ResultKey],
         });
 	}
 

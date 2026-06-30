@@ -28,6 +28,7 @@ public class AstroHelper {
 	public static final String ZodiacalRelease = PropertyPlaceholder.getProperty("zr", "/predict/zr");
 	public static final String Dice = PropertyPlaceholder.getProperty("dice", "/predict/dice");
 	public static final String Chart13 = PropertyPlaceholder.getProperty("chart13", "/chart13");
+	public static final String Chart12 = PropertyPlaceholder.getProperty("chart12", "/chart12");
 	public static final String IndiaChart = PropertyPlaceholder.getProperty("indiachart", "/india/chart");
 	public static final String RelativeChart = PropertyPlaceholder.getProperty("relativechart", "/modern/relative");
 	public static final String MidPoint = PropertyPlaceholder.getProperty("midpoint", "/germany/midpoint");
@@ -40,14 +41,17 @@ public class AstroHelper {
 	public static final String Azimuth = PropertyPlaceholder.getProperty("azimuth", "/calc/azimuth");
 	public static final String Cotrans = PropertyPlaceholder.getProperty("cotrans", "/calc/cotrans");
 	public static final String AstroExtraAnalysis = PropertyPlaceholder.getProperty("astroextra.analysis", "/astroextra/analysis");
+	public static final String AstroExtraPrenatalSyzygy = PropertyPlaceholder.getProperty("astroextra.prenatal_syzygy", "/astroextra/prenatal_syzygy");
 	public static final String AstroExtraEphemeris = PropertyPlaceholder.getProperty("astroextra.ephemeris", "/astroextra/ephemeris");
 	public static final String AstroExtraProgressions = PropertyPlaceholder.getProperty("astroextra.progressions", "/astroextra/progressions");
 	public static final String AstroExtraJaynesProg = PropertyPlaceholder.getProperty("astroextra.jaynesprog", "/astroextra/jaynesprog");
 	public static final String AstroExtraReturns = PropertyPlaceholder.getProperty("astroextra.returns", "/astroextra/returns");
 	public static final String AstroExtraHarmonic = PropertyPlaceholder.getProperty("astroextra.harmonic", "/astroextra/harmonic");
 	public static final String AstroExtraDraconic = PropertyPlaceholder.getProperty("astroextra.draconic", "/astroextra/draconic");
+	public static final String AstroExtraRelocation = PropertyPlaceholder.getProperty("astroextra.relocation", "/astroextra/relocation");
 	public static final String AstroExtraGreatConj = PropertyPlaceholder.getProperty("astroextra.greatconj", "/astroextra/greatconj");
 	public static final String AstroExtraPlanetCycles = PropertyPlaceholder.getProperty("astroextra.planetcycles", "/astroextra/planetcycles");
+	public static final String AstroExtraBarbault = PropertyPlaceholder.getProperty("astroextra.barbault", "/astroextra/barbault");
 	public static final String AstroExtraPlanetReturn = PropertyPlaceholder.getProperty("astroextra.planetreturn", "/astroextra/planetreturn");
 	public static final String AstroExtraEclipseDetail = PropertyPlaceholder.getProperty("astroextra.eclipsedetail", "/astroextra/eclipsedetail");
 	public static final String AstroExtraRelative = PropertyPlaceholder.getProperty("astroextra.relative", "/astroextra/relative");
@@ -133,6 +137,10 @@ public class AstroHelper {
 	public static Map<String, Object> getChart13(Map<String, Object> params){
 		return request(Chart13, params);
 	}
+
+	public static Map<String, Object> getChart12(Map<String, Object> params){
+		return request(Chart12, params);
+	}
 	
 	public static Map<String, Object> getIndiaChart(Map<String, Object> params){
 		return request(IndiaChart, params);
@@ -187,6 +195,10 @@ public class AstroHelper {
 		return requestNoCache(AstroExtraAnalysis, params);
 	}
 
+	public static Map<String, Object> getAstroExtraPrenatalSyzygy(Map<String, Object> params){
+		return requestNoCache(AstroExtraPrenatalSyzygy, params);
+	}
+
 	public static Map<String, Object> getAstroExtraEphemeris(Map<String, Object> params){
 		return requestNoCache(AstroExtraEphemeris, params);
 	}
@@ -207,6 +219,10 @@ public class AstroHelper {
 		return requestNoCache(AstroExtraHarmonic, params);
 	}
 
+	public static Map<String, Object> getAstroExtraRelocation(Map<String, Object> params){
+		return requestNoCache(AstroExtraRelocation, params);
+	}
+
 	public static Map<String, Object> getAstroExtraDraconic(Map<String, Object> params){
 		return requestNoCache(AstroExtraDraconic, params);
 	}
@@ -217,6 +233,10 @@ public class AstroHelper {
 
 	public static Map<String, Object> getAstroExtraPlanetCycles(Map<String, Object> params){
 		return requestNoCache(AstroExtraPlanetCycles, params);
+	}
+
+	public static Map<String, Object> getAstroExtraBarbault(Map<String, Object> params){
+		return requestNoCache(AstroExtraBarbault, params);
 	}
 
 	public static Map<String, Object> getAstroExtraPlanetReturn(Map<String, Object> params){

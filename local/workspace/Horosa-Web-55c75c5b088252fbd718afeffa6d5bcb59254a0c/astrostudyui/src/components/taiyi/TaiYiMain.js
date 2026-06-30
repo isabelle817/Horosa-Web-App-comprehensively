@@ -10,6 +10,10 @@ import SpaceTimePanel from '../comp/SpaceTimePanel';
 import { convertLatToStr, convertLonToStr } from '../astro/AstroHelper';
 import { resolveGeoZone } from '../../utils/timezone';
 import XQIcon from '../xq-icons';
+import { computeTaiyiShuli, shuliTone } from './core/taiyiShuli';
+import { computeGeju } from './core/taiyiGeju';
+import { computeVictory, computeFenye, computeShenSuan, computeTaisuiAlias, TAIYI_GONG_INFO, activeDoorJixiong, computeEhui, shenMeaning, computeSanyuan, computeLimitYun } from './core/taiyiDuanfa';
+import { applyTaiyiSchool, DEFAULT_TAIYI_SCHOOL, TAIYI_SCHOOL_OPTIONS, normalizeTaiyiSchool } from './core/taiyiSchool';
 import {
 	STYLE_OPTIONS,
 	METHOD_OPTIONS,
@@ -24,6 +28,7 @@ import {
 } from './TaiYiCalc';
 import { openKentangCaseDrawer, getKentangSavedCasePayload } from '../../utils/kentangCaseSave';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
+import { chartDrawGuardEnabled } from '../../utils/perfFlags';
 
 const { Option } = Select;
 const { TabPane } = Tabs;
@@ -60,13 +65,22 @@ class TaiYiMain extends Component {
 				after23NewDay: defaultAfter23NewDay(),
 				lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
 				gameTheory: 0,
+				school: { ...DEFAULT_TAIYI_SCHOOL },
+				showBoardMark: false, // 盘面标注(分野/落宫高亮/主客标记/格局连线/点击)默认关→盘面简洁不被灰字标注/连线压住;左栏可手动开
 			},
 			rightPanelTab: 'overview',
+			schoolOverrides: null,
+			selectedPalace: null,
 		};
 
 		this.unmounted = false;
 		this.timeHook = {};
 		this.taiyiRequestSeq = 0;
+		// 格局缓存(单槽,按 pan 引用):render() 内 computeGeju(pan) 被调 3 次(格局连线 + 点击面板筛选 + 右栏 geju),
+		// 切右栏 tab/选宫/开关标注等任意 setState 重渲都把这纯函数重算 3 遍。pan 是后端每次起盘返回的新对象,
+		// 引用稳定即结果稳定;按引用缓存 → 同 pan 只算一次、跨重渲复用(byte-perfect:同输入同输出)。
+		this._gejuCache = null;
+		this.gejuOf = this.gejuOf.bind(this);
 		// 顶部遮挡兜底:实测盘面可视盒,svg 用显式像素钳进盒内(见 componentDidMount 的 measure)。
 		this.boardHostRef = createRef();
 		this.boardSize = null;
@@ -370,9 +384,12 @@ class TaiYiMain extends Component {
 		if(this.unmounted || reqSeq !== this.taiyiRequestSeq){
 			return;
 		}
-		this.setState({ pan, loading: false }, () => {
-			if (pan) {
-				saveModuleAISnapshotLazy('taiyi', ()=>buildTaiyiSnapshotText(pan));
+		// P1 流派覆盖层:以 kintaiyi base pan 为底,按所选流派开关覆盖受影响神煞 + 几何重算主客算(默认=空操作,字节不变)。
+		const ov = pan ? applyTaiyiSchool(pan, nextOptions.school) : { pan, overrides: null };
+		const displayPan = ov.pan || pan;
+		this.setState({ pan: displayPan, schoolOverrides: ov.overrides, selectedPalace: null, loading: false }, () => {
+			if (displayPan) {
+				saveModuleAISnapshotLazy('taiyi', ()=>buildTaiyiSnapshotText(displayPan));
 			}
 		});
 	}
@@ -756,6 +773,90 @@ class TaiYiMain extends Component {
 									</text>
 								);
 							})}
+
+							{/* P0-7 盘面增强(由「盘面标注」开关控制):太乙落宫高亮 + 八正宫分野(门·州·绝气) + 文昌/始击主客配色 + 中宫注 */}
+							{pan && this.state.options.showBoardMark && (() => {
+								const ZHENG_ANGLE = { 午: -90, 坤: -45, 酉: 0, 乾: 45, 子: 90, 艮: 135, 卯: 180, 巽: 225 };
+								const ZHENG_NUM = { 午: 2, 坤: 7, 酉: 6, 乾: 1, 子: 8, 艮: 3, 卯: 4, 巽: 9 };
+								const ringAngle = (ps) => { const i = LAYER3_BRANCH_GUA.indexOf(ps); return i < 0 ? null : -90 + i * 22.5; };
+								const els = [];
+								const tA = ZHENG_ANGLE[pan.taiyiPalace];
+								if (tA !== undefined) {
+									const a0 = tA - 11.25, a1 = tA + 11.25;
+									const q1 = this.polarPoint(centerX, centerY, r1, a0), q2 = this.polarPoint(centerX, centerY, r4, a0);
+									const q3 = this.polarPoint(centerX, centerY, r4, a1), q4 = this.polarPoint(centerX, centerY, r1, a1);
+									els.push(<path key="ty-hl" d={`M${q1.x},${q1.y} L${q2.x},${q2.y} A${r4},${r4} 0 0 1 ${q3.x},${q3.y} L${q4.x},${q4.y} A${r1},${r1} 0 0 0 ${q1.x},${q1.y} Z`} fill="var(--horosa-accent, #d7ad69)" fillOpacity="0.14" stroke="var(--horosa-accent, #d7ad69)" strokeWidth="1.5" />);
+								}
+								Object.keys(ZHENG_ANGLE).forEach((ps) => {
+									const info = TAIYI_GONG_INFO[ZHENG_NUM[ps]];
+									if (!info) { return; }
+									const fyAng = ZHENG_ANGLE[ps];
+									const pp = this.polarPoint(centerX, centerY, r4 + 18, fyAng);
+									const fyCos = Math.cos(fyAng * Math.PI / 180);
+									const fyAnchor = fyCos > 0.35 ? 'start' : (fyCos < -0.35 ? 'end' : 'middle');
+									els.push(<text key={`ty-fy-${ps}`} x={pp.x} y={pp.y} textAnchor={fyAnchor} dominantBaseline="middle" fill="var(--horosa-text-muted, #8a8a8a)" stroke="none" fontSize="11" fontFamily={TAIYI_FONT}>{`${info.men}·${info.zhou}·${info.qi}`}</text>);
+								});
+								const mark = (ps, color, lb, key) => {
+									const ang = ringAngle(ps); if (ang === null) { return; }
+									const pp = this.polarPoint(centerX, centerY, r4 + 40, ang);
+									els.push(<circle key={`ty-mk-${key}`} cx={pp.x} cy={pp.y} r="9" fill={color} />);
+									els.push(<text key={`ty-mkt-${key}`} x={pp.x} y={pp.y} textAnchor="middle" dominantBaseline="middle" fill="#fff" stroke="none" fontSize="11" fontFamily={TAIYI_FONT}>{lb}</text>);
+								};
+								mark(pan.skyeyes, 'var(--horosa-accent, #d7ad69)', '昌', 'wc');
+								mark(pan.sf, 'var(--horosa-info, #4a7fb5)', '击', 'sj');
+								// P1-5 格局连线:太乙↔文昌/始击/主大将,凶色虚线(掩=同宫描圈,对=长虚线)
+								const POS_OF = { 太乙: pan.taiyiPalace, 文昌: pan.skyeyes, 始击: pan.sf, 主大将: pan.homeGeneralPalace };
+								const boardAngle = (ps) => { const i = LAYER3_BRANCH_GUA.indexOf(ps); return i < 0 ? null : -90 + i * 22.5; };
+								this.gejuOf(pan).forEach((g, gi) => {
+									const fp = POS_OF[g.from], tp = POS_OF[g.to];
+									const fa = boardAngle(fp), ta = boardAngle(tp);
+									if (fp == null || tp == null || fa === null || ta === null) { return; }
+									const rr = (r1 + r2) / 2;
+									if (fp === tp) {
+										const c = this.polarPoint(centerX, centerY, rr, fa);
+										els.push(<circle key={`gj-${gi}`} cx={c.x} cy={c.y} r="28" fill="none" stroke="var(--horosa-danger, #c0563a)" strokeWidth="2" strokeDasharray="4 3" />);
+									} else {
+										const a = this.polarPoint(centerX, centerY, rr, fa), b = this.polarPoint(centerX, centerY, rr, ta);
+										els.push(<line key={`gj-${gi}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--horosa-danger, #c0563a)" strokeWidth="2" strokeDasharray={g.kind === 'dui' ? '9 5' : '4 3'} />);
+									}
+								});
+								els.push(<text key="ty-zz" x={centerX} y={centerY + 56} textAnchor="middle" dominantBaseline="middle" fill="var(--horosa-text-muted, #8a8a8a)" stroke="none" fontSize="13" fontFamily={TAIYI_FONT}>考治不居</text>);
+								return els;
+							})()}
+
+							{/* P1-5 宫位点击(由「盘面标注」开关控制):16 透明命中扇区 + 信息面板(驻神/正间/门州气/格局/主事) */}
+							{pan && this.state.options.showBoardMark && (() => {
+								const els = [];
+								const ZN = { 午: 2, 坤: 7, 酉: 6, 乾: 1, 子: 8, 艮: 3, 卯: 4, 巽: 9 };
+								const POS = { 太乙: pan.taiyiPalace, 文昌: pan.skyeyes, 始击: pan.sf, 主大将: pan.homeGeneralPalace };
+								const sel = this.state.selectedPalace;
+								for (let idx = 0; idx < 16; idx++) {
+									const a0 = -90 + idx * 22.5 - 11.25, a1 = -90 + idx * 22.5 + 11.25;
+									const q1 = this.polarPoint(centerX, centerY, r1, a0), q2 = this.polarPoint(centerX, centerY, r4, a0);
+									const q3 = this.polarPoint(centerX, centerY, r4, a1), q4 = this.polarPoint(centerX, centerY, r1, a1);
+									const on = sel === idx;
+									els.push(<path key={`hit-${idx}`} d={`M${q1.x},${q1.y} L${q2.x},${q2.y} A${r4},${r4} 0 0 1 ${q3.x},${q3.y} L${q4.x},${q4.y} A${r1},${r1} 0 0 0 ${q1.x},${q1.y} Z`} fill={on ? 'var(--horosa-accent, #d7ad69)' : '#ffffff'} fillOpacity={on ? 0.12 : 0} stroke={on ? 'var(--horosa-accent, #d7ad69)' : 'none'} strokeWidth="1.5" style={{ cursor: 'pointer' }} onClick={() => this.setState({ selectedPalace: on ? null : idx })} />);
+								}
+								if (sel !== null && sel >= 0) {
+									const lp = LAYER3_BRANCH_GUA[sel], shen = LAYER4_FIXED[sel], isZ = sel % 2 === 0;
+									const info = isZ ? TAIYI_GONG_INFO[ZN[lp]] : null;
+									const zhu = (layer5[sel] || []).filter(Boolean);
+									const gj = this.gejuOf(pan).filter((g) => POS[g.from] === lp || POS[g.to] === lp);
+									const roles = Object.keys(POS).filter((k) => POS[k] === lp);
+									const ln = [`${lp}·${shen}（${isZ ? '正宫' : '间神'}）${roles.length ? '  ←' + roles.join('/') : ''}`];
+									const sm = shenMeaning(lp);
+									if (sm) { ln.push(`主事:${sm}`); }
+									if (info) { ln.push(`${ZN[lp]}${info.gua}·${info.men}·${info.zhou}·${info.qi}`); }
+									if (zhu.length) { ln.push(`驻神:${zhu.join('、').slice(0, 22)}`); }
+									if (gj.length) { ln.push(`格局:${gj.map((g) => g.name).join('、')}`); }
+									// 弹窗锚到 viewBox 最底空白条(原 by=height-24-bh 偏上、压住盘面下半);下移到底部并贴左下角,
+									// 圆盘在 860×720 里两侧/底部留白处停放,最大化减少对盘面的遮挡(点同宫可关闭)。
+									const bw = 320, bh = ln.length * 20 + 16, bx = 10, by = height + VB_PAD_BOTTOM - bh - 4;
+									els.push(<rect key="pp-bg" x={bx} y={by} width={bw} height={bh} rx="8" fill="var(--horosa-surface-raised, #16140f)" fillOpacity="0.96" stroke="var(--horosa-accent, #d7ad69)" strokeWidth="1.2" />);
+									els.push(<text key="pp-tx" x={bx + 12} y={by + 20} fill="var(--horosa-text, #e8e2d2)" stroke="none" fontSize="14" fontFamily={TAIYI_FONT}>{ln.map((t, i) => <tspan key={i} x={bx + 12} dy={i === 0 ? 0 : 20}>{t}</tspan>)}</text>);
+								}
+								return els;
+							})()}
 						</svg>
 					</div>
 			</div>
@@ -794,7 +895,7 @@ class TaiYiMain extends Component {
 					<div className="horosa-taiyi-select-grid">
 						<label className="horosa-taiyi-select-field">
 							<span>{isLifeStyle ? '命法性别' : '性别'}</span>
-							<Select value={isLifeStyle ? (opt.sex === '女' ? 0 : 1) : (fields.gender ? fields.gender.value : 1)} onChange={this.onGenderChange}>
+							<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={isLifeStyle ? (opt.sex === '女' ? 0 : 1) : (fields.gender ? fields.gender.value : 1)} onChange={this.onGenderChange}>
 								{!isLifeStyle && <Option value={-1}>未知</Option>}
 								<Option value={0}>女</Option>
 								<Option value={1}>男</Option>
@@ -802,40 +903,63 @@ class TaiYiMain extends Component {
 						</label>
 						<label className="horosa-taiyi-select-field">
 							<span>盘式</span>
-							<Select value={opt.style} onChange={(v) => this.onOptionChange('style', v)}>
+							<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={opt.style} onChange={(v) => this.onOptionChange('style', v)}>
 								{STYLE_OPTIONS.map((item) => <Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
 						{!isLifeStyle && (
 							<label className="horosa-taiyi-select-field">
 								<span>古法公式</span>
-								<Select value={opt.tn} onChange={(v) => this.onOptionChange('tn', v)}>
+								<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={opt.tn} onChange={(v) => this.onOptionChange('tn', v)}>
 									{METHOD_OPTIONS.map((item) => <Option key={item.value} value={item.value}>{item.label}</Option>)}
 								</Select>
 							</label>
 						)}
 						<label className="horosa-taiyi-select-field">
 							<span>时间基准</span>
-							<Select value={opt.timeBasis} onChange={(v) => this.onOptionChange('timeBasis', v)}>
+							<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={opt.timeBasis} onChange={(v) => this.onOptionChange('timeBasis', v)}>
 								{TIME_BASIS_OPTIONS.map((item) => <Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
 						<label className="horosa-taiyi-select-field">
 							<span>换日</span>
-							<Select value={opt.after23NewDay} onChange={(v) => this.onOptionChange('after23NewDay', v)}>
+							<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={opt.after23NewDay} onChange={(v) => this.onOptionChange('after23NewDay', v)}>
 								{DAY_SWITCH_OPTIONS.map((item) => <Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
 						{!isLifeStyle && (
 							<label className="horosa-taiyi-select-field">
 								<span>博弈</span>
-								<Select value={opt.gameTheory} onChange={(v) => this.onOptionChange('gameTheory', v)}>
+								<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={opt.gameTheory} onChange={(v) => this.onOptionChange('gameTheory', v)}>
 									{GAME_THEORY_OPTIONS.map((item) => <Option key={item.value} value={item.value}>{item.label}</Option>)}
 								</Select>
 							</label>
 						)}
+							<label className="horosa-taiyi-select-field">
+								<span>盘面标注</span>
+								<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={opt.showBoardMark ? 1 : 0} onChange={(v) => this.onOptionChange('showBoardMark', v === 1)}>
+									<Option value={0}>关(简洁)</Option>
+									<Option value={1}>开(分野/高亮/连线/点击)</Option>
+								</Select>
+							</label>
 					</div>
 				</div>
+
+				{!isLifeStyle && (
+					<div className="horosa-taiyi-input-section">
+						<div className="horosa-taiyi-field-title"><XQIcon name="taiyi" /><span style={{ whiteSpace: 'nowrap', flexShrink: 0 }}>流派设置</span><span style={{ fontSize: 11, fontWeight: 400, color: 'var(--horosa-text-muted, #8a8a8a)', marginLeft: 6 }}>默认=从盘·字节不变;改则前端古法重算</span></div>
+						<div className="horosa-taiyi-select-grid">
+							{[['jishen', '计神方向'], ['wenchang', '文昌重留'], ['keJianChen', '客算间辰'], ['sanji', '三基起宫'], ['youshen', '游神方向']].map(([k, label]) => (
+								<label className="horosa-taiyi-select-field" key={`school-${k}`}>
+									<span>{label}</span>
+									<Select dropdownMatchSelectWidth={false} dropdownClassName="horosa-taiyi-field-dropdown" value={(opt.school || {})[k] || 'default'} onChange={(v) => this.onOptionChange('school', { ...normalizeTaiyiSchool(opt.school), [k]: v })}>
+										{TAIYI_SCHOOL_OPTIONS[k].map((it) => <Option key={it.value} value={it.value}>{it.label}</Option>)}
+									</Select>
+								</label>
+							))}
+						</div>
+					</div>
+				)}
 
 				<div className="horosa-taiyi-action-row">
 					<Button type="primary" onClick={this.clickPlot}>起盘</Button>
@@ -851,62 +975,123 @@ class TaiYiMain extends Component {
 		const fields = this.props.fields || {};
 		const panOptions = pan && pan.options ? pan.options : {};
 		const isLifeStyle = opt.style === 5;
+		// P0 纯派生:数理十类/格局/胜负/分野/诸神之算/太岁古名(据 kintaiyi pan,零碰后端 golden)
+		const shuli = pan ? computeTaiyiShuli(pan) : null;
+		const geju = this.gejuOf(pan);
+		const victory = pan ? computeVictory(pan, geju) : null;
+		const fenye = pan ? computeFenye(pan) : null;
+		const shenSuan = pan ? computeShenSuan(pan) : null;
+		const taisuiAlias = pan ? computeTaisuiAlias(pan) : '';
+		const doorJx = pan ? activeDoorJixiong(pan) : null;
+		const ehui = pan ? computeEhui(pan) : [];
+		const limitYun = pan ? computeLimitYun(pan) : null;
+		const calCell = (num, tags) => (
+			<span>
+				<span style={{ marginRight: 6 }}>{num === undefined || num === null ? '—' : num}</span>
+				{(tags || []).map((t, i) => {
+					const tone = shuliTone(t);
+					const color = tone === 'bad' ? 'var(--horosa-danger, #c0563a)' : tone === 'good' ? 'var(--horosa-accent, #d7ad69)' : 'var(--horosa-text-muted, #8a8a8a)';
+					return <span key={i} style={{ display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '0 5px', marginRight: 4, borderRadius: 7, border: `1px solid ${color}`, color }}>{t}</span>;
+				})}
+			</span>
+		);
 		const fieldTime = fields.date && fields.time
 			? `${fields.date.value.format('YYYY-MM-DD')} ${fields.time.value.format('HH:mm:ss')}`
 			: '—';
 		const geo = fields.lon && fields.lat ? `${fields.lon.value} ${fields.lat.value}` : '—';
-		const rows = [
-			['起盘时间', fieldTime],
+		const sanyuan = pan ? computeSanyuan(pan) : '';
+		// 概览分类成卡片(时空基准/起局/三算胜负/盘面要素/将神与基/风游)，避免一长串平铺。
+		const sections = [];
+		sections.push({ title: '时空基准', rows: [
 			['直接时间', pan ? (pan.clockTime || '—') : '—'],
 			['真太阳时', pan ? (pan.realSunTime || '—') : '—'],
 			['地点', geo],
-			['起盘方式', panOptions.styleLabel || getStyleLabel(opt.style)],
-			['历史年号', pan ? (pan.reignYear || this.getSectionValue('年號')) : '—'],
-			['太乙纪元', pan ? (pan.calendarEra || pan.jiyuan || this.getSectionValue('紀元')) : '—'],
 			['时间基准', panOptions.timeBasisLabel || '直接时间'],
 			['换日', panOptions.daySwitchLabel || '23点算第二天'],
-		];
+		] });
 		if (isLifeStyle) {
-			rows.push(
+			sections.push({ title: '起局·命局', rows: [
+				['起盘方式', panOptions.styleLabel || getStyleLabel(opt.style)],
+				['历史年号', pan ? (pan.reignYear || this.getSectionValue('年號')) : '—'],
+				['太乙纪元', pan ? `${pan.calendarEra || pan.jiyuan || this.getSectionValue('紀元')}${sanyuan ? `·${sanyuan}` : ''}` : '—'],
 				['性别', panOptions.sexLabel || opt.sex || '—'],
 				['命局', this.getSectionValue('命局', pan && pan.kook ? pan.kook.text : '—')],
 				['命宫/身宫', `${this.getSectionValue('安命宮')}/${this.getSectionValue('安身宮')}`],
 				['飞禄/飞马', `${this.getSectionValue('飛祿')}/${this.getSectionValue('飛馬')}`],
 				['黑符', this.getSectionValue('黑符')],
+			] });
+			sections.push({ title: '行限', rows: [
 				['阳九/百六', `${this.getSectionValue('陽九')}/${this.getSectionValue('百六')}`],
 				['阳九行限', this.getSectionValue('陽九行限')],
-				['百六行限', this.getSectionValue('百六行限')]
-			);
+				['百六行限', this.getSectionValue('百六行限')],
+			] });
 		} else {
-			rows.push(
+			sections.push({ title: '起局', rows: [
+				['起盘方式', panOptions.styleLabel || getStyleLabel(opt.style)],
+				['历史年号', pan ? (pan.reignYear || this.getSectionValue('年號')) : '—'],
+				['太乙纪元', pan ? `${pan.calendarEra || pan.jiyuan || this.getSectionValue('紀元')}${sanyuan ? `·${sanyuan}` : ''}` : '—'],
 				['古法公式', panOptions.methodLabel || panOptions.accumLabel || getMethodLabel(opt.tn)],
 				['古法出处', panOptions.methodSource || getMethodSource(opt.tn)],
 				['博弈', panOptions.gameTheoryLabel || (opt.gameTheory === 1 ? '开启' : '关闭')],
 				['局式', pan ? (pan.kook && pan.kook.text ? pan.kook.text : '—') : '—'],
+				['流派', pan && pan._schoolNote ? (<span style={{ color: 'var(--horosa-astro-blue, #7fa8d8)' }} title="左栏「流派设置」非默认;被覆盖神煞与主客算据古法重算">{pan._schoolNote}</span>) : '默认(从盘·字节不变)'],
+			] });
+			sections.push({ title: '三算·胜负·格局', rows: [
+				['主算', pan ? calCell(pan.homeCal, shuli && shuli.home) : '—'],
+				['客算', pan ? calCell(pan.awayCal, shuli && shuli.away) : '—'],
+				['定算', pan ? calCell(pan.setCal, shuli && shuli.set) : '—'],
+				['胜负', pan && victory ? (
+					<span title={victory.reasons.join('\n')} style={{ fontWeight: 640, color: victory.side === '主胜' ? 'var(--horosa-accent, #d7ad69)' : victory.side === '客胜' ? 'var(--horosa-danger, #c0563a)' : 'var(--horosa-text-muted, #8a8a8a)' }}>{victory.side}</span>
+				) : '—'],
+				['格局', pan ? (geju.length ? (
+					<span>{geju.map((g, i) => (
+						<span key={i} title={g.text} style={{ display: 'inline-block', marginRight: 5, marginBottom: 2, padding: '0 6px', borderRadius: 7, fontSize: 11, lineHeight: 1.6, border: '1px solid var(--horosa-danger, #c0563a)', color: 'var(--horosa-danger, #c0563a)' }}>{g.name}</span>
+					))}</span>
+				) : '无显著掩迫囚格对') : '—'],
+				['值使门', pan && doorJx ? `${doorJx.door}门·${doorJx.jixiong}` : '—'],
+				['厄会', pan ? (ehui.length ? (<span style={{ color: 'var(--horosa-danger, #c0563a)' }}>{ehui.join('、')}</span>) : '无厄会') : '—'],
+				['限运', pan && limitYun ? `大限太乙临${limitYun.daxian.at}(${limitYun.daxian.span})·小限文昌临${limitYun.xiaoxian.at}(${limitYun.xiaoxian.span})·二限大游${limitYun.erxian.dayou}/小游${limitYun.erxian.xiaoyou}` : '—'],
 				['阳九/百六', `${this.getSectionValue('陽九')}/${this.getSectionValue('百六')}`],
+			] });
+			sections.push({ title: '盘面要素', rows: [
 				['太乙', pan ? `${pan.taiyiPalace || '—'}宫` : '—'],
 				['文昌', pan ? pan.skyeyes : '—'],
 				['始击', pan ? pan.sf : '—'],
-				['太岁', pan ? pan.taishui : '—'],
+				['分野', pan && fenye && fenye.taiyi ? `太乙临${fenye.taiyi.gong}${fenye.taiyi.gua}·${fenye.taiyi.zhou}(${fenye.taiyi.men}·${fenye.taiyi.qi})·${fenye.taiyi.omen}${fenye.shiji ? `;始击临${fenye.shiji.gong}${fenye.shiji.gua}·${fenye.shiji.zhou}` : ''}` : '—'],
+				['太岁', pan ? `${pan.taishui || '—'}${taisuiAlias ? `(${taisuiAlias})` : ''}` : '—'],
 				['合神', pan ? pan.hegod : '—'],
 				['计神', pan ? pan.jigod : '—'],
 				['定目', pan ? (pan.se || '—') : '—'],
+				['飞鸟', pan ? (pan.flybird || '—') : '—'],
+			] });
+			sections.push({ title: '将神与基', rows: [
 				['主大将/参将', pan ? `${pan.homeGeneralPalace || '—'}/${pan.homeVGenPalace || '—'}` : '—'],
 				['客大将/参将', pan ? `${pan.awayGeneralPalace || '—'}/${pan.awayVGenPalace || '—'}` : '—'],
 				['定大将/参将', pan ? `${pan.setGeneralPalace || '—'}/${pan.setVGenPalace || '—'}` : '—'],
 				['君臣民基', pan ? `${pan.kingbase || '—'}/${pan.officerbase || '—'}/${pan.pplbase || '—'}` : '—'],
+				['诸神之算', pan && shenSuan ? (
+					<span>{Object.keys(shenSuan).map((k, i) => (shenSuan[k] ? (
+						<span key={i} title={(shenSuan[k].tags || []).join('、')} style={{ marginRight: 8 }}>{k}<strong style={{ color: 'var(--horosa-accent, #d7ad69)' }}>{shenSuan[k].value}</strong></span>
+					) : null))}</span>
+				) : '—'],
 				['四神/天乙/地乙', pan ? `${pan.fgd || '—'}/${pan.skyyi || '—'}/${pan.earthyi || '—'}` : '—'],
 				['直符/飞符', pan ? `${pan.zhifu || '—'}/${pan.flyfu || '—'}` : '—'],
 				['五福/帝符/太尊', pan ? `${pan.wufuPalace || '—'}/${pan.kingfu || '—'}/${pan.taijun || '—'}` : '—'],
-				['飞鸟', pan ? (pan.flybird || '—') : '—'],
+			] });
+			sections.push({ title: '风游', rows: [
 				['三风/五风/八风', pan ? `${this.formatWindValue('threewind')}/${this.formatWindValue('fivewind')}/${this.formatWindValue('eightwind')}` : '—'],
-				['大游/小游', pan ? `${this.formatWindValue('bigyo')}/${this.formatWindValue('smyo')}` : '—']
-			);
+				['大游/小游', pan ? `${this.formatWindValue('bigyo')}/${this.formatWindValue('smyo')}` : '—'],
+			] });
 		}
-		return rows.map(([label, value]) => (
-			<div className="horosa-taiyi-info-row" key={label}>
-				<span>{label}</span>
-				<strong>{value}</strong>
+		return sections.map((sec) => (
+			<div className="horosa-taiyi-info-card horosa-taiyi-section-card" key={sec.title}>
+				<div className="horosa-taiyi-info-heading">{sec.title}</div>
+				{sec.rows.map(([label, value]) => (
+					<div className="horosa-taiyi-info-row" key={label}>
+						<span>{label}</span>
+						<strong>{value}</strong>
+					</div>
+				))}
 			</div>
 		));
 	}
@@ -1017,7 +1202,7 @@ class TaiYiMain extends Component {
 		return (
 			<Tabs activeKey={activeKey} onChange={this.setRightPanelTab} defaultActiveKey="overview" tabPosition="top" className="horosa-taiyi-tabs">
 				<TabPane tab="概览" key="overview">
-					<div className="horosa-taiyi-info-card">
+					<div className="horosa-taiyi-overview-stack">
 						{this.renderInfoRows()}
 					</div>
 				</TabPane>
@@ -1089,6 +1274,22 @@ class TaiYiMain extends Component {
 				</div>
 			</div>
 		);
+	}
+
+	// 按 pan 引用缓存 computeGeju(pan):render 内三处共用,同 pan 只算一次、跨重渲复用(byte-perfect)。
+	gejuOf(pan) {
+		if (!pan) {
+			return [];
+		}
+		if (!chartDrawGuardEnabled()) {
+			return computeGeju(pan); // kill-switch:回到每处各自实算
+		}
+		if (this._gejuCache && this._gejuCache.pan === pan) {
+			return this._gejuCache.data;
+		}
+		const data = computeGeju(pan);
+		this._gejuCache = { pan, data };
+		return data;
 	}
 
 	render() {

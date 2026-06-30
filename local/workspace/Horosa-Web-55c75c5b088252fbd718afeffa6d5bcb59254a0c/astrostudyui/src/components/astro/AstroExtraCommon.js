@@ -97,6 +97,14 @@ export function chartParams(chartObj){
 		predictive: false,
 		orbs: params.orbs,
 		orbScale: params.orbScale,
+		// 界系(bounds)随本命盘透传:本命 params.termsVariant 非 0 才带(默认埃及 不下发=零回归)。
+		...(params.termsVariant ? { termsVariant: params.termsVariant } : {}),
+		// 古典占星参数随本命盘透传(三分集/福点反转/界系/交点真平/宗派缓冲/狮子木首):本命非默认才带,与主盘 fieldsToParams 同口径,默认不下发=零回归。
+		...(params.westNodeType === 'true' ? { westNodeType: 'true' } : {}),
+		...(params.sectBuffer === 'ptolemy5' ? { sectBuffer: 'ptolemy5' } : {}),
+		...((params.leoBoundFirst === 1 || params.leoBoundFirst === '1') ? { leoBoundFirst: 1 } : {}),
+		...((params.triplicity && params.triplicity !== 'Dorothean') ? { triplicity: params.triplicity } : {}),
+		...((params.lotReversal === 0 || params.lotReversal === '0') ? { lotReversal: 0 } : {}),
 	};
 }
 
@@ -117,6 +125,13 @@ export function chartRequestKey(chartObj, extra = ''){
 		params.siderealAyanamsa !== undefined ? params.siderealAyanamsa : '',
 		params.orbScale !== undefined ? params.orbScale : '',
 		params.orbs ? JSON.stringify(params.orbs) : '',
+		// 古典占星参数纳入缓存键:改三分/界/福点反转等后派生盘(调波/龙盘)须重取,不能命中旧缓存。
+		params.termsVariant || '',
+		params.triplicity || '',
+		(params.lotReversal === 0 || params.lotReversal === '0') ? '0' : '',
+		params.westNodeType === 'true' ? 'true' : '',
+		params.sectBuffer === 'ptolemy5' ? 'ptolemy5' : '',
+		(params.leoBoundFirst === 1 || params.leoBoundFirst === '1') ? '1' : '',
 		extra,
 	];
 	return parts.join('|');

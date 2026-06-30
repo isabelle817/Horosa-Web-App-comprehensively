@@ -15,6 +15,7 @@ import CaseEditFormComp from '../components/user/CaseEditFormComp';
 import CaseList from '../components/user/CaseList';
 import AstroFormComp from '../components/astro/AstroFormComp';
 import AstroChartMain from '../components/astro/AstroChartMain';
+import TechniqueErrorBoundary from '../components/common/TechniqueErrorBoundary';
 
 // 流畅度:可预取的 lazy —— 启动仍只载首包(快),首屏就绪后空闲时段后台预载全部技法 chunk,
 // 用户切任何技法时模块早已就绪(零等待)。preload 引用同一 factory,React.lazy 缓存同一 promise。
@@ -22,7 +23,20 @@ const LAZY_PRELOAD_QUEUE = [];
 function lazyPreloadable(factory){
 	const C = React.lazy(factory);
 	LAZY_PRELOAD_QUEUE.push(factory);
-	return C;
+	// 🔒 黑屏根因修复:外层 <React.Suspense>(本文件 ~541 行)仅罩住主工作区,而抽屉(小工具/辅助/
+	//   印度盘等,渲染于 1400+ 行)在其作用域之外 → lazy chunk 尚未空闲预载完就打开抽屉时,组件 suspend
+	//   却无 Suspense 兜底 → 抛 "A React component suspended while rendering, but no fallback UI was
+	//   specified" 冒泡到根卸载整树 = 整页黑屏(小工具两端皆崩、辅助八卦时序相关皆源于此)。
+	//   故每个 lazy 模块自带:Suspense(加载中显 Spin)+ error boundary(模块求值/render 崩则局部回退卡片,绝不黑全屏)。
+	const Wrapped = (props) => (
+		<TechniqueErrorBoundary>
+			<React.Suspense fallback={<div style={{padding:40,textAlign:'center'}}><Spin size="large" tip="加载中…" /></div>}>
+				<C {...props} />
+			</React.Suspense>
+		</TechniqueErrorBoundary>
+	);
+	Wrapped.displayName = 'LazyBoundary';
+	return Wrapped;
 }
 // 首屏可交互后逐个空闲预载(每次 1 个,绝不与用户操作抢主线程;requestIdleCallback 降级 setTimeout)。
 let lazyPreloadStarted = false;
@@ -63,9 +77,11 @@ import PlanetSelector from '../components/astro/PlanetSelector';
 import ChartDisplaySelector from '../components/astro/ChartDisplaySelector';
 import ChartsGps from '../components/user/ChartsGps';
 import ChartMemo from '../components/comp/ChartMemo';
+import FreezeInactive from '../components/comp/FreezeInactive';
 const JieQiChartsMain = lazyPreloadable(() => import('../components/jieqi/JieQiChartsMain'));
 const CnTraditionMain = lazyPreloadable(() => import('../components/cntradition/CnTraditionMain'));
 const CnYiBuMain = lazyPreloadable(() => import('../components/cnyibu/CnYiBuMain'));
+const XuanShiMain = lazyPreloadable(() => import('../components/xuanshi/XuanShiMain'));
 const CalendarMain = lazyPreloadable(() => import('../components/calendar/CalendarMain'));
 const FengShuiMain = lazyPreloadable(() => import('../components/fengshui/FengShuiMain'));
 const SanShiUnitedMain = lazyPreloadable(() => import('../components/sanshi/SanShiUnitedMain'));
@@ -123,6 +139,7 @@ const mainTabIcons = {
     其他术数: <XQIcon name="other" />,
     AI分析: <XQIcon name="ai" />,
     黄历: <XQIcon name="calendar" />,
+    玄学史: <XQIcon name="other" />,
     辅助: <XQIcon name="support" />,
     书籍阅读: <XQIcon name="book" />,
     星阙直播: <XQIcon name="live" />,
@@ -148,12 +165,22 @@ const navigationPages = [
     { label: '六爻', key: 'guazhan', icon: 'liuyao', group: '卜', keywords: '六爻 纳甲 卜卦 摇卦 装卦' },
     { label: '太乙', key: 'taiyi', icon: 'taiyi', group: '卜', keywords: '太乙神数 太乙' },
     { label: '分至', key: 'jieqichart', icon: 'solstice', group: '卜', keywords: '节气盘 分至 二分二至' },
-    { label: '风水', key: 'fengshui', icon: 'fengshui', group: '卜', keywords: '风水 纳气盘 八卦阳宅 玄空 阳宅' },
-    { label: '其他', key: 'cnyibu', icon: 'other', group: '卜', keywords: '金口诀 五兆 太玄 荆诀 神易数 皇极经世 宿占 统摄法' },
+    { label: '风水', key: 'fengshui', icon: 'fengshui', group: '卜', keywords: '风水 纳气盘 八卦阳宅 阳宅 理气 罗盘 八宅 大游年 东西四宅 玄空 玄空飞星 三合 十二长生 水法 金锁玉关 过路阴阳 乾坤国宝 龙门八局 紫白 紫白飞星 坐向 元运' },
+    { label: '其他', key: 'cnyibu', icon: 'other', group: '卜', keywords: '金口诀 五兆 太玄 荆诀 神易数 皇极经世 宿占 统摄法 地占 天文地占 护盾盘 判官 调和者 16图形 塔罗 tarot 权杖 圣杯 宝剑 星币 凯尔特十字' },
     { label: 'AI分析', key: 'aianalysis', icon: 'ai', group: '工具', keywords: 'AI 分析 挂载 报告 大模型' },
     { label: '天文馆', key: 'planetarium', icon: 'globe', group: '工具', keywords: '天文馆 星空 观星 星图 babylon' },
     { label: '黄历', key: 'calendar', icon: 'calendar', group: '工具', keywords: '黄历 农历 老黄历 择日 宜忌 节气' },
     { label: '辅助', key: 'cntradition', icon: 'support', group: '工具', keywords: '辅助 工具 真太阳时' },
+    { label: '玄学史', key: 'xuanshi', icon: 'other', group: '工具', keywords: '玄学史 历史 星象 天象 列传 朝代 地图 关系 二十四史 野载 正史 omen 玄史 中国玄学史' },
+];
+
+// 占星主面板「相关技法」快捷入口 —— 纯静态数据,hoist 到模块级(每次 render 复用同一引用),
+// 避免内联字面量每帧换引用击穿下游 sCU/memo(配合 B 层重组件 sCU 真生效)。
+const ASTROCHART_FEATURE_LINKS = [
+    { label: '星运', key: 'direction', desc: '推运、返照与时序' },
+    { label: '辅盘', key: 'auxchart', desc: '量化、十三分与地图' },
+    { label: '合盘', key: 'relativechart', desc: '关系与组合分析' },
+    { label: '分至', key: 'jieqichart', desc: '节气与太阳时点' },
 ];
 
 const fullHeightWorkspaceTabs = new Set([
@@ -180,6 +207,7 @@ const fullHeightWorkspaceTabs = new Set([
     'planetarium',
     'calendar',
     'cntradition',
+    'xuanshi',
 ]);
 
 function mainTab(label, group, options = {}){
@@ -199,10 +227,57 @@ function mainTab(label, group, options = {}){
     );
 }
 
+// ── 切页流畅度:脏标记签名 ──────────────────────────────────────────────────
+// changeTab 旧逻辑每次切 tab 都同步 predictHook[key].fun(fields) 强制重算/重取目标技法
+// (实测紫微 ~870ms 同步计算 + ~1920ms 由其内部 setState 触发的重渲 ≈ 3s,即用户「切页卡」根因)。
+// XQTabs 是 keep-alive(切过的面板不卸载、内容仍在),所以盘没变时这次刷新是纯浪费。
+// 修法:给每个 tab 记「上次刷新时的输入签名」。签名 = 全部 fields 值 + chartObj.chartId
+//   - chartId 在模型每次出盘都 randomStr(8) 重新生成(见 astro.js 4 处),是「盘换了」的可靠廉价信号;
+//   - fields 全量值兜底「只改设置(未触发 /chart 重取)也要刷新」的场景。
+// 目标 tab 当前签名 === 上次刷新签名 → 跳过 fun(keep-alive 已是最新,切换瞬间);
+// 签名变了(改了盘/参数)才刷新并记录新签名 → 盘变必刷新,零功能降级。
+function stableFieldValueToken(value){
+    if(value === null || value === undefined){
+        return '';
+    }
+    // moment / Date 等:用 valueOf() 取 epoch 毫秒(稳定且廉价,避免每次 format)。
+    if(typeof value === 'object'){
+        if(typeof value.valueOf === 'function'){
+            const v = value.valueOf();
+            if(typeof v === 'number' || typeof v === 'string'){
+                return String(v);
+            }
+        }
+        try{
+            return JSON.stringify(value);
+        }catch(e){
+            return '';
+        }
+    }
+    return String(value);
+}
+
+function computeRefreshSignature(fields, chartObj){
+    let sig = 'cid:' + ((chartObj && chartObj.chartId) || '');
+    if(fields){
+        const keys = Object.keys(fields).sort();
+        for(let i = 0; i < keys.length; i++){
+            const k = keys[i];
+            const fld = fields[k];
+            const value = (fld && typeof fld === 'object' && 'value' in fld) ? fld.value : fld;
+            sig += '|' + k + '=' + stableFieldValueToken(value);
+        }
+    }
+    return sig;
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 function AstroIndex({dispatch, astro, app, user, rules, }){
     // 首屏就绪后空闲预载全部技法 chunk(不影响启动;切技法零等待)。
     React.useEffect(()=>{ startIdlePreload(); }, []);
-    const { tokenImg, registerFields, loginFields, loading, loadingText, refresh, chartDisplay, chartStyle, indiaChartStyle, aspects, planetDisplay, lotsDisplay, resolvedAppearance, showPdBounds, showPlanetHouseInfo, showAstroMeaning, showOnlyRulExaltReception} = app;
+    // 每个 tab「上次刷新时的输入签名」(脏标记)。用 ref:可变、跨渲染留存、改它不触发重渲。
+    const tabRefreshSigRef = React.useRef({});
+    const { tokenImg, registerFields, loginFields, loading, loadingText, refresh, chartDisplay, chartStyle, indiaChartStyle, aspects, planetDisplay, lotsDisplay, resolvedAppearance, showPdBounds, showPlanetHouseInfo, showAstroMeaning, showOnlyRulExaltReception, schoolPreset, tripSystem, voidClassical} = app;
     const {
         pwdFields,
         userInfo,
@@ -239,24 +314,10 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
     }
 
     function changeTab(key){
-        if(predictHook[key] && predictHook[key].fun){
-            if(key === 'indiachart' || key === 'cntradition' || key === 'jieqichart'
-                || key === 'otherbu' || key === 'cnyibu' || key === 'germanytech'
-                || key === 'guolao' || key === 'hellenastro'  || key === 'astrochart'
-                || key === 'locastro' || key === 'admintools' || key === 'astrochart3D'
-                || key === 'planetarium'
-                || key === 'fengshui' || key === 'sanshiunited' || key === 'aianalysis'
-                || key === 'bazi' || key === 'ziwei' || key === 'guazhan'
-                || key === 'liureng' || key === 'dunjia' || key === 'taiyi'
-                || key === 'shusuan' || key === 'mingother'
-                || key === 'auxchart'){
-                predictHook[key].fun(fields);
-            }else if(key === 'astroreader'){
-                predictHook[key].fun();
-            }else{
-                predictHook[key].fun(chartObj);
-            }
-        }
+        // 切页流畅度:盘(fields+chartId)签名未变 → 跳过 predictHook.fun(keep-alive 面板已最新 → 切换瞬间);
+        // 变了才刷新并记签名 → 盘变必刷新、零降级。刷新放 dispatch 之后 setTimeout(0) → 切换观感瞬间、刷新随后带 spinner。
+        const currentSig = computeRefreshSignature(fields, chartObj);
+        const needRefresh = !!(predictHook[key] && predictHook[key].fun) && tabRefreshSigRef.current[key] !== currentSig;
 
         const cnTraditionTabs = ['guasym', 'cuangong12', 'pithy'];
         const cnYiBuTabs = ['suzhan', 'jinkou', 'tongshefa', 'huangji', 'wuzhao', 'taixuan', 'jingjue', 'shenyishu'];
@@ -274,12 +335,36 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
         
         dispatch({
             type: 'astro/save',
-            payload:{ 
+            payload:{
                 chartObj: chartObj,
                 currentTab: key,
                 currentSubTab: nextSubTab,
             },
-        });    
+        });
+
+        // 盘变了才刷新目标技法,且延迟到切换 paint 之后(切换瞬间、刷新随后带 spinner);盘没变=跳过=纯瞬间。
+        if(needRefresh){
+            tabRefreshSigRef.current[key] = currentSig;
+            setTimeout(()=>{
+                if(!(predictHook[key] && predictHook[key].fun)){ return; }
+                if(key === 'indiachart' || key === 'cntradition' || key === 'jieqichart'
+                    || key === 'otherbu' || key === 'cnyibu' || key === 'germanytech'
+                    || key === 'guolao' || key === 'hellenastro'  || key === 'astrochart'
+                    || key === 'locastro' || key === 'admintools' || key === 'astrochart3D'
+                    || key === 'planetarium'
+                    || key === 'fengshui' || key === 'sanshiunited' || key === 'aianalysis'
+                    || key === 'bazi' || key === 'ziwei' || key === 'guazhan'
+                    || key === 'liureng' || key === 'dunjia' || key === 'taiyi'
+                    || key === 'shusuan' || key === 'mingother'
+                    || key === 'auxchart'){
+                    predictHook[key].fun(fields);
+                }else if(key === 'astroreader'){
+                    predictHook[key].fun();
+                }else{
+                    predictHook[key].fun(chartObj);
+                }
+            }, 0);
+        }
 
     }
 
@@ -316,6 +401,20 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
         if(values.siderealAyanamsa !== undefined && values.siderealAyanamsa !== null){
             if(!flds.siderealAyanamsa){ flds.siderealAyanamsa = { value: '', name: ['siderealAyanamsa'] }; }
             flds.siderealAyanamsa.value = values.siderealAyanamsa;
+        }
+        if(values.termsVariant !== undefined && values.termsVariant !== null){
+            // 界系：流派预设(G20)一次性带入界 → 写 fields.termsVariant，由 fieldsToParams 条件透传(0 不下发，零回归)。
+            // 同时同步 app.termsVariant(界系 UI 记忆，与 ChartDisplaySelector 单改一致)。
+            if(!flds.termsVariant){ flds.termsVariant = { value: 0, name: ['termsVariant'] }; }
+            flds.termsVariant.value = values.termsVariant;
+            dispatch({ type: 'app/save', payload: { termsVariant: values.termsVariant } });
+        }
+        if(values.triplicity !== undefined && values.triplicity !== null){
+            // 三分集(G20-P2)：流派预设带入 → 写 fields.triplicity，由 fieldsToParams 条件透传(Dorothean 不下发，零回归)。
+            // 后端 push_request_trip 据此换尊贵表;同步 app.tripSystem(三分显示，与 G14 选择器一致)。
+            if(!flds.triplicity){ flds.triplicity = { value: 'Dorothean', name: ['triplicity'] }; }
+            flds.triplicity.value = values.triplicity;
+            dispatch({ type: 'app/save', payload: { tripSystem: values.triplicity } });
         }
         if(values.lon !== undefined && values.lon !== null){
             flds.lon.value = values.lon;
@@ -420,8 +519,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                 style={{ height: rootTabsHeight }}
             >
                 <TabPane tab={mainTab('占星', '命')} key="astrochart">
-	                    <AstroChartMain 
-	                        value={chartObj} 
+                  <FreezeInactive active={activeMainTab === "astrochart"}>
+	                    <AstroChartMain
+	                        value={chartObj}
                         onChange={changeCond}
                         fields={fields} 
                         fieldsAry={aryfields}
@@ -435,21 +535,21 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 	                        showPlanetHouseInfo={showPlanetHouseInfo}
 	                        showAstroMeaning={showAstroMeaning}
 	                        showOnlyRulExaltReception={showOnlyRulExaltReception}
+	                        schoolPreset={schoolPreset}
+	                        tripSystem={tripSystem}
+	                        voidClassical={voidClassical}
 	                        memo={memo}
 	                        dispatch={dispatch}
 	                        hook={predictHook.astrochart}
                             onNavigate={changeTab}
                             showQuickActions={true}
-                            featureLinks={[
-                                { label: '星运', key: 'direction', desc: '推运、返照与时序' },
-                                { label: '辅盘', key: 'auxchart', desc: '量化、十三分与地图' },
-                                { label: '合盘', key: 'relativechart', desc: '关系与组合分析' },
-                                { label: '分至', key: 'jieqichart', desc: '节气与太阳时点' },
-                            ]}
+                            featureLinks={ASTROCHART_FEATURE_LINKS}
 	                    />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('星运', null, { hidden: true })} key="direction">
+                  <FreezeInactive active={activeMainTab === "direction"}>
 	                    <AstroDirectMain
                         height={height} 
                         fields={fields}
@@ -460,31 +560,38 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 	                        lotsDisplay={lotsDisplay}
 	                        showPlanetHouseInfo={showPlanetHouseInfo}
 	                        showAstroMeaning={showAstroMeaning}
+	                        tripSystem={tripSystem}
 	                        hook={predictHook.direction}
 	                        dispatch={dispatch}
 	                        currentSubTab={currentSubTab}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('八字')} key="bazi">
+                  <FreezeInactive active={activeMainTab === "bazi"}>
                     <BaZi
                         height={height}
                         fields={fields}
                         hook={predictHook.bazi}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('紫微')} key="ziwei">
+                  <FreezeInactive active={activeMainTab === "ziwei"}>
                     <ZiWeiMain
                         height={height}
                         fields={fields}
                         hook={predictHook.ziwei}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('七政')} key="guolao">
+                  <FreezeInactive active={activeMainTab === "guolao"}>
                     <GuoLaoChartMain 
                         value={chartObj} 
                         onChange={changeCond}
@@ -498,9 +605,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.guolao}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('印占')} key="indiachart">
+                  <FreezeInactive active={activeMainTab === "indiachart"}>
 	                    <IndiaChartMain
                         onChange={changeCond}
                         fields={fields} 
@@ -515,9 +624,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 	                        hook={predictHook.indiachart}
 	                        dispatch={dispatch}
 	                    />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('辅盘', null, { hidden: true })} key="auxchart">
+                  <FreezeInactive active={activeMainTab === "auxchart"}>
                     <AuxChartMain
                         chart={chartObj}
                         onChange={changeCond}
@@ -534,9 +645,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         dispatch={dispatch}
                         currentSubTab={currentSubTab}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('合盘', null, { hidden: true })} key="relativechart">
+                  <FreezeInactive active={activeMainTab === "relativechart"}>
 	                    <AstroRelative
                         fields={fields}
                         fieldsAry={aryfields}
@@ -552,9 +665,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 	                        onChange={changeCond}
 	                        currentSubTab={currentSubTab}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('数算', null, { hidden: true })} key="shusuan">
+                  <FreezeInactive active={activeMainTab === "shusuan"}>
                     <ShuSuanMain
                         value={chartObj}
                         height={height}
@@ -562,9 +677,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.shusuan}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('其他', null, { hidden: true })} key="mingother">
+                  <FreezeInactive active={activeMainTab === "mingother"}>
                     <MingOtherMain
                         value={chartObj}
                         height={height}
@@ -572,9 +689,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.mingother}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('三式', '卜')} key="sanshiunited">
+                  <FreezeInactive active={activeMainTab === "sanshiunited"}>
 	                    <SanShiUnitedMain
 	                        height={height}
                         fields={fields}
@@ -585,9 +704,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 	                        dispatch={dispatch}
 	                        hook={predictHook.sanshiunited}
 	                    />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('六壬')} key="liureng">
+                  <FreezeInactive active={activeMainTab === "liureng"}>
                     <LiuRengMain
                         value={chartObj}
                         height={height}
@@ -595,9 +716,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.liureng}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('遁甲')} key="dunjia">
+                  <FreezeInactive active={activeMainTab === "dunjia"}>
                     <DunJiaMain
                         value={chartObj}
                         height={height}
@@ -605,9 +728,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.dunjia}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('六爻')} key="guazhan">
+                  <FreezeInactive active={activeMainTab === "guazhan"}>
                     <GuaZhanMain
                         value={chartObj}
                         height={height}
@@ -615,9 +740,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.guazhan}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('太乙')} key="taiyi">
+                  <FreezeInactive active={activeMainTab === "taiyi"}>
                     <TaiYiMain
                         value={chartObj}
                         height={height}
@@ -625,9 +752,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.taiyi}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('分至', null, { hidden: true })} key="jieqichart">
+                  <FreezeInactive active={activeMainTab === "jieqichart"}>
 	                    <JieQiChartsMain
                         height={height} 
                         fields={fields}
@@ -641,18 +770,22 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 	                        hook={predictHook.jieqichart}
 	                        dispatch={dispatch}
 	                    />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('风水')} key="fengshui">
+                  <FreezeInactive active={activeMainTab === "fengshui"}>
                     <FengShuiMain
                         height={height}
                         fields={fields}
                         fieldsAry={aryfields}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('其他')} key="cnyibu">
+                  <FreezeInactive active={activeMainTab === "cnyibu"}>
                     <CnYiBuMain
                         chart={chartObj}
                         height={height}
@@ -664,9 +797,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         dispatch={dispatch}
                         currentSubTab={currentSubTab}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('AI分析', '工具')} key="aianalysis">
+                  <FreezeInactive active={activeMainTab === "aianalysis"}>
                     <AIAnalysisMain
                         height={height}
                         fields={fields}
@@ -675,9 +810,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         dispatch={dispatch}
                         hook={predictHook.aianalysis}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('3D')} key="astrochart3D">
+                  <FreezeInactive active={activeMainTab === "astrochart3D"}>
                     <AstroChartMain3D
                         value={chartObj}
                         onChange={changeCond}
@@ -693,9 +830,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         dispatch={dispatch}
                         hook={predictHook.astrochart3D}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('天文馆', '工具')} key="planetarium">
+                  <FreezeInactive active={activeMainTab === "planetarium"}>
                     <PlanetariumMain
                         height={height}
                         fields={fields}
@@ -704,9 +843,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.planetarium}
                         active={activeMainTab === 'planetarium'}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('黄历')} key="calendar">
+                  <FreezeInactive active={activeMainTab === "calendar"}>
                     <CalendarMain
                         height={height} 
                         fields={fields}
@@ -714,9 +855,11 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         hook={predictHook.calendar}
                         dispatch={dispatch}
                     />
+                  </FreezeInactive>
                 </TabPane>
 
                 <TabPane tab={mainTab('辅助')} key="cntradition">
+                  <FreezeInactive active={activeMainTab === "cntradition"}>
                     <CnTraditionMain
                         chart={chartObj}
                         height={height}
@@ -728,17 +871,34 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         dispatch={dispatch}
                         currentSubTab={currentSubTab}
                     />
+                  </FreezeInactive>
                 </TabPane>
+
+
+                <TabPane tab={mainTab('玄学史', '工具')} key="xuanshi">
+                  <FreezeInactive active={activeMainTab === "xuanshi"}>
+                    <XuanShiMain
+                        height={height}
+                        fields={fields}
+                        dispatch={dispatch}
+                        predictHook={predictHook}
+                    />
+                  </FreezeInactive>
+                </TabPane>
+
+
 
                 {
                     userInfo && (
                         <TabPane tab={mainTab('书籍阅读', '内容与管理')} key="astroreader">
+                          <FreezeInactive active={activeMainTab === "astroreader"}>
                             <BookMain 
                                 height={height}
                                 userInfo={userInfo}
                                 dispatch={dispatch}
                                 hook={predictHook.astroreader}
                             />
+                          </FreezeInactive>
                         </TabPane>
                     )
                 }
@@ -746,6 +906,7 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                 {
                     userInfo && (
                         <TabPane tab={mainTab('星阙直播')} key="liveplayer">
+                          <FreezeInactive active={activeMainTab === "liveplayer"}>
                             <MediaMain 
                                 height={height}
                                 dispatch={dispatch}
@@ -753,6 +914,7 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                                 currentSubTab={currentSubTab}
                                 admin={admin}
                             />
+                          </FreezeInactive>
                         </TabPane>
                     )
                 }
@@ -760,7 +922,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                 {
                     admin && (
                         <TabPane tab={mainTab('管理工具')} key="admintools">
+                          <FreezeInactive active={activeMainTab === "admintools"}>
                             <AdminToolsMain />
+                          </FreezeInactive>
                         </TabPane>
                     )
                 }
@@ -1120,7 +1284,7 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
 
             <Drawer
                 title='星盘组件'
-                width={300}
+                width={560}
                 placement="left"
                 onClose={closeDrawer}
                 maskClosable={true}
@@ -1139,6 +1303,8 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                     showPlanetHouseInfo={showPlanetHouseInfo}
                     showAstroMeaning={showAstroMeaning}
                     showOnlyRulExaltReception={showOnlyRulExaltReception}
+                    termsVariant={fields && fields.termsVariant ? fields.termsVariant.value : 0}
+                    voidClassical={voidClassical}
                     fields={fields}
                     dispatch={dispatch}
                 />

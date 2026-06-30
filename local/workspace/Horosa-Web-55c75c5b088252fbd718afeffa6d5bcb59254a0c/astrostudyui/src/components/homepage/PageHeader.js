@@ -8,6 +8,7 @@ import {
 	normalizeAppearanceMode,
 } from '../../utils/appearance';
 import { isDesktopBridgeAvailable as hasUpdateBridge, updateCheckSilent } from '../../utils/aiAnalysisDesktop';
+import { getTechniqueHelpDoc } from '../help/techniqueHelpRegistry';
 import {
 	runAIExport,
 	loadAIExportSettings,
@@ -447,11 +448,20 @@ function PageHeader(props){
 		username = props.userInfo.uid;
 	}
 
+	// 🛡 inline style 兜底:某些 prod 加载顺序/CSS var 未注入场景,.avatar 的 var(--horosa-panel-bg)/var(--horosa-accent-strong)
+	// 可能为空 → 头像背景透明 + icon 无色 → 用户看到"切主题后人头 icon 没了"。
+	// 用 explicit fallback 颜色 + 暗亮各取一套 — 即使 CSS var 全空也保留对比鲜明的人头剪影。
+	const isDarkAvatar = (props.resolvedAppearance || props.appearanceMode) === 'dark';
+	const avatarInline = {
+		background: isDarkAvatar ? '#0b0d10' : '#ffffff',
+		color: isDarkAvatar ? '#f2cf91' : '#2167d4',
+		border: isDarkAvatar ? '1px solid rgba(218, 177, 111, 0.32)' : '1px solid rgba(0,0,0,0.12)',
+	};
 	let avatarcomp = null;
 	if(props.avatar){
-		avatarcomp = (<Avatar size="small" className={styles.avatar} src={props.avatar} />);
+		avatarcomp = (<Avatar size="small" className={styles.avatar} src={props.avatar} style={avatarInline} />);
 	}else{
-		avatarcomp = (<Avatar size="small" className={styles.avatar} icon={<XQIcon name="user" />} />);
+		avatarcomp = (<Avatar size="small" className={styles.avatar} icon={<XQIcon name="user" />} style={avatarInline} />);
 	}
 
 	const appearanceMode = normalizeAppearanceMode(props.appearanceMode);
@@ -608,19 +618,23 @@ function PageHeader(props){
 					</Dropdown>
 				</div>
 				<XQModal
-					title={`${currentPageLabel}页帮助`}
+					title={`${currentPageLabel} · 操作手册`}
 					open={astroHelpVisible}
 					onCancel={()=>setAstroHelpVisible(false)}
-					width={520}
+					width={Math.min(920, typeof window !== 'undefined' ? Math.round(window.innerWidth * 0.9) : 920)}
 					footer={(
 						<XQToolbar className={styles.aiSettingFooter}>
 							<XQButton size="small" variant="primary" onClick={()=>setAstroHelpVisible(false)}>知道了</XQButton>
 						</XQToolbar>
 					)}
 				>
-					<div className={styles.astroHelpBody}>
-						<p>左侧用于排盘输入与显示设置，中间保留原星盘绘制，右侧集中查看信息、相位、行星、古典与可能性。</p>
-						<p>底部快捷功能会跳转到对应技法或打开已有抽屉，不改变排盘接口与本地服务调用。</p>
+					<div className={styles.astroHelpBody} style={{ maxHeight: '74vh', overflowY: 'auto' }}>
+						{(()=>{ const HelpDoc = getTechniqueHelpDoc(props.currentTab); return HelpDoc ? <HelpDoc /> : (
+							<>
+								<p>左侧为排盘输入与显示设置，中间为盘面绘制，右侧分页查看信息、相位、行星与判读。</p>
+								<p>底部快捷功能跳转到对应技法或抽屉；切换任一设置即时全组合重算。</p>
+							</>
+						); })()}
 					</div>
 				</XQModal>
 				<XQModal

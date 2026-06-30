@@ -69,14 +69,12 @@ class GuaDesc extends Component{
 
 
 	render(){
-		let height = this.props.height ? this.props.height : '100%';
+		// 卦辞填满容器:框(嵌套 tabs)随面板高、仅内层块滚动;不再用页高派生的固定像素(会高估→撑出外层双滚动条)
 		let style = {
-			height: (height-110) + 'px',
-			overflowY:'auto', 
+			height: '100%',
+			overflowY:'auto',
 			overflowX:'hidden',
 		};
-
-		let tabheight = height;
 
 		let desc = this.props.value ? this.props.value : {};
 		let guaOrg = this.genGua(desc.guaOrg);
@@ -87,10 +85,10 @@ class GuaDesc extends Component{
 		}
 
 		return (
-			<div>
+			<div style={{ height: '100%', minHeight: 0 }}>
 				<Tabs
 					defaultActiveKey='org' tabPosition='right'
-					style={{ height: tabheight }}				
+					style={{ height: '100%' }}				
 				>
 					<TabPane tab="本" key="org">
 						<div className={styles.scrollbar} style={style}>

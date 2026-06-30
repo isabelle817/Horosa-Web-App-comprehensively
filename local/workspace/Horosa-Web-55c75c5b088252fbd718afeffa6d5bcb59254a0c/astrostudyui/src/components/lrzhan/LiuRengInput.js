@@ -134,6 +134,7 @@ class LiuRengInput extends Component{
 				timeHook={this.props.timeHook}
 				onGeoChange={this.changeGeo}
 			/>
+			{this.props.hideExtras ? null : (
 			<Row>
 				<Col lg={12} xl={8}>
 					<Select value={fields.gender.value} onChange={this.onGenderChange} size='small' style={{width:'100%'}}>
@@ -147,10 +148,11 @@ class LiuRengInput extends Component{
 					<Select value={lrchart} onChange={this.onChartTypeChange} size='small' style={{width:'100%'}}>
 						<Option value={LRConst.LRChart_Square}>方盘</Option>
 						<Option value={LRConst.LRChart_Circle}>圆盘</Option>
-					</Select>				
+					</Select>
 				</Col>
 
 			</Row>
+			)}
 			</div>
 		);
 	}

@@ -61,7 +61,7 @@ INDIA_AYANAMSA_MODES = {
     'deluce': {'key': 'deluce', 'label': 'De Luce', 'mode': swe.SE_SIDM_DELUCE},
     'jn_bhasin': {'key': 'jn_bhasin', 'label': 'J.N. Bhasin', 'mode': swe.SE_SIDM_JN_BHASIN},
     'ushashashi': {'key': 'ushashashi', 'label': 'Usha/Shashi', 'mode': swe.SE_SIDM_USHASHASHI},
-    'true_pushya': {'key': 'true_pushya', 'label': 'True Pushya (PVRN Rao)', 'mode': swe.SE_SIDM_TRUE_PUSHYA},
+    'true_pushya': {'key': 'true_pushya', 'label': 'True Pushya', 'mode': swe.SE_SIDM_TRUE_PUSHYA},
     'true_mula': {'key': 'true_mula', 'label': 'True Mula (Chandra Hari)', 'mode': swe.SE_SIDM_TRUE_MULA},
     'true_sheoran': {'key': 'true_sheoran', 'label': 'Vedic / Sheoran', 'mode': swe.SE_SIDM_TRUE_SHEORAN},
     'ss_citra': {'key': 'ss_citra', 'label': 'SS Citra', 'mode': swe.SE_SIDM_SS_CITRA},
@@ -111,8 +111,6 @@ INDIA_AYANAMSA_ALIASES = {
     'lahiri-icrc': 'lahiri_icrc',
     'pushya': 'true_pushya',
     'pushya_paksha': 'true_pushya',
-    'pvr': 'true_pushya',
-    'pvrn': 'true_pushya',
     'chandrahari': 'true_mula',
     'chandra_hari': 'true_mula',
     'sheoran': 'true_sheoran',
@@ -209,6 +207,14 @@ INDIA_OBJECTS = [
     const.DARKMOON, const.PURPLE_CLOUDS,
 ]
 
+# Jyotish 必需子集(9 曜 + 节点 + SYZYGY/PARS)——均为宽星历区间或派生点。
+# 极端古/未来日期某些天体星历越界(如 Chiron 限 JD 1967601.5–3419437.5 ≈ 675–4650AD)时退到此集，优雅降级不崩。
+_INDIA_SAFE_OBJECTS = [
+    const.SUN, const.MOON, const.MERCURY, const.VENUS, const.MARS,
+    const.JUPITER, const.SATURN, const.NORTH_NODE, const.SOUTH_NODE,
+    const.SYZYGY, const.PARS_FORTUNA,
+]
+
 
 def normalize_ayanamsa(value):
     if value is None or value == '':
@@ -297,22 +303,78 @@ class IndiaChartKernel:
         self.house = self.houseSystem['flatlib']
         self.houseLabel = self.houseSystem['label']
 
+        # 罗睺/计都交点口径:'mean'(平交点,SE_MEAN_NODE,默认零回归)或 'true'(真交点,SE_TRUE_NODE)。
+        self.nodeType = str(data.get('nodeType', data.get('indiaNodeType', 'mean'))).strip().lower()
+        if self.nodeType not in ('mean', 'true'):
+            self.nodeType = 'mean'
+
         self.objlists = [obj for obj in INDIA_OBJECTS if obj in swe.SWE_OBJECTS or obj in [const.SOUTH_NODE, const.SYZYGY, const.PARS_FORTUNA]]
         self.hasSun = const.SUN in self.objlists
         self.hasMoon = const.MOON in self.objlists
 
-        self.chart = Chart(
-            self.dateTime,
-            self.pos,
-            const.SIDEREAL,
-            hsys=self.houseSystem['base'],
-            IDs=self.objlists,
-            needpars=True,
-            sidereal_mode=self.siderealMode,
-        )
+        try:
+            self.chart = Chart(
+                self.dateTime,
+                self.pos,
+                const.SIDEREAL,
+                hsys=self.houseSystem['base'],
+                IDs=self.objlists,
+                needpars=True,
+                sidereal_mode=self.siderealMode,
+            )
+        except Exception:
+            # 极端日期某些天体星历越界(如 Chiron)→ 退到 Jyotish 必需子集，优雅降级。
+            # 非星历问题(如日期格式)在子集上同样会失败并向上抛出，不会被掩盖。
+            self.objlists = [obj for obj in self.objlists if obj in _INDIA_SAFE_OBJECTS]
+            self.chart = Chart(
+                self.dateTime,
+                self.pos,
+                const.SIDEREAL,
+                hsys=self.houseSystem['base'],
+                IDs=self.objlists,
+                needpars=True,
+                sidereal_mode=self.siderealMode,
+            )
         self.chart.hsys = self.house
         self._apply_india_houses()
+        if self.nodeType == 'true':
+            self._apply_true_node()
         self.reinit()
+
+    def _apply_true_node(self):
+        """把默认平交点(SE_MEAN_NODE=10)替换为真交点(SE_TRUE_NODE=11)。
+        仅 nodeType=='true' 调用,默认 mean 零回归。零全局污染:复用 chart 自己的
+        sidereal context+flags 直接算 swe ID 11,再 relocate 罗睺/计都两对象。
+        与 flatlib ephem.getObject 的交点对处理一致(南交=北交 lon+180、ra+180,lat/decl 不取负)。
+        失败安全回退:保留平交点。"""
+        north = next((o for o in self.chart.objects if getattr(o, 'id', None) == const.NORTH_NODE), None)
+        south = next((o for o in self.chart.objects if getattr(o, 'id', None) == const.SOUTH_NODE), None)
+        if north is None and south is None:
+            return
+        jd = self.dateTime.jd
+        flags = getattr(self.chart, 'flags', swe.SEDEFAULT_FLAG)
+        try:
+            with self.chart._siderealContext():
+                sweList = swe.swisseph.calc_ut(jd, 11, flags)[0]
+                eqlist = swe.swisseph.calc_ut(jd, 11, flags | swe.SEFLG_EQUATORIAL)[0]
+        except Exception:
+            return
+        true_lon = sweList[0]
+        ra = eqlist[0] if eqlist[0] >= 0 else (eqlist[0] + 360) % 360
+        if north is not None:
+            north.relocate(true_lon)
+            north.lat = sweList[1]
+            north.lonspeed = sweList[3]
+            north.latspeed = sweList[4]
+            north.ra = ra
+            north.decl = eqlist[1]
+        if south is not None:
+            south.relocate((true_lon + 180.0) % 360.0)
+            south.lat = sweList[1]
+            south.lonspeed = sweList[3]
+            south.latspeed = sweList[4]
+            south.ra = (ra + 180.0) % 360.0
+            south.decl = eqlist[1]
 
     def _compute_ayanamsa_value(self):
         try:
@@ -517,6 +579,7 @@ class IndiaChartKernel:
             'pdTimeKey': self.pdTimeKey,
             'pdSyncRev': varga_engine_version,
             'engine': 'IndiaChartKernel',
+            'nodeType': self.nodeType,
         }
         if 'name' in data:
             params['name'] = data['name']

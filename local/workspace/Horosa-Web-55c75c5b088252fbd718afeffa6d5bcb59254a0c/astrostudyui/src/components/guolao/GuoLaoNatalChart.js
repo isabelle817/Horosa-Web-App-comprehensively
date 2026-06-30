@@ -8,7 +8,28 @@ import * as AstroText from '../../constants/AstroText';
 
 class GuoLaoNatalChart extends Su28ChartCircle{
 	constructor(option){
-		super(option);	
+		super(option);
+	}
+
+	// 命度法非「占星上升」时,圆盘命宫随命主度所在星座(与方盘 GLSZSignChart 同源)。
+	getAscSign(){
+		const lifeSign = this.getLifeMasterSign();
+		if(lifeSign){ return lifeSign; }
+		return super.getAscSign();
+	}
+
+	getLifeMasterSign(){
+		try{
+			const mode = this.fields && this.fields.guolaoLifeMode && this.fields.guolaoLifeMode.value;
+			if(!mode || mode === 'asc'){ return null; }   // 占星上升用上升点
+			const objs = (this.chartObj && this.chartObj.objects) || [];
+			let life = null;
+			for(let i = 0; i < objs.length; i++){ if(objs[i] && objs[i].id === AstroConst.LIFEMASTERDEG74){ life = objs[i]; break; } }
+			if(!life){ return null; }
+			const lon = Number(life.lon);
+			if(!Number.isFinite(lon)){ return null; }
+			return AstroConst.LIST_SIGNS[Math.floor((((lon % 360) + 360) % 360) / 30) % 12] || null;
+		}catch(e){ return null; }
 	}
 
 	draw(){

@@ -187,6 +187,7 @@ export function parseModelSelection(selection){
 	};
 }
 
+
 export function getProviderDefaultChatModels(providerType = 'openai'){
 	return uniqueTextList(getProviderPreset(providerType).defaultChatModels || []);
 }
@@ -293,7 +294,9 @@ export function applyThinkingLevel(opts, level, providerType, model, maxTokens){
 		// reasoning_effort 仅认 low|medium|high → 更高档(xhigh/max)封顶为 high
 		o.reasoning_effort = (level === 'xhigh' || level === 'max') ? 'high' : level;
 	}else if(providerType === 'gemini'){
-		o.generationConfig = { ...(o.generationConfig || {}), thinkingConfig: { thinkingBudget: budget } };
+		// #54-G：includeThoughts=true 才让 Gemini 回流 thought part(思考增量)；缺它则预算照烧但思维链不出 →
+		// 后端 extractGeminiThinking 恒空、UI 无「思考过程」。开思考档即请求思维摘要,与 OpenAI/Anthropic 同口径。
+		o.generationConfig = { ...(o.generationConfig || {}), thinkingConfig: { thinkingBudget: budget, includeThoughts: true } };
 	}
 	// deepseek-reasoner(R1) / ollama 等无标准思考参数 → 不动（友好降级）。
 	return o;

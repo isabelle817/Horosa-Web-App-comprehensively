@@ -171,15 +171,15 @@ function parseSimple() {
 	});
 }
 
-// ── 倪海厦《易經》人間道 逐爻（替换"简便"层）──
+// ── 易經人間道 逐爻推命（替换"简便"层）──
 const NIHAIXIA = process.env.NIHAIXIA
 	|| './nihaixia-yijing.md';
-// 倪海厦文偶有简体卦名（如 天雷无妄），归一化到繁体再匹配
+// 源文偶有简体卦名（如 天雷无妄），归一化到繁体再匹配
 const S2T = { 无: '無', 随: '隨', 蛊: '蠱', 贲: '賁', 剥: '剝', 复: '復', 颐: '頤', 过: '過', 观: '觀', 济: '濟', 渐: '漸', 归: '歸', 丰: '豐', 涣: '渙', 节: '節', 兑: '兌', 离: '離', 为: '為', 风: '風', 泽: '澤', 师: '師', 谦: '謙', 临: '臨', 壮: '壯' };
 function toTrad(s) { return [...(s || '')].map((c) => S2T[c] || c).join(''); }
 function parseNihaixia(canonNames) {
 	let text;
-	try { text = fs.readFileSync(NIHAIXIA, 'utf8').replace(/\r\n/g, '\n'); } catch (e) { console.warn('!! 倪海厦 source missing:', NIHAIXIA); return {}; }
+	try { text = fs.readFileSync(NIHAIXIA, 'utf8').replace(/\r\n/g, '\n'); } catch (e) { console.warn('!! 人間道 source missing:', NIHAIXIA); return {}; }
 	const nameSet = new Set(canonNames);
 	const result = {};
 	let curGua = null;
@@ -214,10 +214,10 @@ function main() {
 	const jue = parseJue();
 	const detail = parseDetail();
 	const simple = parseSimple();
-	// 倪海厦·易经推命：用户 xlsx「易經推命資料」表(A1:D65)抽出的 先天/后天/流年 三栏(王弗序)，已落地 heluoNihaixiaRaw.json
+	// 易经推命：用户 xlsx「易經推命資料」表(A1:D65)抽出的 先天/后天/流年 三栏(王弗序)，已落地 heluoNihaixiaRaw.json
 	let nhxRaw = [];
-	try { nhxRaw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'utils', 'data', 'heluoNihaixiaRaw.json'), 'utf8')); } catch (e) { console.warn('!! heluoNihaixiaRaw.json missing — 倪海厦 推命回退到 條文大全'); }
-	console.log('倪海厦(xlsx) rows:', nhxRaw.length);
+	try { nhxRaw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'utils', 'data', 'heluoNihaixiaRaw.json'), 'utf8')); } catch (e) { console.warn('!! heluoNihaixiaRaw.json missing — 易经推命回退到 條文大全'); }
+	console.log('易经推命(xlsx) rows:', nhxRaw.length);
 
 	const counts = {
 		meaning: meaning.length, mingtiao: mingtiao.length, jue: jue.length,
@@ -251,7 +251,7 @@ function main() {
 				verdict: sy.verdict || '',
 			};
 		}
-		// 倪海厦 推命(先天/后天/流年)优先用 xlsx 抽出数据，按王弗序对齐；缺则回退 條文大全
+		// 易经推命(先天/后天/流年)优先用 xlsx 抽出数据，按王弗序对齐；缺则回退 條文大全
 		const nx = nhxRaw[i] || {};
 		out[name] = {
 			index: i + 1,

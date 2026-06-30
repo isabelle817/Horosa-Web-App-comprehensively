@@ -94,24 +94,31 @@ class CanPingMain extends Component {
 			after23NewDay: defaultAfter23NewDay(),
 			lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
 		};
+		const method = this.curMethod();
+		// 实例 memo:输入签名(四柱参数+取法+日界/晚子)不变即返缓存,避免 render/componentDidUpdate→saveSnap/
+		// 快照 handler 多处反复跑「八字+canpingCalculate+120 年 liunianSeries」全量重算(卡顿根因)。算法不变。
+		const sig = JSON.stringify({ ...params, method });
+		if (this._modelKey === sig && Object.prototype.hasOwnProperty.call(this, '_modelCache')) {
+			return this._modelCache;
+		}
+		const cache = (v) => { this._modelKey = sig; this._modelCache = v; return v; };
 		let bazi;
-		try { bazi = buildLocalBaziResult(params).bazi; } catch (e) { return null; }
+		try { bazi = buildLocalBaziResult(params).bazi; } catch (e) { return cache(null); }
 		const fc = (bazi && bazi.fourColumns) || {};
 		const gz = (p) => (p && (p.ganzi || p.ganZhi)) || '';
 		const yearGz = gz(fc.year);
 		const monthBranch = gz(fc.month).charAt(1);
 		const dayBranch = gz(fc.day).charAt(1);
 		const hourBranch = gz(fc.time).charAt(1);
-		if (!yearGz || !monthBranch || !dayBranch || !hourBranch) return null;
+		if (!yearGz || !monthBranch || !dayBranch || !hourBranch) return cache(null);
 		const gender = bazi.gender === 'Female' ? '女' : '男';
 		const birthYear = parseInt(dateStr.slice(0, 4), 10) || 0;
-		const method = this.curMethod();
 		const base = { yearGz, monthBranch, dayBranch, hourBranch, gender, method, qiyunAge: 1 };
 		const r = canpingCalculate(base);
-		if (!r) return null;
+		if (!r) return cache(null);
 		let series = null;
 		try { series = liunianSeries({ ...base, birthYear, startAge: 1, endAge: 120 }); } catch (e) { series = null; }
-		return { r, series, birthYear };
+		return cache({ r, series, birthYear });
 	}
 
 	saveSnap() {

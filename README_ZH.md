@@ -8,13 +8,13 @@
 
 **把占星与中国术数，收进一个原生 Windows 工作站**
 
-[![Version](https://img.shields.io/badge/version-2.6.9%20beta-b45309?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
+[![Version](https://img.shields.io/badge/version-3.0.0%20beta-b45309?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-dc2626?style=flat-square)](LICENSE)
-[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
-[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
+[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
+[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
 [![Stars](https://img.shields.io/github/stars/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/stargazers)
 
-[下载安装包](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-2.6.9.exe) ·
+[下载安装包](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-3.0.0.exe) ·
 [入口页](README.md) ·
 [English Guide](README_EN.md) ·
 [所有版本](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
@@ -27,13 +27,13 @@
 
 星阙 Horosa 是一套桌面端的玄学工作站。西方占星的本命、推运、关系盘，连同八字、紫微、奇门、六壬、太乙这些中国传统术数，被放进同一个原生 Windows 应用里。它要解决的事其实很朴素：不必在十几个网页排盘器之间来回切，也不必自己拼装底层的 Python、Java 与历表运行时——你下载一个离线 NSIS 安装包，打开的就是一个成品。
 
-这个仓库承担的是 Windows 这一侧的交付：应用源码、共享运行时、Electron 桌面外壳，以及把这一切打成单个 NSIS 安装包（`Horosa-Setup-2.6.9.exe`）的发布链路。
+这个仓库承担的是 Windows 这一侧的交付：应用源码、共享运行时、Electron 桌面外壳，以及把这一切打成单个 NSIS 安装包（`Horosa-Setup-3.0.0.exe`）的发布链路。
 
 ## 下载
 
 普通用户直接下载离线安装包，像任何 Windows 软件一样安装、打开即可。
 
-**[⬇︎ Horosa-Setup-2.6.9.exe](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-2.6.9.exe)**
+**[⬇︎ Horosa-Setup-3.0.0.exe](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-3.0.0.exe)**
 
 适合场景：
 
@@ -63,6 +63,8 @@
 
 导航把所有模块归为三组：**命**（命盘与推运）、**卜**（易与三式）、**工具**。下面列的，是各组里真正能用的内容——名字与应用里的页签一一对应。
 
+> v3.0.0 起，命系与卜系多门技法的各派分歧均做成左栏可选项，默认值与既有结果一致，默认排盘路径字节级不变。
+
 ### 命 · 命盘与推运
 
 这一层的强项是连贯：能读本命、把它沿时间推开、再带进第二个人，全程不离开同一个工作面。
@@ -82,13 +84,15 @@
 
 - **三式（合一）** —— 奇门、太乙、六壬整合呈现：概览、太乙、神煞、六壬、大格、小局、参考、八宫
 - **遁甲 · 六壬 · 太乙** —— 三式各自的独立排盘入口
-- **六爻 · 分至 · 风水** —— 纳甲六爻、节气盘、风水工具
+- **六爻 · 分至 · 风水** —— 纳甲六爻、节气盘、风水（理气六派）工具
+- **塔罗 · 天文地占** —— 塔罗牌阵（RWS / 埃及 / 马赛 / 维尔特 四套图集）、天文地占（星象地占）
 - **其他** —— 宿盘、金口诀、统摄法、皇极经世、五兆、太玄、荆诀、神易数
 
 ### 工具 · 工具工作台
 
 - **AI 分析** —— 可接入 OpenAI / Anthropic / Gemini / Ollama / OpenRouter / 自定义端点；流式对话、历史记录、资料库（向量检索）、把任一技法的盘面挂载进上下文、按技法 / 页签结构化导出，并可生成八字 / 紫微分节命理报告
-- **天文馆** —— 基于 Babylon.js 的实时三维天象
+- **玄学史** —— 以二十四史、太平广记等公有古籍为底，汇编历代玄学人物、故事、术数源流与天象记录；离线历史地图 + 人物关系力导图 + 编年时间轴，按朝代 / 技法 / 人物检索，并与排盘联动
+- **天文馆** —— 完整星官、升落 / 中天精确时刻、宿度网格与连续时间播放实时同步（基于 Babylon.js 的实时三维天象）
 - **黄历** —— 农历、节气与择日
 - **辅助** —— 八卦类象、十二宫、规则速查
 
@@ -105,7 +109,7 @@
 ## 常见问题
 
 **我只是普通用户，需要克隆仓库吗？**
-不需要。直接在最新 release 里下载 `Horosa-Setup-2.6.9.exe` 即可。
+不需要。直接在最新 release 里下载 `Horosa-Setup-3.0.0.exe` 即可。
 
 **安装完还要自己装 Python 或 Java 吗？**
 不需要。Windows 安装器已经把发布版所需的运行时纳入流程；首次启动会因本地解包和校验稍慢，后续复用缓存。
@@ -114,7 +118,7 @@
 可以。v2.2.0 Beta 安装器支持标准安装向导，可选择安装目录，并在安装前做目录创建 / 写入检查、快捷方式修复；遇到 Windows 权限限制时可提权继续。
 
 **为什么 release 里还有别的文件？**
-`latest.yml`、`.blockmap` 与 `SHA256SUMS.txt` 用于更新和校验。对普通用户来说，真正要点的只有 `Horosa-Setup-2.6.9.exe`。
+`latest.yml`、`.blockmap` 与 `SHA256SUMS.txt` 用于更新和校验。对普通用户来说，真正要点的只有 `Horosa-Setup-3.0.0.exe`。
 
 **更新时会删掉我的数据吗？**
 不会。应用更新与运行时切换替换的是程序与共享运行时，不会清空你保存的命例与事盘。

@@ -15,7 +15,13 @@ const NONG_LI_KEYS = ['date', 'time', 'zone', 'lon', 'lat', 'gpsLat', 'gpsLon', 
 const JIE_QI_SEED_KEYS = ['year', 'ad', 'zone', 'lon', 'lat', 'gpsLat', 'gpsLon', 'timeAlg', 'jieqis', 'seedOnly'];
 const JIE_QI_YEAR_KEYS = ['year', 'ad', 'zone', 'lon', 'lat', 'gpsLat', 'gpsLon', 'timeAlg', 'hsys', 'zodiacal', 'doubingSu28', 'jieqis', 'seedOnly', 'needBazi', 'needCharts', 'after23NewDay', 'lateZiHourUseNextDay'];
 const MAX_CACHE_SIZE = 192;
-const DEFAULT_SEED_TERMS = ['大雪', '芒种'];
+// 全 24 节气精确交节时刻种子。大雪/芒种:时家置闰(buildYinyangdunMap);冬至/夏至:日家60日块定半年/至甲子;
+//   其余 20:茅山布局(qimenJuNameMaoshan 须任意节气的精确交节时刻,否则非锚点节气退拆补)。
+//   后端 /jieqi/year 与本地 buildLocalJieqiYearSeed 本就一次算齐 24,扩列零额外请求、不影响速度。
+const DEFAULT_SEED_TERMS = [
+	'立春', '雨水', '惊蛰', '春分', '清明', '谷雨', '立夏', '小满', '芒种', '夏至', '小暑', '大暑',
+	'立秋', '处暑', '白露', '秋分', '寒露', '霜降', '立冬', '小雪', '大雪', '冬至', '小寒', '大寒',
+];
 const PRECISE_REQ_TIMEOUT_MS = 45000;
 
 const nongliMem = new Map();

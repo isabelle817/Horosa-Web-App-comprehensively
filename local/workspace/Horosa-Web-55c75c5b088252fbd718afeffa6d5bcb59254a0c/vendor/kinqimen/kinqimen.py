@@ -78,18 +78,15 @@ class Qimen:
         return config.multi_key_dict_get(dict(zip(a,b)), gz[4])
     #地盤
     def pan_earth(self, option):
-        """時家奇門地盤設置, option 1:拆補 2:置閏"""
-        chaibu = config.qimen_ju_name_chaibu(self.year,
-                                             self.month,
-                                             self.day,
-                                             self.hour,
-                                             self.minute)
-        zhirun = config.qimen_ju_name_zhirun(self.year,
-                                             self.month,
-                                             self.day,
-                                             self.hour,
-                                             self.minute)
-        qmju = {1:chaibu,2:zhirun}.get(option)
+        """時家奇門地盤設置, option 1:拆補 2:置閏 3:茅山 4:無閏"""
+        qmju = {1: config.qimen_ju_name_chaibu,
+                2: config.qimen_ju_name_zhirun,
+                3: config.qimen_ju_name_maoshan,
+                4: config.qimen_ju_name_wurun}.get(option, config.qimen_ju_name_chaibu)(self.year,
+                                                                                        self.month,
+                                                                                        self.day,
+                                                                                        self.hour,
+                                                                                        self.minute)
         return dict(zip(list(map(lambda x: dict(zip(config.cnumber, config.eight_gua)).get(x),
                          config.new_list(config.cnumber, qmju[2]))),
                         {"陽遁":list("戊己庚辛壬癸丁丙乙"),
@@ -122,8 +119,10 @@ class Qimen:
     def pan_sky(self, option):
         qmju = {
             1: config.qimen_ju_name_chaibu,
-            2: config.qimen_ju_name_zhirun
-        }.get(option)(self.year,
+            2: config.qimen_ju_name_zhirun,
+            3: config.qimen_ju_name_maoshan,
+            4: config.qimen_ju_name_wurun
+        }.get(option, config.qimen_ju_name_chaibu)(self.year,
                       self.month,
                       self.day,
                       self.hour,
@@ -251,24 +250,87 @@ class Qimen:
                 d[key] = {value: b[key][value]}
         return d
 
-    def pan(self, option):#1拆補 #2置閏
-        """時家奇門起盤綜合, option 1:拆補 2:置閏"""
+    def pan_feipan(self, option):
+        """飛盤排盤(洛書飛布,九星九門九神含中宮);與前端 DunJiaCalc.panFeipan 同算法。
+        option 定局法 1拆補/2置閏/3茅山/4無閏。輸出卦鍵 dict(坎坤震巽中乾兌艮離),與轉盤同格式,前端 merge 統一繁→簡。"""
+        qmju = {1: config.qimen_ju_name_chaibu,
+                2: config.qimen_ju_name_zhirun,
+                3: config.qimen_ju_name_maoshan,
+                4: config.qimen_ju_name_wurun}.get(option, config.qimen_ju_name_chaibu)(
+            self.year, self.month, self.day, self.hour, self.minute)
+        is_yang = qmju[0:2] == "陽遁"
+        eg = config.eight_gua  # 坎坤震巽中乾兌艮離(洛書序)
+        earth = self.pan_earth(option)  # {卦:干}
+        earth_gong = {g: earth.get(eg[g - 1]) for g in range(1, 10)}  # 洛書宮→干
+        gz = config.gangzhi(self.year, self.month, self.day, self.hour, self.minute)
+        time_gz = gz[3]
+        xun_head = config.multi_key_dict_get(config.liujiashun_dict(), time_gz)
+        dun_yi = config.jj.get(xun_head, "戊")
+        Hv = 5
+        for g in range(1, 10):
+            if earth_gong[g] == dun_yi:
+                Hv = g
+                break
+        time_gan = time_gz[0]
+        P = Hv
+        if time_gan != "甲":
+            for g in range(1, 10):
+                if earth_gong[g] == time_gan:
+                    P = g
+                    break
+        xord = config.tian_gan.index(time_gan) + 1
+        HvEff = 2 if Hv == 5 else Hv
+        lp = lambda n: ((n - 1) % 9 + 9) % 9 + 1
+        Pu = lp(Hv + xord - 1) if is_yang else lp(Hv - xord + 1)
+        step = 1 if is_yang else -1
+        jiu_xing = list("蓬芮沖輔禽心柱任英")  # 洛書宮1-9→星
+        gate_home = {1: "休", 8: "生", 3: "傷", 4: "杜", 9: "景", 2: "死", 7: "驚", 6: "開"}
+        gods9 = list("符蛇陰合勾常雀地天")
+        star_g, sky_g, gate_g, god_g = {}, {}, {}, {}
+        dsky = ((P - Hv) % 9 + 9) % 9
+        for hj in range(1, 10):
+            np = lp(hj + dsky)
+            star_g[np] = jiu_xing[hj - 1]
+            sky_g[np] = earth_gong[hj]
+        dgate = ((Pu - HvEff) % 9 + 9) % 9
+        for hk in gate_home:
+            np = lp(hk + dgate)
+            gate_g[np] = gate_home[hk]
+        for i, god in enumerate(gods9):
+            np = lp(P + i * step)
+            if np not in god_g:
+                god_g[np] = god
+        to_gua = lambda gmap: {eg[g - 1]: gmap.get(g, "") for g in range(1, 10)}
+        return {
+            "排盤方式": {1: "拆補", 2: "置閏", 3: "茅山", 4: "無閏"}.get(option),
+            "盤式": "飛盤",
+            "天盤": to_gua(sky_g),
+            "門": to_gua(gate_g),
+            "星": to_gua(star_g),
+            "神": to_gua(god_g),
+            "值符值使": {
+                "值符天干": [xun_head, dun_yi],
+                "值符星宮": [jiu_xing[Hv - 1], eg[lp(P) - 1]],
+                "值使門宮": [gate_home.get(HvEff, "死"), eg[lp(Pu) - 1]],
+            },
+        }
+
+    def pan(self, option, school="轉盤"):#1拆補 #2置閏
+        """時家奇門起盤綜合, option 1:拆補 2:置閏;school 轉盤(預設)/飛盤(洛書飛布九神)"""
         gz = config.gangzhi(self.year,
                             self.month,
                             self.day,
                             self.hour,
                             self.minute)
         gzd = "{}年{}月{}日{}時".format(gz[0], gz[1], gz[2], gz[3])
-        qmju = {1:config.qimen_ju_name_chaibu(self.year,
-                                              self.month,
-                                              self.day,
-                                              self.hour,
-                                              self.minute),
-                2:config.qimen_ju_name_zhirun(self.year,
-                                              self.month,
-                                              self.day,
-                                              self.hour,
-                                              self.minute)}.get(option)
+        qmju = {1: config.qimen_ju_name_chaibu,
+                2: config.qimen_ju_name_zhirun,
+                3: config.qimen_ju_name_maoshan,
+                4: config.qimen_ju_name_wurun}.get(option, config.qimen_ju_name_chaibu)(self.year,
+                                                                                        self.month,
+                                                                                        self.day,
+                                                                                        self.hour,
+                                                                                        self.minute)
         shunhead = config.shun(gz[2])
         shunkong = config.daykong_shikong(self.year,
                                           self.month,
@@ -302,8 +364,9 @@ class Qimen:
                              self.hour,
                              self.minute,
                              option)
-        return {
-            "排盤方式":{1:"拆補", 2:"置閏"}.get(option),
+        result = {
+            "排盤方式":{1:"拆補", 2:"置閏", 3:"茅山", 4:"無閏"}.get(option),
+            "盤式": "轉盤",
             "干支": gzd,
             "旬首": shunhead,
             "旬空": shunkong,
@@ -323,6 +386,16 @@ class Qimen:
                 "驛馬": self.hourhorse()
             },
             "長生運": self.gong_chengsun(option)}
+        # 飛盤(school='飛盤'):盤面(天/門/星/神+值符值使)改用洛書飛布;地盤/局/節氣/馬星等與轉盤共用。
+        if school in ("飛盤", "飞盘"):
+            fei = self.pan_feipan(option)
+            result["盤式"] = "飛盤"
+            result["天盤"] = fei["天盤"]
+            result["門"] = fei["門"]
+            result["星"] = fei["星"]
+            result["神"] = fei["神"]
+            result["值符值使"] = fei["值符值使"]
+        return result
 
     def pan_minute(self, option):
         """刻家奇門起盤綜合, option 1:拆補 2:置閏"""
@@ -375,7 +448,7 @@ class Qimen:
                                     self.minute,
                                     option)
         return {
-            "排盤方式":{1:"拆補", 2:"置閏"}.get(option),
+            "排盤方式":{1:"拆補", 2:"置閏", 3:"茅山", 4:"無閏"}.get(option),
             "干支": gzd,
             "旬首": shunhead,
             "旬空": shunkong,
@@ -677,10 +750,10 @@ class Qimen:
             return {"玉女守門": "沒有"}
 
     
-    def overall(self, option):
-        """整體奇門起盤綜合, option 1:拆補 2:置閏"""
+    def overall(self, option, school="轉盤"):
+        """整體奇門起盤綜合, option 1:拆補 2:置閏;school 轉盤/飛盤(僅時家分量套用,刻家/日家照舊)"""
         return {"金函玉鏡(日家奇門)": self.gpan(),
-                "時家奇門": self.pan(option),
+                "時家奇門": self.pan(option, school),
                 "刻家奇門":self.pan_minute(option)}
     
 

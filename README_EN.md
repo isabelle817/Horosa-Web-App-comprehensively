@@ -8,13 +8,13 @@
 
 **Western astrology and Chinese metaphysics, in one native Windows workstation**
 
-[![Version](https://img.shields.io/badge/version-2.6.9%20beta-b45309?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
+[![Version](https://img.shields.io/badge/version-3.0.0%20beta-b45309?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-dc2626?style=flat-square)](LICENSE)
-[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
-[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.9)
+[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
+[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.0.0)
 [![Stars](https://img.shields.io/github/stars/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/stargazers)
 
-[Download](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-2.6.9.exe) ·
+[Download](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-3.0.0.exe) ·
 [Portal](README.md) ·
 [中文说明](README_ZH.md) ·
 [All Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
@@ -27,13 +27,13 @@
 
 Horosa is a desktop workstation for traditional cosmology. Western astrology—natal reading, the full timing chain, and relationship work—sits beside Chinese systems like Bazi, Ziwei, Qimen, Liuren, and Taiyi, all inside one native Windows application. The point is that you stop juggling a dozen single-purpose web tools, and you never hand-assemble the Python, Java, and ephemeris pieces underneath. You download an offline NSIS installer and open a finished app.
 
-This repository is the Windows delivery of that app: the application source, the shared runtime, the Electron desktop shell, and the publishing flow that turns all of it into a single NSIS installer (`Horosa-Setup-2.6.9.exe`).
+This repository is the Windows delivery of that app: the application source, the shared runtime, the Electron desktop shell, and the publishing flow that turns all of it into a single NSIS installer (`Horosa-Setup-3.0.0.exe`).
 
 ## Download
 
 Regular users should go straight to the offline installer and open Horosa like any other Windows app.
 
-**[⬇︎ Horosa-Setup-2.6.9.exe](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-2.6.9.exe)**
+**[⬇︎ Horosa-Setup-3.0.0.exe](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/latest/download/Horosa-Setup-3.0.0.exe)**
 
 Best for:
 
@@ -63,6 +63,8 @@ You do not need to install Python or Java yourself—the runtime ships inside th
 
 The navigation organizes everything under three groups: **命** (charts & timing), **卜** (divination), and **工具** (tools). What follows is what each group actually ships—module names map directly to the in-app tabs.
 
+As of v3.0.0, where schools disagree across the fate and divination sets the differences are surfaced as left-panel options whose defaults match prior results—the default chart path is byte-for-byte unchanged.
+
 ### Charts & Timing (命)
 
 The strength here is continuity: you can read a natal chart, walk it forward through time, and bring in a second person, without leaving the same surface.
@@ -82,13 +84,15 @@ Yi and Sanshi go past standalone tabs into a genuinely integrated surface.
 
 - **Sanshi United (三式)** — Qimen, Taiyi, and Liuren brought together: overview, Taiyi, shensha, Liuren, major patterns, sub-patterns, references, and the eight palaces
 - **Qimen (遁甲) · Liuren (六壬) · Taiyi (太乙)** — each of the three formulae also as its own standalone surface
-- **Liuyao (六爻) · Jieqi (分至) · Feng Shui (风水)** — najia hexagram casting, solar-term charts, and Feng Shui tools
+- **Liuyao (六爻) · Jieqi (分至) · Feng Shui (风水)** — najia hexagram casting, solar-term charts, and Feng Shui tools (six Li-Qi schools)
+- **Tarot (塔罗) · Astronomical Geomancy (天文地占)** — tarot spreads with RWS / Egyptian / Marseille / Wirth card art, and astronomical geomancy
 - **More (其他)** — Suzhao, Jinkou, Tongshefa, Huangji Jingshi, Wuzhao, Taixuan, Jingjue, and Shenyishu
 
 ### Tools (工具)
 
 - **AI Analysis (AI 分析)** — connects to OpenAI, Anthropic, Gemini, Ollama, OpenRouter, or a custom endpoint; streaming chat, conversation history, a materials library with vector retrieval, mounting any technique's chart into the context, structured export grouped by technique and tab, and sectioned Bazi / Ziwei report generation
-- **Planetarium (天文馆)** — a real-time 3D sky view built on Babylon.js
+- **Xuanxue History (玄学史)** — a standalone page compiled from public-domain classics (the Twenty-Four Histories, Taiping Guangji, etc.): figures, stories, technique lineages, and celestial-event records across the dynasties, with an offline historical map, a force-directed figure-relationship graph, and a chronological timeline, searchable by dynasty / technique / figure and linked to charting
+- **Planetarium (天文馆)** — a real-time 3D sky view built on Babylon.js, with complete Chinese asterisms, precise rise / set / culmination times, a lunar-mansion degree grid, and real-time sync during continuous time playback
 - **Almanac (黄历)** — lunar calendar, solar terms, and date selection
 - **References (辅助)** — gua-symbol classes, the twelve palaces, and quick rule lookups
 
@@ -105,7 +109,7 @@ Charts and cases save locally with tags, snapshots, and raw backend payloads. Ev
 ## FAQ
 
 **Do I need to clone the repo to use Horosa?**
-No. Download `Horosa-Setup-2.6.9.exe` from the latest release.
+No. Download `Horosa-Setup-3.0.0.exe` from the latest release.
 
 **Do I need to install Python or Java myself?**
 No. The Windows installer carries the runtime the released app needs. The first launch is a little slower while those pieces are extracted and verified locally; later launches reuse the cache.
@@ -114,7 +118,7 @@ No. The Windows installer carries the runtime the released app needs. The first 
 Yes. The v2.2.0 Beta installer offers an assisted flow with directory selection, write checks, shortcut repair, and elevation when Windows requires it.
 
 **Why are there other files in the release?**
-`latest.yml`, `.blockmap`, and `SHA256SUMS.txt` support the updater and verification flows. For end users, `Horosa-Setup-2.6.9.exe` is the only thing that matters.
+`latest.yml`, `.blockmap`, and `SHA256SUMS.txt` support the updater and verification flows. For end users, `Horosa-Setup-3.0.0.exe` is the only thing that matters.
 
 **Will updates remove my data?**
 No. App replacement and runtime switching update the program and shared runtime; they are not designed to erase your saved charts and cases.

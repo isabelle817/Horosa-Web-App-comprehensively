@@ -852,6 +852,7 @@ class BookReader extends Component{
 
 	componentWillUnmount(){
 		window.removeEventListener('resize', this.handleResize);
+		clearTimeout(this.timer);   // 卸载后 1s 内 isScrollEnd 会读已移除 DOM 报错,须清
 		this.saveChapter();
 	}
 

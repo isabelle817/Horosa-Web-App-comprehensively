@@ -1,0 +1,127 @@
+// 天文馆 · 操作手册(帮助页内容组件,天文馆页右上角「帮助」打开)。
+// 强调纯天文定位;逐图层分组写清;中性表述,纯展示零后端。
+import { Component } from 'react';
+import { Tabs } from 'antd';
+
+const { TabPane } = Tabs;
+import { MUTED, h, p, ul, li, card, ct, body, title } from './helpDocStyle';
+
+const kv = (k, v) => <div style={{ margin: '1px 0', lineHeight: 1.55 }}><span style={{ color: MUTED }}>{k}：</span>{v}</div>;
+
+class PlanetariumHelpDoc extends Component{
+	render(){
+		return (
+			<div style={{ marginTop: 10, borderTop: '1px solid var(--horosa-border, rgba(120,120,120,0.25))', paddingTop: 8 }}>
+				<div style={title}>天文馆 · 操作手册</div>
+				<Tabs defaultActiveKey="overview" size="small">
+					<TabPane tab="总览" key="overview">
+						<div style={body}>
+							<p style={p}><b>天文馆</b>是一座可交互的三维真实星空:按当前时间与观测地,把恒星、行星、二十八宿等投影到真实可见的天空,鼠标可自由旋转、缩放、点选查看任一天体的坐标。左侧栏分「定位 / 观察模式 / 显示 / 时间播放 / 图层」分组,右侧栏为实时观测状态。</p>
+							<div style={card}><div style={ct}>纯天文定位（务必明白）</div>
+								<p style={{ ...p, margin: '2px 0' }}>天文馆<b>只呈现真实天文,与星盘 / 七政四余完全独立</b>:</p>
+								<ul style={{ ...ul, marginBottom: 2 }}>
+									<li style={li}><b>无岁差、无宿度制</b>:星点一律按真实距星落位,绝不随任何「恒星黄道 / 宿度制」设置移动。</li>
+									<li style={li}><b>只借宫位</b>:仅借用星盘的宫位划分(分宫制)与观测地、时间;其余排盘参数一概不继承。</li>
+									<li style={li}>故此这里看到的二十八宿、黄道、星座位置是「天上本来的样子」,与命盘上经岁差校正后的度数可能不同,这是定位使然,不是误差。</li>
+								</ul>
+							</div>
+							<p style={{ ...p, color: MUTED }}>首次进入会载入三维渲染核心,稍候即可;离开页面自动释放资源。</p>
+						</div>
+					</TabPane>
+
+					<TabPane tab="视角与操作" key="ops">
+						<div style={body}>
+							<div style={h}>两种观察模式</div>
+							<ul style={ul}>
+								<li style={li}><b>地表观测</b>:站在观测地仰望天空,含大气折射(贴近肉眼实景),地平线以下天体隐去;滚轮调视场角(放大缩小视野)。</li>
+								<li style={li}><b>天球外观</b>:从天球外看几何原貌(不加折射),全天体可见,便于看整体结构;滚轮调观察半径(拉近 / 拉远)。</li>
+							</ul>
+							<div style={h}>鼠标操作</div>
+							<ul style={ul}>
+								<li style={li}>拖动 = 转动视野;滚轮 = 缩放。</li>
+								<li style={li}>点选天体 = 在右栏弹出该天体的三套坐标与所属星座、星名等(见「点选详情」)。</li>
+								<li style={li}>点空白处 = 读出该方向天区的赤道 / 黄道坐标。</li>
+							</ul>
+							<div style={h}>时间与观测地</div>
+							<p style={p}>跟随当前星盘的时间与观测地;改了时间,星空随之转动(可见日月星辰东升西落、行星移行)。也可用「时间播放」直接在馆内推进时间(见对应页签)。</p>
+						</div>
+					</TabPane>
+
+					<TabPane tab="定位与搜索" key="search">
+						<div style={body}>
+							<p style={p}>左侧栏顶部<b>「定位」</b>区有一个搜索框,输入天体名后按回车或点「定位」,视野自动转向并选中该目标。</p>
+							<div style={h}>可输入</div>
+							<ul style={ul}>
+								<li style={li}>恒星专名 / 西名(如:织女、天狼、Vega)。</li>
+								<li style={li}>行星 / 日月(如:月亮、木星)。</li>
+								<li style={li}>二十八宿(如:角宿、亢宿)。</li>
+								<li style={li}>星官 / 星座(如:北斗、Lyra)。</li>
+							</ul>
+							<p style={{ ...p, color: MUTED }}>匹配按「精确 → 前缀 → 包含」依次尝试,优先选较亮者;找不到会提示「没有找到匹配天体」。</p>
+						</div>
+					</TabPane>
+
+					<TabPane tab="图层开关" key="layers">
+						<div style={body}>
+							<p style={{ ...p, color: MUTED }}>左侧「图层」把所有图层收进五个可折叠分组,各项独立勾选、叠加显示。顶部另有「对标专业星图」(一键套用常用组合)与「重置」(恢复默认)。</p>
+							<div style={card}><div style={ct}>天体与星官</div>
+								{kv('内容', '恒星 / 星体 / 星名 / 二十八宿 / 宿区间 / 三垣 / 北斗 / 星官')}
+								{kv('星官', '完整传统星官连线(三垣二十八宿+近南极,共三百余星官、千余成员星):按四象三垣分色(东青龙·北玄武·西白虎·南朱雀 + 三垣三色),每星官于最亮星处标名,随天球旋转。')}</div>
+							<div style={card}><div style={ct}>参考圈</div>
+								{kv('内容', '地平·子午 / 天赤道 / 黄道 / 星座区间 / 宫位 / 银道 / 星座连线 / 星座边界')}</div>
+							<div style={card}><div style={ct}>坐标网格</div>
+								{kv('内容', '地平网格 / 赤道网格 / 黄道网格 / 宿度网格(各自同色,图例标色)')}
+								{kv('宿度网格', '二十八宿赤道过极网格:以二十八宿距星的真实赤经为界,二十八条过南北天极的大圆把赤道分成宽窄不一的宿度(以赤道为腰),按四象分色——此即中国古天文的赤道宿度体系。')}</div>
+							<div style={card}><div style={ct}>刻度与标注</div>
+								{kv('内容', '坐标数字 / 赤经时标 / 黄道度标 / 方位刻度 / 高度刻度')}</div>
+							<div style={card}><div style={ct}>极点与高阶</div>
+								{kv('内容', '天极 / 黄极 / 银极 / 岁差圈 / 日行迹 / 银河 / 行星轨迹')}
+								{kv('银河', '沿银道画出的柔和银河光带(程序化生成、向带缘渐隐)。')}
+								{kv('行星轨迹', '日月五星近期视运动路径(默认前后约一个半月),曲线穿过该星当前位置,可直观看出顺行、留、逆行。')}</div>
+							<p style={{ ...p, color: MUTED, marginTop: 4 }}>提示:「岁差圈」是把地轴长期摆动的轨迹画出来观赏,属天文现象本身;它不会改变星点的当前真实位置。</p>
+							<div style={card}><div style={ct}>显示与测量(左栏「显示」区)</div>
+								{kv('星等过滤', '拖动滑块按亮度筛星:右移仅留亮星(夜空清爽)、左移显更多暗星(默认显全部)。')}
+								{kv('升落时刻', '开启后,点选日月五星时其详情会列出当日升起 / 上中天 / 落下 的本地时刻(极区永昼永夜则标不升 / 不落)。')}
+								{kv('角距测量', '开启后先后点选两个天体(或两处天区),即给出两者球面角距离(度)并画大圆短弧;再点一次重置——便于量相位、宿度、间距。')}
+								{kv('点空白读坐标', '不在测量态时,点击空白天区即读出该方向的赤经赤纬 / 黄经黄纬 / 方位高度。')}</div>
+						</div>
+					</TabPane>
+
+					<TabPane tab="时间播放" key="time">
+						<div style={body}>
+							<p style={p}>左侧「时间播放」区让星空动起来,观察天体随时间的真实运动(东升西落、行星顺逆、月相变化等)。</p>
+							<div style={h}>速度倍率</div>
+							<p style={p}><b>暂停</b> / <b>1x</b>(实时) / <b>60x</b> / <b>1000x</b> / <b>10000x</b>,以及按周期快进的 <b>日进 / 月进 / 年进</b>。点选即以该速率推进。</p>
+							<div style={h}>步进与跳转</div>
+							<ul style={ul}>
+								<li style={li}><b>-1时 / +1时、-1日 / +1日</b>:逐小时、逐日精确步进。</li>
+								<li style={li}><b>回到命盘时间</b>:一键跳回当前星盘所用的时间。</li>
+								<li style={li}><b>全屏 / 退出沉浸</b>:进入 / 退出全屏沉浸观星。</li>
+							</ul>
+							<p style={{ ...p, color: MUTED }}>画面一角实时显示儒略日(JD)、本地恒星时(LST)与黄赤交角(ε)。</p>
+						</div>
+					</TabPane>
+
+					<TabPane tab="点选详情" key="detail">
+						<div style={body}>
+							<p style={p}>点中任一天体,右栏「天体详情」弹出含:</p>
+							<ul style={ul}>
+								<li style={li}><b>类型 / 所属图层</b>:恒星 / 二十八宿 / 行星 / 星官等。</li>
+								<li style={li}><b>三套坐标</b>:地平坐标(方位·高度)、赤道坐标(赤经·赤纬)、黄道坐标(黄经·黄纬)。</li>
+								<li style={li}><b>所属星座 / 星名</b>:含西名、专名与星表编号(若有)。</li>
+								<li style={li}><b>黄经速度</b>:行星每日移行度数(可据此判顺逆)。</li>
+								<li style={li}><b>月相</b>:选中月亮时给出相位符号与名称。</li>
+								<li style={li}><b>升落中天</b>:开启左栏「升落时刻」后,选中日月五星会附该天体当日的升 / 中天 / 落 本地时刻。</li>
+							</ul>
+							<div style={h}>右栏观测状态</div>
+							<p style={p}>右栏另有「观测状态」实时面板:帧率、当前恒星数、天空状态、太阳高度、月相、黄赤交角、本地恒星时,以及载入 / 渲染等性能耗时。</p>
+							<p style={{ ...p, color: MUTED }}>行星位置取自高精度星历,再结合观测地经纬换算为地平坐标。</p>
+						</div>
+					</TabPane>
+				</Tabs>
+			</div>
+		);
+	}
+}
+
+export default PlanetariumHelpDoc;

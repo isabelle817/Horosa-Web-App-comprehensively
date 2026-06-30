@@ -4,7 +4,6 @@ import * as ZWCont from '../../constants/ZWConst';
 import * as ZiWeiHelper from './ZiWeiHelper';
 import * as GraphHelper from '../graph/GraphHelper';
 import ZWCommHouse from './ZWCommHouse';
-import D3Arrow from '../graph/D3Arrow';
 import {randomStr,} from '../../utils/helper';
 
 class ZWHouse extends ZWCommHouse {
@@ -217,58 +216,50 @@ class ZWHouse extends ZWCommHouse {
 	}
 
 	drawSihuaStars(){
-		// P0-1：主四化盘主星行补显后端已落盘但原先未渲染的 杂吉/杂凶（仅三合盘曾显示）。
-		// 十二神（长生/博士/将前/岁前）不进主星行，单独放本宫左下角"纳音格"（见 drawSihuaSmallStars）。
-		// 受 P0-4 开关控制：杂曜默认开、十二神默认关。组别颜色复用既有 ZWColor.*，零新样式。
 		const showOthers = ZiWeiHelper.zwShowOthers();
+		const main = this.houseObj.starsMain || [];
+		const assist = this.houseObj.starsAssist || [];
+		const evil = this.houseObj.starsEvil || [];
 		const othersGood = showOthers ? (this.houseObj.starsOthersGood || []) : [];
 		const othersBad = showOthers ? (this.houseObj.starsOthersBad || []) : [];
-		let starsCount = this.houseObj.starsMain.length + this.houseObj.starsAssist.length + this.houseObj.starsEvil.length
-			+ othersGood.length + othersBad.length;
-		if(!starsCount){
+		const protectedCount = main.length + assist.length + evil.length;
+		const othersCount = othersGood.length + othersBad.length;
+		const total = protectedCount + othersCount;
+		if(!total){
 			return;
 		}
-		let avgsz = (this.width - this.margin*starsCount) / starsCount;
-		let baseStarSize = this.starFontSize || this.fontSize;
-		let sz = baseStarSize < avgsz ? baseStarSize : avgsz;
-
+		// 需求4：仅压缩杂曜(杂吉/杂凶)列宽，主辅煞(十四主星/辅星/煞曜)保舒适列宽。
+		const baseStarSize = this.starFontSize || this.fontSize;
+		const wpFull = baseStarSize + this.margin/2;
+		let wProtected; let wOthers;
+		if(total * wpFull <= this.width){
+			wProtected = wpFull; wOthers = wpFull;
+		}else{
+			const remain = this.width - protectedCount * wpFull;
+			const minOther = this.fontSize * 0.5 + this.margin/2;
+			if(othersCount > 0 && remain >= othersCount * minOther){
+				wProtected = wpFull; wOthers = remain / othersCount;
+			}else{
+				const avg = (this.width - this.margin*total) / total;
+				wProtected = Math.min(wpFull, avg); wOthers = wProtected;
+			}
+		}
+		const y = this.y;
+		const h = this.kinastroBorrowed ? (wProtected*4 + this.margin*4) : (wProtected*2 + this.margin*2);
+		// 二轮：四化按层固定槽位对齐——统一槽高+统一起点(h,星名格底),跨星同层同水平线。
+		this.luckSlotH = baseStarSize + this.margin;
 		let x = this.x;
-		let y = this.y;
-		let w = sz + this.margin/2;
-		let h = this.kinastroBorrowed ? sz*4 + this.margin*4 : sz*2 + this.margin*2;
-		for(let i=0; i<this.houseObj.starsMain.length; i++){
-			let star = this.houseObj.starsMain[i];
-			let sx = x + i*w;
-			this.drawStar(star, sx, y, w, h, ZWCont.ZWColor.StarMainStroke, 760, 1.16);
-		}
-		x = x + this.houseObj.starsMain.length * w;
-
-		for(let i=0; i<this.houseObj.starsAssist.length; i++){
-			let star = this.houseObj.starsAssist[i];
-			let sx = x + i*w;
-			this.drawStar(star, sx, y, w, h, ZWCont.ZWColor.StarAssistStroke, 560);
-		}
-		x = x + this.houseObj.starsAssist.length * w;
-
-		for(let i=0; i<this.houseObj.starsEvil.length; i++){
-			let star = this.houseObj.starsEvil[i];
-			let sx = x + i*w;
-			this.drawStar(star, sx, y, w, h, ZWCont.ZWColor.StarEvilStroke, 560);
-		}
-		x = x + this.houseObj.starsEvil.length * w;
-
-		for(let i=0; i<othersGood.length; i++){
-			let star = othersGood[i];
-			let sx = x + i*w;
-			this.drawStar(star, sx, y, w, h, ZWCont.ZWColor.StarOthersGoodStroke, 480);
-		}
-		x = x + othersGood.length * w;
-
-		for(let i=0; i<othersBad.length; i++){
-			let star = othersBad[i];
-			let sx = x + i*w;
-			this.drawStar(star, sx, y, w, h, ZWCont.ZWColor.StarOthersBadStroke, 480);
-		}
+		const drawGroup = (arr, gw, color, nameWeight, sizeScale)=>{
+			for(let i=0; i<arr.length; i++){
+				this.drawStar(arr[i], x, y, gw, h, color, nameWeight, sizeScale);
+				x += gw;
+			}
+		};
+		drawGroup(main, wProtected, ZWCont.ZWColor.StarMainStroke, 760, 1.16);
+		drawGroup(assist, wProtected, ZWCont.ZWColor.StarAssistStroke, 560, 1);
+		drawGroup(evil, wProtected, ZWCont.ZWColor.StarEvilStroke, 560, 1);
+		drawGroup(othersGood, wOthers, ZWCont.ZWColor.StarOthersGoodStroke, 480, 1);
+		drawGroup(othersBad, wOthers, ZWCont.ZWColor.StarOthersBadStroke, 480, 1);
 	}
 
 	// P0-1：十二神（长生/博士/将前/岁前，starsSmall）放本宫左下角"纳音格"内，小字单列，不挤主星行。
@@ -305,6 +296,7 @@ class ZWHouse extends ZWCommHouse {
 		this.drawSihuaStars();
 		// 十二神放左下角"纳音格"（与 drawSihuaTitle 首格同坐标），不挤主星行。
 		this.drawSihuaSmallStars(this.x, this.y + this.height * 3 / 4, this.width / 4, this.height / 4);
+		this.drawLuckLabels(this.x + this.width - 28, this.y + this.height * 3 / 4 - 2);
 	}
 
 	shouldShowStarLight(){
@@ -331,7 +323,6 @@ class ZWHouse extends ZWCommHouse {
 			this.drawKinastroStar(star, x, y, w, h, color, nameWeight, sizeScale);
 			return;
 		}
-		let yearGan = this.chartObj.yearGan;
 		let txt = [];
 		for(let i=0; i<star.name.length; i++){
 			txt[i] = star.name.charAt(i) + '';
@@ -384,107 +375,9 @@ class ZWHouse extends ZWCommHouse {
 			w: w,
 			h: h
 		};
-		let hua = star.hua || (!this.kinastroBorrowed ? ZiWeiHelper.getSiHua(star.name, yearGan) : '');
-		if(hua === '祿'){
-			hua = '禄';
-		}
-		if(hua){
-			let coloropt = ZWCont.ZWColor[hua];
-			if(!coloropt){
-				coloropt = ZWCont.ZWColor.StarMainStroke;
-			}
-			let huaScale = Math.max(sizeScale, 1.12);
-			let huaw = (w - 4) * huaScale;
-			let huah = w * huaScale;
-			let huax = x + (w - huaw) / 2;
-			let huay = y + h;
-			let huatxt = [hua];
-			let huasvg = GraphHelper.drawTextV(this.svg.append('g'), 
-				huatxt, huax, huay, huaw, huah, 2, 
-				coloropt.color || '#ffffff', 850, coloropt.bg || ZWCont.ZWColor.StarMainStroke);
-			huasvg.selectAll('text')
-				.attr('fill', coloropt.color || '#ffffff')
-				.attr('stroke', 'rgba(0, 0, 0, 0.34)')
-				.attr('stroke-width', 0.55)
-				.attr('paint-order', 'stroke')
-				.attr('font-weight', 850);
-				
-			let huatip = this.ZWRules && this.ZWRules.RuleSihua && this.ZWRules.RuleSihua[hua] ? this.ZWRules.RuleSihua[hua].slice(0) : [];
-			let huahouse = this.ZWRuleSihua && this.ZWRuleSihua.HuaInHouse ? this.ZWRuleSihua.HuaInHouse[hua] : null;
-			let huahousetip = huahouse && huahouse[this.houseObj.name] ? huahouse[this.houseObj.name].slice(0) : [];
-			let hasflag = false;
-			for(let val of huatip){
-				if(val === '=='){
-					hasflag = true;
-					break;
-				}
-			}
-			if(!hasflag){
-				huatip.push('==');
-				huatip.push(`${hua}在${this.houseObj.name}`);
-				huatip.push(huahousetip);	
-			}
-			if(huatip){
-				let tipobj = {
-					title: hua,
-					tips: huatip,
-				};
-				this.genTooltip(huasvg, tipobj, hua)
-			}
-					
-			dim.h = dim.h + huah; 
-		}
-
-		let housegan = this.houseObj.ganzi.charAt(0);
-		let ganhua = !this.kinastroBorrowed ? ZiWeiHelper.getSiHua(star.name, housegan) : null;
-		if(ganhua){
-			let coloropt = ZWCont.ZWColor[ganhua];
-			let huaScale = Math.max(sizeScale, 1.12);
-			let huaw = (w - 4) * huaScale;
-			let huah = w * huaScale;
-			let huax = x + (w - huaw) / 2;
-			let huay = y + dim.h;
-			let huatxt = [ganhua];
-			if(hua){
-				huay = huay + 2;
-			}
-			GraphHelper.drawTextV(this.svg.append('g'), 
-				huatxt, huax, huay, huaw, huah, 2, 
-				coloropt.bg, null, null, coloropt.bg);
-			
-			dim.h = dim.h + huah; 
-
-			let opt = {
-				owner: this.svg.append('g'),
-				x2: huax + huaw/2,
-				y2: huay + huah,
-				x1: huax + huaw/2,
-				y1: huay,
-				color: coloropt.bg,
-			};
-			let arrow = new D3Arrow(opt);
-			arrow.draw();
-		}
-/*
-		if(this.dirIndex !== undefined && this.dirIndex !== null){
-			let dirhouse = this.chartObj.houses[this.dirIndex];
-			let dirgan = dirhouse.ganzi.charAt(0);
-			let dirhua = ZiWeiHelper.getSiHua(star.name, dirgan);
-			if(dirhua){
-				let coloropt = ZWCont.ZWColor[dirhua];
-				let huax = x + 2;
-				let huay = y + dim.h + 4;
-				let huaw = w - 4;
-				let huah = w;
-				let huatxt = [dirhua];
-				GraphHelper.drawTextV(this.svg.append('g'), 
-					huatxt, huax, huay, huaw, huah, 2, 
-					coloropt.bg, null, null, coloropt.bg, 30);
-				
-				dim.h = dim.h + huah + 4; 
-			}	
-		}
-*/
+		// 运限四化叠层（需求5 + 二轮按层对齐）：baseOffset=h(星名格底,各星统一)、slotH=this.luckSlotH(统一槽高);clamp 不越上半矩形(需求4)。
+		const luckMaxBottom = this.y + this.height * 3 / 4 - 2;
+		dim.h = this.drawLuckSihuaForStar(star, x, y, w, h, this.luckSlotH || (w + this.margin), 2, luckMaxBottom);
 		this.stars.set(star.name, dim);
 	}
 

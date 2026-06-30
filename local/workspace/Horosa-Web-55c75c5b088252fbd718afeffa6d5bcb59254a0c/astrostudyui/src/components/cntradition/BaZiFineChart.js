@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import { BaZiMsg } from '../../msg/bazimsg';
+import { getSelfZuo, hiddenStemsOf, xunKongOf } from '../../utils/baziLunarLocal';
 
 const GAN_HE = [
 	['甲', '己', '土'], ['乙', '庚', '金'], ['丙', '辛', '水'], ['丁', '壬', '木'], ['戊', '癸', '火'],
@@ -18,6 +19,17 @@ const ZHI_SANHE = [
 ];
 const ZHI_SANHUI = [
 	[['寅', '卯', '辰'], '木'], [['巳', '午', '未'], '火'], [['申', '酉', '戌'], '金'], [['亥', '子', '丑'], '水'],
+];
+// 地支相刑(三刑逐对 + 自刑)/六害(穿)/相破 —— 后端 FourColumns 已算同源,此处前端逐对判定补显示层(§1.6)。
+const ZHI_XING = [
+	['寅', '巳'], ['巳', '申'], ['申', '寅'], ['丑', '戌'], ['戌', '未'], ['未', '丑'], ['子', '卯'],
+	['辰', '辰'], ['午', '午'], ['酉', '酉'], ['亥', '亥'],
+];
+const ZHI_HAI = [
+	['子', '未'], ['丑', '午'], ['寅', '巳'], ['卯', '辰'], ['申', '亥'], ['酉', '戌'],
+];
+const ZHI_PO = [
+	['子', '酉'], ['午', '卯'], ['申', '巳'], ['寅', '亥'], ['辰', '丑'], ['戌', '未'],
 ];
 const STEM_ELEMENT = {
 	甲: 'Wood',
@@ -95,32 +107,71 @@ function elementClass(label){
 		金: 'metal',
 		水: 'water',
 		冲: 'clash',
-		刑: 'clash',
-		害: 'clash',
-		破: 'clash',
+		刑: 'xing',
+		害: 'hai',
+		破: 'po',
 	};
 	return map[label] || 'neutral';
 }
 
-function makeColumn(title, rec, kind){
+// 五行索引(相生序):木0 火1 土2 金3 水4。相生 (i+1)%5;相克 (i+2)%5。
+const ELEMENT_INDEX = {
+	Wood: 0, wood: 0, 木: 0,
+	Fire: 1, fire: 1, 火: 1,
+	Earth: 2, earth: 2, 土: 2,
+	Metal: 3, metal: 3, 金: 3,
+	Water: 4, water: 4, 水: 4,
+};
+
+// 取某干/支单元的五行索引(支取本气)。
+function cellElementIndex(rec, STEM_ELEMENT_MAP, BRANCH_MAIN_STEM_MAP){
+	const cell = typeof rec === 'string' ? rec : (rec && rec.cell);
+	const element = (rec && rec.element) || STEM_ELEMENT_MAP[cell] || STEM_ELEMENT_MAP[BRANCH_MAIN_STEM_MAP[cell]];
+	const idx = ELEMENT_INDEX[element];
+	return (idx === undefined) ? null : idx;
+}
+
+// 相邻两单元五行关系:same 同 / forward A生B / backward B生A / null 克或被克(不连线)。
+function interactionOf(ea, eb){
+	if(ea === null || ea === undefined || eb === null || eb === undefined){
+		return null;
+	}
+	if(ea === eb){
+		return 'same';
+	}
+	if((ea + 1) % 5 === eb){
+		return 'forward';
+	}
+	if((eb + 1) % 5 === ea){
+		return 'backward';
+	}
+	return null;
+}
+
+function makeColumn(title, rec, kind, dayGan){
 	const item = typeof rec === 'string' ? {
 		ganzi: rec,
 		stem: { cell: rec.charAt(0) },
 		branch: { cell: rec.charAt(1) },
 	} : (rec || {});
+	const branchCell = item.branch && item.branch.cell ? item.branch.cell : '';
+	const stemCell = item.stem && item.stem.cell ? item.stem.cell : '';
+	const ganzi = item.ganzi || item.ganZhi || `${stemCell}${branchCell}`;
+	// 藏干/空亡：原局柱自带 stemInBranch/xunEmpty；流年大运（pillarToRecord 精简记录）缺失时按支+日干就地补算。
+	const stemInBranch = (item.stemInBranch && item.stemInBranch.length) ? item.stemInBranch : hiddenStemsOf(branchCell, dayGan);
 	return {
 		title,
 		kind,
 		rec: item,
-		stem: item.stem && item.stem.cell ? item.stem.cell : '',
-		branch: item.branch && item.branch.cell ? item.branch.cell : '',
+		stem: stemCell,
+		branch: branchCell,
 		stemRel: shortRel(item.stem),
-		hidden: hiddenStemText(item),
+		hidden: hiddenStemText({ stemInBranch }),
 		shenSha: collectGods(item),
 		naying: item.naying || '',
 		nayingPhase: item.nayingPhase || '',
 		ganziPhase: item.ganziPhase || '',
-		xunEmpty: item.xunEmpty || '',
+		xunEmpty: item.xunEmpty || xunKongOf(ganzi),
 	};
 }
 
@@ -303,22 +354,25 @@ class BaZiFineChart extends Component{
 	buildColumns(){
 		const rec = this.props.value || {};
 		const four = rec.fourColumns || {};
+		const dayGan = four.day && four.day.stem ? four.day.stem.cell : '';
 		if(this.props.mode === 'simple' || !this.hasDirection(rec)){
 			return [
-				makeColumn('年柱', four.year, 'natal'),
-				makeColumn('月柱', four.month, 'natal'),
-				makeColumn('日柱', four.day, 'day'),
-				makeColumn('时柱', four.time, 'natal'),
+				makeColumn('年柱', four.year, 'natal', dayGan),
+				makeColumn('月柱', four.month, 'natal', dayGan),
+				makeColumn('日柱', four.day, 'day', dayGan),
+				makeColumn('时柱', four.time, 'natal', dayGan),
 			];
 		}
 		const current = getSelectedDirection(rec, this.props.flowSelection) || getCurrentDirection(rec);
+		// 小运期（未起运）选中时大运列显示小运干支（经 selection.luckPillar 路由），避免空列。
+		const luckRec = (current.block && current.block.mainDirect) ? current.block.mainDirect : null;
 		return [
-			makeColumn('流年', current.sub, 'flow'),
-			makeColumn('大运', current.block ? current.block.mainDirect : null, 'luck'),
-			makeColumn('年柱', four.year, 'natal'),
-			makeColumn('月柱', four.month, 'natal'),
-			makeColumn('日柱', four.day, 'day'),
-			makeColumn('时柱', four.time, 'natal'),
+			makeColumn('流年', current.sub, 'flow', dayGan),
+			makeColumn('大运', luckRec, 'luck', dayGan),
+			makeColumn('年柱', four.year, 'natal', dayGan),
+			makeColumn('月柱', four.month, 'natal', dayGan),
+			makeColumn('日柱', four.day, 'day', dayGan),
+			makeColumn('时柱', four.time, 'natal', dayGan),
 		];
 	}
 
@@ -328,20 +382,30 @@ class BaZiFineChart extends Component{
 
 	buildStemRelations(cols){
 		const values = cols.map((item)=>item.stem);
-		return compactRelations([
-			...pairRelations(values, GAN_HE, 'stem-he'),
-			...pairRelations(values, GAN_CHONG, 'stem-chong', '冲'),
-		], 4);
+		const rels = [...pairRelations(values, GAN_HE, 'stem-he')];
+		// 刑冲破害可关(左栏「显示」开关);关闭时仅保留合/三合/三会。
+		if(this.props.showRelations !== false){
+			rels.push(...pairRelations(values, GAN_CHONG, 'stem-chong', '冲'));
+		}
+		return compactRelations(rels, 4);
 	}
 
 	buildBranchRelations(cols){
 		const values = cols.map((item)=>item.branch);
-		return compactRelations([
+		const rels = [
 			...groupRelations(values, ZHI_SANHE, 'branch-sanhe'),
 			...groupRelations(values, ZHI_SANHUI, 'branch-sanhui'),
 			...pairRelations(values, ZHI_LIUHE, 'branch-liuhe'),
-			...pairRelations(values, ZHI_CHONG, 'branch-chong', '冲'),
-		], 5);
+		];
+		if(this.props.showRelations !== false){
+			rels.push(
+				...pairRelations(values, ZHI_CHONG, 'branch-chong', '冲'),
+				...pairRelations(values, ZHI_XING, 'branch-xing', '刑'),
+				...pairRelations(values, ZHI_HAI, 'branch-hai', '害'),
+				...pairRelations(values, ZHI_PO, 'branch-po', '破'),
+			);
+		}
+		return compactRelations(rels, 9);
 	}
 
 	getElementColor(rec){
@@ -422,15 +486,71 @@ class BaZiFineChart extends Component{
 		);
 	}
 
+	// 横向相邻互动连线(同行左右):叠在对应行上,行内垂直居中,落在两字之间。which='stem'|'branch'。
+	renderHConnOverlay(cols, which){
+		const N = cols.length;
+		if(!N){ return null; }
+		const elems = cols.map((c)=>cellElementIndex(which === 'stem' ? c.rec.stem : c.rec.branch, STEM_ELEMENT, BRANCH_MAIN_STEM));
+		const conns = [];
+		for(let i=0; i<N - 1; i++){
+			const r = interactionOf(elems[i], elems[i + 1]);
+			if(r){ conns.push({ i, rel: r }); }
+		}
+		if(!conns.length){ return null; }
+		return (
+			<div className="horosa-bazi-fine-hconn-layer" aria-hidden="true">
+				{conns.map((c)=>{
+					const left = ((c.i + 0.68) / N) * 100;
+					const width = (0.64 / N) * 100;
+					const arrow = c.rel === 'forward' ? 'right' : (c.rel === 'backward' ? 'left' : '');
+					return (
+						<div key={`${which}-${c.i}`} className="horosa-bazi-fine-conn horosa-bazi-fine-conn-h" style={{ left: `${left}%`, width: `${width}%`, top: '50%' }}>
+							<span className="horosa-bazi-fine-conn-line" />
+							{arrow ? <span className={`horosa-bazi-fine-conn-arrow horosa-bazi-fine-conn-arrow-${arrow}`} /> : null}
+						</div>
+					);
+				})}
+			</div>
+		);
+	}
+
+	// 纵向相邻互动连线(同柱上下):天干与地支之间一条专用间隔行,箭头落于间隔,不压字。
+	renderVConnRow(cols){
+		const N = cols.length;
+		if(!N){ return null; }
+		const stems = cols.map((c)=>cellElementIndex(c.rec.stem, STEM_ELEMENT, BRANCH_MAIN_STEM));
+		const branches = cols.map((c)=>cellElementIndex(c.rec.branch, STEM_ELEMENT, BRANCH_MAIN_STEM));
+		return (
+			<div className="horosa-bazi-fine-row horosa-bazi-fine-vconn-row" aria-hidden="true">
+				<div className="horosa-bazi-fine-label" />
+				{cols.map((item, i)=>{
+					const r = interactionOf(stems[i], branches[i]);
+					if(!r){ return <div className="horosa-bazi-fine-cell" key={`vc-${i}`} />; }
+					const arrow = r === 'forward' ? 'down' : (r === 'backward' ? 'up' : '');
+					return (
+						<div className="horosa-bazi-fine-cell horosa-bazi-fine-vconn-cell" key={`vc-${i}`}>
+							<span className="horosa-bazi-fine-conn-vline" />
+							{arrow ? <span className={`horosa-bazi-fine-conn-arrow horosa-bazi-fine-conn-arrow-${arrow}`} /> : null}
+						</div>
+					);
+				})}
+			</div>
+		);
+	}
+
 	renderHiddenRow(cols){
+		// 藏干版本=分野加权：月柱藏干中「当令司令」之干高亮加重（司令取 bazi.fenYe.ruler）。
+		const fenYe = this.props.value && this.props.value.fenYe;
+		const siling = (this.props.cangVersion === 'fenye' && fenYe && fenYe.ruler) ? fenYe.ruler.gan : '';
 		return (
 			<div className="horosa-bazi-fine-row horosa-bazi-fine-hidden-row">
 				<div className="horosa-bazi-fine-label">藏干</div>
 				{cols.map((item, idx)=>(
 					<div className={`horosa-bazi-fine-cell ${this.isNatalStart(idx, cols) ? 'horosa-bazi-fine-natal-start' : ''}`} key={`hidden-${idx}`}>
-						{item.hidden.map((txt, subIdx)=>(
-							<span key={`${txt}-${subIdx}`}>{txt}</span>
-						))}
+						{item.hidden.map((txt, subIdx)=>{
+							const isSiling = siling && item.title === '月柱' && `${txt}`.charAt(0) === siling;
+							return <span key={`${txt}-${subIdx}`} className={isSiling ? 'horosa-bazi-fine-siling' : ''}>{txt}</span>;
+						})}
 					</div>
 				))}
 			</div>
@@ -454,6 +574,7 @@ class BaZiFineChart extends Component{
 
 	render(){
 		const cols = this.buildColumns();
+		const dayGan = (cols.find((c)=>c.kind === 'day') || {}).stem || '';
 		const stemRelations = this.buildStemRelations(cols);
 		const branchRelations = this.buildBranchRelations(cols);
 		const isSimple = this.props.mode === 'simple';
@@ -462,18 +583,25 @@ class BaZiFineChart extends Component{
 				{this.renderHeader(cols)}
 				{this.renderSimpleRow('主星', cols, (item)=><strong>{item.stemRel}</strong>, 'horosa-bazi-fine-main-star-row')}
 				{this.renderRelationLayer(stemRelations, 'horosa-bazi-fine-stem-relations', cols.length)}
-				{this.renderSimpleRow('天干', cols, (item)=>(
-					<span className="horosa-bazi-fine-glyph" style={{ color: this.getElementColor(item.rec.stem) }}>{item.stem}</span>
-				), 'horosa-bazi-fine-stem-row')}
-				{this.renderSimpleRow('地支', cols, (item)=>(
-					<span className="horosa-bazi-fine-glyph" style={{ color: this.getElementColor(item.rec.branch) }}>{item.branch}</span>
-				), 'horosa-bazi-fine-branch-row')}
+				<div className="horosa-bazi-fine-row-wrap">
+					{this.renderSimpleRow('天干', cols, (item)=>(
+						<span className="horosa-bazi-fine-glyph" style={{ color: this.getElementColor(item.rec.stem) }}>{item.stem}</span>
+					), 'horosa-bazi-fine-stem-row')}
+					{this.renderHConnOverlay(cols, 'stem')}
+				</div>
+				{this.renderVConnRow(cols)}
+				<div className="horosa-bazi-fine-row-wrap">
+					{this.renderSimpleRow('地支', cols, (item)=>(
+						<span className="horosa-bazi-fine-glyph" style={{ color: this.getElementColor(item.rec.branch) }}>{item.branch}</span>
+					), 'horosa-bazi-fine-branch-row')}
+					{this.renderHConnOverlay(cols, 'branch')}
+				</div>
 				{this.renderRelationLayer(branchRelations, 'horosa-bazi-fine-branch-relations', cols.length)}
 				{this.renderHiddenRow(cols)}
 				{isSimple ? this.renderShenShaRow(cols) : null}
 				{!isSimple ? this.renderSimpleRow('纳音', cols, (item)=><strong>{item.naying}</strong>, 'horosa-bazi-fine-info-row') : null}
-				{!isSimple ? this.renderSimpleRow('星运', cols, (item)=><strong>{item.nayingPhase}</strong>, 'horosa-bazi-fine-info-row') : null}
-				{!isSimple ? this.renderSimpleRow('自坐', cols, (item)=><strong>{item.ganziPhase}</strong>, 'horosa-bazi-fine-info-row') : null}
+				{!isSimple ? this.renderSimpleRow('星运', cols, (item)=><strong>{getSelfZuo(dayGan, item.branch)}</strong>, 'horosa-bazi-fine-info-row') : null}
+				{!isSimple ? this.renderSimpleRow('自坐', cols, (item)=><strong>{getSelfZuo(item.stem, item.branch)}</strong>, 'horosa-bazi-fine-info-row') : null}
 				{!isSimple ? this.renderSimpleRow('空亡', cols, (item)=><strong>{item.xunEmpty}</strong>, 'horosa-bazi-fine-info-row') : null}
 			</div>
 		);

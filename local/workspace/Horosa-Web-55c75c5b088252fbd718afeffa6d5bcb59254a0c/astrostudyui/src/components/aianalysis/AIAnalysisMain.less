@@ -808,6 +808,24 @@
 		background: rgba(231, 189, 117, 0.10) !important;
 		color: #efe4d2;
 	}
+
+	/* 「当前挂载」卡片(contextBanner)暗色适配:此前暗色块漏覆盖,chip 默认用页面 --horosa-bg(近黑)→隐于深底看不清。 */
+	.contextBanner {
+		border-color: rgba(215, 173, 105, 0.18) !important;
+		background: rgba(255, 255, 255, 0.04) !important;
+		color: #b9b2a6 !important;
+	}
+	.contextBannerLabel,
+	.contextBannerEmpty {
+		color: #b9b2a6 !important;
+	}
+	.contextBannerItem {
+		background: rgba(255, 255, 255, 0.08) !important;
+		color: #efe4d2 !important;
+	}
+	.contextBannerEdit {
+		color: #e7bd75 !important;
+	}
 }
 
 .composerActions {

@@ -2,6 +2,7 @@ import { Component } from 'react';
 import { Row, Col, Divider } from 'antd';
 import { XQButton as Button } from '../xq-ui';
 import BaZiFineChart from './BaZiFineChart';
+import BaZiAncientChart from './BaZiAncientChart';
 import { BaZiMsg } from '../../msg/bazimsg';
 import { randomStr,} from '../../utils/helper';
 import styles from '../../css/styles.less';
@@ -34,23 +35,20 @@ class PaiBaZi extends Component{
 		});
 	}
 
-	renderStyleButtons(isFine){
+	renderStyleButtons(chartStyle){
+		const styles3 = [['simple', '简盘'], ['fine', '细盘'], ['ancient', '古法盘']];
 		return (
 			<div className="horosa-bazi-summary-style-actions" aria-label="盘式">
-				<button
-					type="button"
-					className={`horosa-bazi-summary-style-button ${!isFine ? 'is-active' : ''}`}
-					onClick={()=>this.changeChartStyle('simple')}
-				>
-					简盘
-				</button>
-				<button
-					type="button"
-					className={`horosa-bazi-summary-style-button ${isFine ? 'is-active' : ''}`}
-					onClick={()=>this.changeChartStyle('fine')}
-				>
-					细盘
-				</button>
+				{styles3.map(([style, label])=>(
+					<button
+						key={style}
+						type="button"
+						className={`horosa-bazi-summary-style-button ${chartStyle === style ? 'is-active' : ''}`}
+						onClick={()=>this.changeChartStyle(style)}
+					>
+						{label}
+					</button>
+				))}
 			</div>
 		);
 	}
@@ -125,6 +123,7 @@ class PaiBaZi extends Component{
 		let height = this.props.height ? this.props.height : '100%';
 		const chartStyle = this.props.chartStyle ? this.props.chartStyle : this.state.chartStyle;
 		const isFine = chartStyle === 'fine';
+		const isAncient = chartStyle === 'ancient';
 		const showStyleSwitch = this.props.showStyleSwitch !== false;
 		const measuredHeight = typeof height === 'number' ? `${height - (showStyleSwitch ? 100 : 8)}px` : height;
 		let style = {
@@ -143,7 +142,7 @@ class PaiBaZi extends Component{
 			let leap = rec.nongli.leap ? '闰' : '';
 			nongli = `${rec.nongli.year}年${leap}${rec.nongli.month}${rec.nongli.day}`;
 			const timeAlgVal = fields.timeAlg ? fields.timeAlg.value : 0;
-			const timeAlgNames = { 0: '真太阳时', 1: '直接时间', 2: '春分定卯时', 3: '地方卯时' };
+			const timeAlgNames = { 0: '真太阳时', 1: '直接时间', 2: '春分定卯时', 3: '平太阳时' };
 			const formClock = (fields.date && fields.time) ? `${fields.date.value.format('YYYY-MM-DD')} ${fields.time.value.format('HH:mm:ss')}` : '';
 			const clockTm = rec.nongli.clockTime || formClock || rec.nongli.birth || '';
 			const solarTm = rec.nongli.solarTime || rec.nongli.birth || '';
@@ -168,20 +167,9 @@ class PaiBaZi extends Component{
 			<div className={`horosa-bazi-scroll ${styles.scrollbar}`} style={style} id={this.state.id}>
 				{showStyleSwitch ? (
 					<div className="horosa-bazi-style-switch">
-						<Button
-							size="small"
-							type={!isFine ? 'primary' : 'default'}
-							onClick={()=>this.changeChartStyle('simple')}
-						>
-							简盘
-						</Button>
-						<Button
-							size="small"
-							type={isFine ? 'primary' : 'default'}
-							onClick={()=>this.changeChartStyle('fine')}
-						>
-							细盘
-						</Button>
+						<Button size="small" type={chartStyle === 'simple' ? 'primary' : 'default'} onClick={()=>this.changeChartStyle('simple')}>简盘</Button>
+						<Button size="small" type={isFine ? 'primary' : 'default'} onClick={()=>this.changeChartStyle('fine')}>细盘</Button>
+						<Button size="small" type={isAncient ? 'primary' : 'default'} onClick={()=>this.changeChartStyle('ancient')}>古法盘</Button>
 					</div>
 				) : null}
 				<Row className="horosa-bazi-summary" style={{marginBottom: 10}}>
@@ -195,16 +183,22 @@ class PaiBaZi extends Component{
 						<span>{realtm}</span><br />
 						<span>{extraLine}</span>
 								</div>
-								{this.renderStyleButtons(isFine)}
+								{this.renderStyleButtons(chartStyle)}
 							</div>
 						</Col>
 					</Row>
-				<BaZiFineChart
-					value={rec}
-					fields={fields}
-					mode={isFine ? 'fine' : 'simple'}
-					flowSelection={this.props.flowSelection}
-				/>
+				{isAncient ? (
+					<BaZiAncientChart value={rec} fields={fields} />
+				) : (
+					<BaZiFineChart
+						value={rec}
+						fields={fields}
+						mode={isFine ? 'fine' : 'simple'}
+						flowSelection={this.props.flowSelection}
+						showRelations={!(this.props.baziOpt && this.props.baziOpt.showRelations === false)}
+						cangVersion={(this.props.baziOpt && this.props.baziOpt.cangVersion) || 'common'}
+					/>
+				)}
 			</div>
 		);
 	}

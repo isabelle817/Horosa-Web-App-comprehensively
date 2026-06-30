@@ -1,0 +1,112 @@
+// 数算 · 操作手册(帮助页内容组件,数算页右上角「帮助」打开)。
+// 逐技法/逐选项写清「怎么用 + 各档差在哪」;中性表述,纯展示零后端。
+import { Component } from 'react';
+import { Tabs } from 'antd';
+
+const { TabPane } = Tabs;
+import { MUTED, h, p, ul, li, card, ct, body, title } from './helpDocStyle';
+
+const kv = (k, v) => <div style={{ margin: '1px 0', lineHeight: 1.55 }}><span style={{ color: MUTED }}>{k}：</span>{v}</div>;
+
+class ShusuanHelpDoc extends Component{
+	render(){
+		return (
+			<div style={{ marginTop: 10, borderTop: '1px solid var(--horosa-border, rgba(120,120,120,0.25))', paddingTop: 8 }}>
+				<div style={title}>数算 · 操作手册</div>
+				<Tabs defaultActiveKey="overview" size="small">
+					<TabPane tab="总览" key="overview">
+						<div style={body}>
+							<p style={p}><b>数算</b>汇集八门以「数」立命的术数,共用同一时间盘:填好出生时间(必要时改地点经纬),左侧细栏切技法,即按所选技法重新起数,中盘与右栏条文随之刷新。</p>
+							<p style={p}>左侧最外一条<b>技法细栏</b>可一键切换八门:</p>
+							<ul style={ul}>
+								<li style={li}><b>邵子神数</b>:以四柱配刻数起数,核对六十四钥匙细调条文。</li>
+								<li style={li}><b>铁板神数</b>:扣入法 / 算盘打数两式,结合六亲生卒年定条文。</li>
+								<li style={li}><b>鬼谷分定经</b>:两头钳取干,断命格与古文断语。</li>
+								<li style={li}><b>北极神数</b>:年时配刻分,查条文、检索家亲财官。</li>
+								<li style={li}><b>南极神数</b>:宫部、建除、二十八宿与密码定星图条文。</li>
+								<li style={li}><b>蠢子数</b>:宿度配刻,出诗词候选与代码解析。</li>
+								<li style={li}><b>邵子参评数</b>:金锁银匙条文,本机直算(无需联网)。</li>
+								<li style={li}><b>河洛理数</b>:先后天卦与爻辞,本机直算。</li>
+							</ul>
+							<p style={{ ...p, color: MUTED }}>切任一技法或任一选项 → 实时重排(中盘 + 右栏条文 + AI 挂载)。</p>
+						</div>
+					</TabPane>
+
+					<TabPane tab="通用设置" key="common">
+						<div style={body}>
+							<div style={h}>时间与历法</div>
+							<ul style={ul}>
+								<li style={li}><b>出生时间</b>:顶部时间面板;晚子时、过子时归日按全局日界点设置自动处理。</li>
+								<li style={li}><b>历法处理</b>:本组诸门以「数」立命,只用时间与下列选项,<b>不取地点经纬</b>(无地点选择)。</li>
+							</ul>
+							<div style={h}>性别</div>
+							<p style={p}>男 / 女。影响起运方向与部分条文取用。</p>
+							<div style={h}>四柱覆写（邵子 / 铁板）</div>
+							<ul style={ul}>
+								<li style={li}><b>自动换算(默认)</b>:由出生时间推四柱。</li>
+								<li style={li}><b>手动覆写</b>:展开年 / 月 / 日 / 时四栏,各填两字干支(如「甲子」),用于已知盘或校正历法歧义。</li>
+							</ul>
+						</div>
+					</TabPane>
+
+					<TabPane tab="各技法选项" key="techniques">
+						<div style={body}>
+							<div style={card}><div style={ct}>邵子神数</div>
+								{kv('刻数', '初刻至八刻,定时辰内细分')}
+								{kv('64钥匙细调', '启用 / 关闭,启用则进一步细化条文')}
+								{kv('四柱覆写', '自动换算 / 手动覆写四柱')}</div>
+							<div style={card}><div style={ct}>铁板神数</div>
+								{kv('算法', '扣入法 / 算盘打数')}
+								{kv('起运年龄·大运步数', '起运年龄(0–120)、大运步数(1–12)')}
+								{kv('六亲生卒', '父母生卒年、兄弟 / 婚姻 / 子女信息,用于对应条文')}
+								{kv('四柱覆写', '自动换算 / 手动覆写四柱')}</div>
+							<div style={card}><div style={ct}>鬼谷分定经</div>
+								{kv('两头钳', '自动换算 / 手动指定;手动则另选年干、时干')}</div>
+							<div style={card}><div style={ct}>北极神数</div>
+								{kv('刻法', '自动换算 / 手动指定;手动则选初一刻至正四刻')}
+								{kv('条文码', '四位数字直查对应条文')}
+								{kv('关键词', '按词检索条文(如属相、婚况)')}</div>
+							<div style={card}><div style={ct}>南极神数</div>
+								{kv('起盘方式', '公历精算(默认) / 手动古法')}
+								{kv('手动古法另填', '历年、节月、日、时支、立春前/后、日干支(自动或指定)——用于直接以古历参数起盘')}
+								{kv('宫部 / 建除', '指定十二宫部之一、十二建除(建·除·满·平·定·执·破·危·成·收·开·闭)之一')}
+								{kv('二十八宿 / 宿度', '指定所临之宿,并填宿度(0–30,步进 0.5)')}
+								{kv('密码 / 星图 / 推演宫', '密码档、第几图(1–18)、推演宫地支,用于查对应星图条文')}</div>
+							<div style={card}><div style={ct}>蠢子数</div>
+								{kv('刻法', '自动换算 / 手动指定(选某刻) / 不取刻数')}
+								{kv('月日匹配', '随当前日期 / 手动月日(填农历月、日) / 关闭')}
+								{kv('宿名 / 时辰', '指定二十八宿之一、时支之一')}
+								{kv('显示数量', '候选条文上限,可选 10 / 20 / 30 / 50 条')}
+								{kv('查询 / 检索', '条文代码直查(支持批量,如「毕龙6巳、室巨9未」)、关键词检索、多标签(逗号分隔)检索')}</div>
+							<div style={card}><div style={ct}>邵子参评数（本机直算）</div>
+								{kv('取法', '明法(月支反向,默认) / 古法(八字日支)——决定日宫支与命宫的起法')}
+								{kv('内容', '据年纳音定部,顺逆起数查金锁银匙条文;出本命顺逆条、命宫顺行的歲運大运、以及 1–120 岁逐年流年条(太岁替日、大运替时)')}
+								{kv('特点', '完全本机计算,无需联网;四柱取自本应用自带八字')}</div>
+							<div style={card}><div style={ct}>河洛理数（本机直算）</div>
+								{kv('取化工法', '土王寄坤艮(默认) / 直取四方伯——节气元气化工的取法之别')}
+								{kv('内容', '由四柱起先天卦(主前段)、后天卦(主后段),配纳甲;出爻辞、卦诀与理数(命卦对体关系)')}
+								{kv('行运钻取', '大限按阳爻 9 年 / 阴爻 6 年分段,点开可逐级下钻流年(值年卦)→流月→流日(每卦管 6 日、动爻逐日初→上),各级均可看爻辞')}
+								{kv('特点', '完全本机计算,无需联网')}</div>
+						</div>
+					</TabPane>
+
+					<TabPane tab="右栏看什么" key="right">
+						<div style={body}>
+							<p style={p}>右栏按所选技法分页展示;常见分页:</p>
+							<ul style={ul}>
+								<li style={li}><b>概览</b>:命主结论、关键数与起数摘要。</li>
+								<li style={li}><b>四柱 / 年时 / 两头钳</b>:起数依据的干支或刻分。</li>
+								<li style={li}><b>条文 / 断语 / 宫部 / 查询 / 检索</b>:命中的原文条目,可按码或关键词定位。</li>
+								<li style={li}><b>大运</b>:逐步大运与对应条文(铁板、北极、南极等)。</li>
+								<li style={li}><b>候选 / 星图 / 密码</b>:多义时的候选条目与盘图(蠢子、南极)。</li>
+							</ul>
+							<p style={{ ...p, color: MUTED }}>中央盘面对演禽 / 策天等借十二宫格呈现星禽落宫;数算诸门则以条文与结构为主。当前显示内容即 AI 分析挂载与导出内容,所见即所得。</p>
+						</div>
+					</TabPane>
+				</Tabs>
+			</div>
+		);
+	}
+}
+
+export default ShusuanHelpDoc;

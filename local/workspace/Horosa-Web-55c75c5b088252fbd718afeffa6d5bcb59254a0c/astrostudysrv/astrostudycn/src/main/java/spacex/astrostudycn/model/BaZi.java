@@ -31,8 +31,10 @@ import spacex.astrostudycn.helper.SeasonHelper;
 
 public class BaZi {
 	private static final String GUOLAO_LIFE_MODE_ASC = "asc";
-	private static final String GUOLAO_LIFE_MODE_YUMAO = "yumao";
+	private static final String GUOLAO_LIFE_MODE_YUMAO = "yumao";       // 日出安命(实际日出 riseHour)
 	private static final String GUOLAO_LIFE_MODE_COTRANS = "cotrans";
+	private static final String GUOLAO_LIFE_MODE_GUMAO = "gumao";       // 古法遇卯安命(时加太阳顺数至卯=日出固定卯时6:00)
+	private static final String GUOLAO_LIFE_MODE_CUSTOM = "custom";     // 自定命宫(手动子~亥)
 
 	private static double normalizeLon(double lon) {
 		double v = lon % 360.0;
@@ -70,6 +72,7 @@ public class BaZi {
 	transient protected String lon;
 	transient protected String lat;
 	transient protected TimeZiAlg timeAlg;
+	transient protected String minggongMethod = "shufa"; // 命宫起法:shufa(数法表·默认)/xingming(星命式),只影响命宫/身宫
 	transient protected boolean useZodicalLon;
 	transient protected double nextJieJdn;
 	transient protected double prevJieJdn;
@@ -296,6 +299,12 @@ public class BaZi {
 		
 	}
 	
+	public void setMinggongMethod(String m) {
+		if (m != null && !m.isEmpty()) {
+			this.minggongMethod = m;
+		}
+	}
+
 	public void calculate(PhaseType phaseType) {
 		this.calculateFourColumn(phaseType);
 		this.setupGua();
@@ -352,6 +361,7 @@ public class BaZi {
 		}
 		
 		this.fourColumns.fillRelative();
+		this.fourColumns.minggongMethod = this.minggongMethod;
 		this.fourColumns.setupThreeSpec(phaseType, this.sunInfo, this.moonInfo);
 		this.fourColumns.setupGanZiTransform();
 		this.gong12God = this.fourColumns.setupGong12();
@@ -384,6 +394,18 @@ public class BaZi {
 				return;
 			}
 		}
+		// G/R2 古法遇卯安命:时加太阳顺数至卯 = 日出固定卯时(6:00)的日出安命(复用 yumao,riseHour=6)。
+		if(GUOLAO_LIFE_MODE_GUMAO.equals(guolaoLifeMode)) {
+			if(this.genYuMaoLifeMasterDeg(chart, "06:00", zhengSidereal)) {
+				return;
+			}
+		}
+		// R2 自定命宫:命度法值=地支(子~亥)即手动命宫,命度落该宫太阳同度;其余十二宫/三主/格局随之。
+		if(guolaoLifeMode != null && "子丑寅卯辰巳午未申酉戌亥".contains(guolaoLifeMode) && guolaoLifeMode.length() == 1) {
+			if(this.genCustomLifeMasterDeg(chart, guolaoLifeMode)) {
+				return;
+			}
+		}
 		if(GUOLAO_LIFE_MODE_ASC.equals(guolaoLifeMode)) {
 			if(this.genAscLifeMasterDeg(chart)) {
 				return;
@@ -394,6 +416,42 @@ public class BaZi {
 			return;
 		}
 		this.genLifeMasterDeg(chart);
+	}
+
+	// R2 自定命宫:lifeSignIdx = 选定地支的黄道宫序;命度 lon = 该宫起 + 太阳宫内度(同 yumao 命度落法)。
+	private boolean genCustomLifeMasterDeg(Map<String, Object> chart, String customZhi) {
+		if(customZhi == null || customZhi.trim().isEmpty()) {
+			return false;
+		}
+		// 地支(子~亥)→ 黄道宫序:SignZi(地支→西名) + SignDeg(西名→度)/30。SignList 存的是西名,不可直接 indexOf 地支。
+		String signName = StemBranch.SignZi.get(customZhi.trim());
+		Integer degBase = signName == null ? null : StemBranch.SignDeg.get(signName);
+		if(degBase == null) {
+			return false;
+		}
+		int lifeSignIdx = degBase / 30;
+		List<Map<String, Object>> objects = (List<Map<String, Object>>) chart.get("objects");
+		Map<String, Object> sun = null;
+		for(Map<String, Object> map : objects) {
+			if("Sun".equals(map.get("id"))) { sun = map; break; }
+		}
+		if(sun == null) {
+			return false;
+		}
+		double sunlon = (double) sun.get("lon");
+		double lon = normalizeLon(lifeSignIdx * 30 + (sunlon % 30));
+		Map<String, Object> master = new HashMap<String, Object>();
+		master.putAll(sun);
+		master.put("lon", lon);
+		master.put("ra", lon);
+		master.put("sign", StemBranch.SignList.get(lifeSignIdx));
+		master.put("signlon", lon % 30);
+		master.put("id", "LifeMasterDeg74");
+		master.put("type", "GenericCN");
+		master.put("house", findHouseForLon(chart, lon));
+		fillLifeMasterSu(chart, master, lon);
+		insertLifeMaster(objects, master, lon);
+		return true;
 	}
 
 	public void genLifeMasterDeg(Map<String, Object> chart) {

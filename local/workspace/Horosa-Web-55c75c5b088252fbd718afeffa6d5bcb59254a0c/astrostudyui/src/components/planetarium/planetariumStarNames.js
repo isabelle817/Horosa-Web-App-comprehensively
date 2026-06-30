@@ -1,6 +1,6 @@
 // Proper / Chinese names for the brightest, most-recognizable stars — keyed by
 // Yale Bright Star (HR) number. Purely an ENHANCEMENT for display + search
-// (对齐成熟软件 like Stellarium); the catalog already carries Bayer/Flamsteed/
+// (对齐成熟专业星图的通行做法); the catalog already carries Bayer/Flamsteed/
 // constellation, so a missing or imperfect entry here changes nothing functional —
 // the star still shows and is searchable by its catalog designation.
 //

@@ -4,6 +4,8 @@ import cherrypy
 from astrostudy.perchart import PerChart
 from websrv.helper import enable_crossdomain
 from astrostudy.germany.midpoint import MidPoint
+from astrostudy.germany.houseframes import compute_house_frames
+from astrostudy.germany.declination import compute_declination
 from flatlib import const
 from flatlib.ephem import ephem as flatlib_ephem
 
@@ -55,22 +57,58 @@ class GermanyAstroSrv:
             if missing:
                 return jsonpickle.encode({'err': 'missing_param', 'missing': missing}, unpicklable=False)
 
-            # orb 可配(默认 1° Witte 严格口径);前端传盘上容许度。
+            # 流派(汉堡学派 WP-1):classic/pure/uranian/cosmo。默认 classic = 现状字节零回归。
+            #   宇宙生物学(cosmo)不用虚星 → include_tnp=False;默认中点容许度放宽到 1.5°(若前端未显式传 orb)。
+            #   其余流派 include_tnp=True、默认 orb 1.0,与现状一致。
+            school = '{0}'.format(data.get('school', 'classic') or 'classic').strip()
+            include_tnp = (school != 'cosmo')
+
+            # orb 可配(默认 1° 原始汉堡严格口径);前端传盘上容许度。cosmo 未显式给 orb 时默认 1.5°。
+            orb_default = 1.5 if school == 'cosmo' else 1.0
             try:
-                orb = float(data.get('orb', 1.0))
+                orb = float(data.get('orb', orb_default))
             except (TypeError, ValueError):
-                orb = 1.0
+                orb = orb_default
             if not (0 < orb <= 10):
-                orb = 1.0
+                orb = orb_default
+
+            # 个人点容许度(Basic Five 放宽):仅前端显式下发时生效;缺省 None = 不分叉(零回归)。
+            personal_orb = data.get('personalOrb', None)
 
             perchart = PerChart(data)
-            # uranian=True:中点对纳入 Asc/MC + 8 TNP、近中点单算、跨 0° 归一、TNP 作相位目标。
-            midpoint = MidPoint(perchart, orb=orb, uranian=True)
+            # uranian=True:中点对纳入 Asc/MC(+ include_tnp 时 8 TNP)、近中点单算、跨 0° 归一、TNP 作相位目标。
+            midpoint = MidPoint(perchart, orb=orb, uranian=True, includeTnp=include_tnp, personalOrb=personal_orb)
             mids = midpoint.calculate()
-            tnp, tnpErr = _build_uranian_tnp(perchart)
-            mids['tnp'] = tnp
-            if tnpErr:
-                mids['tnpError'] = tnpErr
+            # TNP 星体列表:仅在该流派启用虚星时计算并下发(cosmo 不返回 tnp,前端盘自然不含虚星)。
+            if include_tnp:
+                tnp, tnpErr = _build_uranian_tnp(perchart)
+                mids['tnp'] = tnp
+                if tnpErr:
+                    mids['tnpError'] = tnpErr
+            else:
+                mids['tnp'] = []
+
+            # 六大宫框(定局法 WP-2):frames 缺省 True → 只【新增】 houseFrames 字段,不改既有响应。
+            #   pts = midpoint.objects 口径(行星+Asc/MC+8 TNP)+ 白羊点(固定黄经 0°)。
+            #   子午局走 houses_ex(b'X') 赤道分宫,余五框等宫;前端 showHouseFrames 关时不渲染。
+            if data.get('frames', True):
+                try:
+                    pts = [{'id': o.id, 'lon': o.lon} for o in midpoint.objects]
+                    pts.append({'id': 'AriesPoint', 'lon': 0.0})  # 白羊点 0° 固定(与前端 AstroConst.ARIES_POINT 同 id)
+                    mids['houseFrames'] = compute_house_frames(perchart, pts)
+                except Exception as e:
+                    traceback.print_exc()
+                    mids['houseFramesError'] = '{0}'.format(e)
+
+            # 赤纬接触(平行/反平行 WP-11):declination 缺省 True → 只【新增】 declination 字段。
+            #   点集 = 10 行星(读 perchart.decl)+(include_tnp 时)8 TNP(eqCoords 现算真赤纬);四轴排除。
+            #   同号 |Δdecl|≤orb = parallel(≈合);异号 |abs−abs|≤orb = contraParallel(≈冲)。
+            if data.get('declination', True):
+                try:
+                    mids['declination'] = compute_declination(perchart, orb, include_tnp)
+                except Exception as e:
+                    traceback.print_exc()
+                    mids['declinationError'] = '{0}'.format(e)
 
             res = jsonpickle.encode(mids, unpicklable=False)
             return res

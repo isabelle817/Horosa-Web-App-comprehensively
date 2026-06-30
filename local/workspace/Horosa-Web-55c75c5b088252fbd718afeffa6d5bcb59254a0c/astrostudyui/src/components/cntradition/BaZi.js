@@ -13,7 +13,8 @@ import BaZiLuckFlowPanel from './BaZiLuckFlowPanel';
 import BaZiAppInfoPanel from './BaZiAppInfoPanel';
 import { BaZiLegacyMain, BaZiLegacyInfoPanel } from './BaZiLegacyView';
 import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
-import { buildLocalBaziResult, buildFlowDays, buildFlowHours } from '../../utils/baziLunarLocal';
+import { Solar } from 'lunar-javascript';
+import { buildLocalBaziResult, buildFlowDays, buildFlowHours, buildFlowMonthsByYear } from '../../utils/baziLunarLocal';
 
 const TabPane = Tabs.TabPane;
 
@@ -63,7 +64,7 @@ function findBaziLiunian(bazi, year){
 // 多运限段（批A）：流年/流月读现成 subDirect[].flowMonths；流日/流时调 buildFlowDays/Hours（与四柱同口径）。
 // period={liunian:[year...], liuyue:[月序1–12...], liuri:[公历日...], liushi:[时辰序0–11...]}。
 // 语义：流年/流月对所选每项各一段（流年×流月笛卡尔）；流日/流时锚定到所选的第一个上层。总段数封顶。
-function buildBaziPeriodLines(bazi, period){
+function buildBaziPeriodLines(bazi, period, params){
 	if(!bazi || !period){
 		return [];
 	}
@@ -76,6 +77,27 @@ function buildBaziPeriodLines(bazi, period){
 	const four = bazi.fourColumns || {};
 	const dayGz = gzText(four.day);
 	const dayGan = (four.day && (four.day.ganzi || four.day.ganZhi) ? `${four.day.ganzi || four.day.ganZhi}` : `${dayGz}`).charAt(0);
+	// perf 惰性化：非「当前公历年所在大运」的流年 flowMonths=null（buildLocalBaziResult 只 eager 算当前大运）。
+	// 多运限读到 null 时按公历年 on-demand 补算（buildFlowMonthsByYear，与 eager 逐字等价）。birthSolar 仅用于
+	// 生年早月过滤（大运流年几乎非生年，不影响），由 params.date 重建。
+	let birthSolar = null;
+	try{
+		if(params && params.date){
+			const [by, bm, bd] = `${params.date}`.split('-').map((v)=>Number(v));
+			if(Number.isFinite(by) && Number.isFinite(bm) && Number.isFinite(bd)){
+				birthSolar = Solar.fromYmd(by, bm, bd);
+			}
+		}
+	}catch(e){ birthSolar = null; }
+	const flowMonthsOf = (ln)=>{
+		if(ln && Array.isArray(ln.flowMonths)){
+			return ln.flowMonths;
+		}
+		if(ln && ln.flowMonths === null && Number.isFinite(Number(ln.year))){
+			return buildFlowMonthsByYear(Number(ln.year), birthSolar, dayGan);
+		}
+		return [];
+	};
 
 	const body = [];
 	let truncated = false;
@@ -116,7 +138,7 @@ function buildBaziPeriodLines(bazi, period){
 	if(liuyueSel.length){
 		baseYears.forEach((year)=>{
 			const ln = findBaziLiunian(bazi, year);
-			const months = (ln && Array.isArray(ln.flowMonths)) ? ln.flowMonths : [];
+			const months = flowMonthsOf(ln);
 			liuyueSel.forEach((ord)=>{
 				const fm = findFlowMonthByOrd(months, ord);
 				if(fm){
@@ -134,7 +156,7 @@ function buildBaziPeriodLines(bazi, period){
 	// 锚定上层：流日 → 第一个 (流年, 流月)；流时 → 第一个 (流年, 流月, 流日)。
 	const anchorYear = baseYears.length ? baseYears[0] : null;
 	const anchorLn = anchorYear !== null ? findBaziLiunian(bazi, anchorYear) : null;
-	const anchorMonths = (anchorLn && Array.isArray(anchorLn.flowMonths)) ? anchorLn.flowMonths : [];
+	const anchorMonths = flowMonthsOf(anchorLn);
 	// 锚定流月对象（取所选首月序，否则首个 flowMonth）→ 其公历 (year, month) 供枚举流日。
 	// 按节气月号匹配（与流月段同口径）；生年所选首月若被过滤则回退首个可用 flowMonth，避免流日/流时锚定落空。
 	const anchorFm = liuyueSel.length
@@ -289,7 +311,7 @@ function buildBaziSnapshotText(params, result){
 	lines.push(`日柱：${gzText(four.day)}`);
 	lines.push(`时柱：${gzText(four.time)}`);
 	lines.push(`胎元：${gzText(four.tai)}`);
-	lines.push(`命宫：${gzText(four.ming)}`);
+	lines.push(`命宫：${gzText(four.ming)}（起法：${(params && params.minggongMethod === 'shufa') ? '子平数法' : '通行版'}）`);
 	lines.push(`身宫：${gzText(four.shen)}`);
 
 	lines.push('');
@@ -301,6 +323,77 @@ function buildBaziSnapshotText(params, result){
 	lines.push(`胎元：${gzGodText(four.tai)}`);
 	lines.push(`命宫：${gzGodText(four.ming)}`);
 	lines.push(`身宫：${gzGodText(four.shen)}`);
+
+	if(bazi.wuxingStat && Array.isArray(bazi.wuxingStat.scores) && bazi.wuxingStat.scores.length){
+		const st = bazi.wuxingStat;
+		lines.push('');
+		lines.push('[五行力量]');
+		lines.push(st.cangVersion === 'fenye'
+			? '（分野加权：天干100/本气100/中气60/余气30；月柱仅当令司令吃月令×1.5，余月支藏干不加月乘）'
+			: '（通行示例权重：天干100/本气100/中气60/余气30/月令×1.5）');
+		lines.push(`分布：${st.scores.map((s)=>`${s.label}${s.percent}%`).join('　')}`);
+		lines.push(`最旺：${st.dominant}　最弱：${st.weakest}`);
+		if(st.dayMaster){
+			lines.push(`日主${st.dayMaster.element}：${st.dayMaster.verdict}（同党印比 ${st.dayMaster.samePercent}% · 异党 ${Math.round((100 - st.dayMaster.samePercent) * 10) / 10}%）`);
+		}
+	}
+
+	if(bazi.gejuYongShen && (bazi.gejuYongShen.geju || bazi.gejuYongShen.yongshen)){
+		const gy = bazi.gejuYongShen;
+		const SCHOOL_LABEL = { zonghe: '传统综合', fuyi: '扶抑派', geju: '格局派', tiaohou: '调候派', bingyao: '病药派', mangpai: '盲派', nayin: '纳音古法' };
+		lines.push('');
+		lines.push('[格局·用神]');
+		lines.push(`当前主用流派：${SCHOOL_LABEL[(params && params.school)] || '传统综合'}（各派取用可异，下列多派对照）`);
+		if(gy.geju){
+			lines.push(`格局：${gy.geju.name}（月令${gy.geju.tenGod || '—'}·${gy.geju.via}）`);
+		}
+		if(Array.isArray(gy.schools) && gy.schools.length){
+			lines.push('多派用神对照：');
+			gy.schools.forEach((s)=>{
+				lines.push(`· ${s.school}${s.verdict ? `·${s.verdict}` : ''}：喜用 ${(s.xi && s.xi.join('·')) || '—'}　忌 ${(s.ji && s.ji.length ? s.ji.join('·') : '—')}；${s.note}`);
+			});
+		}else if(gy.yongshen){
+			const yo = gy.yongshen;
+			lines.push(`用神（${yo.school}·${yo.verdict}）：喜用 ${yo.xi.join('·') || '—'}　忌 ${yo.ji.join('·') || '—'}`);
+			lines.push(`说明：${yo.note}`);
+		}
+		if(Array.isArray(gy.bianGe) && gy.bianGe.length){
+			lines.push('疑似变格（需复核）：');
+			gy.bianGe.forEach((b)=>{
+				lines.push(`· ${b.type}·${b.name}（${b.cond}）→ 若成立用${b.yong}、忌${b.bei}；${b.note}`);
+			});
+		}
+		if(Array.isArray(gy.zaGe) && gy.zaGe.length){
+			lines.push('杂格（正格优先，需复核填实刑冲）：');
+			gy.zaGe.forEach((b)=>{
+				lines.push(`· ${b.name}（${b.cond}）：${b.note}`);
+			});
+		}
+	}
+
+	if(bazi.mangpai && Array.isArray(bazi.mangpai.cells)){
+		const mp = bazi.mangpai;
+		lines.push('');
+		lines.push('[盲派结构]');
+		lines.push('（象法·参考，与扶抑/格局体系不同）');
+		lines.push(`宾主：${mp.cells.map((c)=>`${c.label}${c.role}(${c.gan}${c.zhi})`).join(' ')}`);
+		if(mp.zuogong && mp.zuogong.length){
+			lines.push('做功路线：');
+			mp.zuogong.forEach((z)=>lines.push(`· ${z.text}`));
+		}else{
+			lines.push('做功：主位之体未直接取宾位之用（多看刑冲合害引动）。');
+		}
+		if(mp.feishen && mp.feishen.length){ lines.push(`废神：${mp.feishen.join('、')}`); }
+	}
+
+	if(bazi.fenYe && bazi.fenYe.ruler){
+		const fy = bazi.fenYe;
+		lines.push('');
+		lines.push('[月令司令（分野）]');
+		lines.push(`版本：${fy.versionLabel}`);
+		lines.push(`节后 ${fy.daysAfterJie} 日，当令：${fy.ruler.gan}（${fy.ruler.pos}）`);
+		lines.push(`轮值：${fy.segments.map((s)=>`${s.gan}${s.pos}${s.days}日`).join(' → ')}`);
+	}
 
 	if(bazi.mainDirection && bazi.mainDirection.length){
 		lines.push('');
@@ -342,7 +435,7 @@ function buildBaziSnapshotText(params, result){
 
 	// 多运限（批A）：仅挂载「每技法设置」显式选了流年/流月/流日/流时时追加；缺省不追加 → 快照与现状逐字一致。
 	if(params && params.period){
-		const periodLines = buildBaziPeriodLines(bazi, params.period);
+		const periodLines = buildBaziPeriodLines(bazi, params.period, params);
 		if(periodLines.length > 0){
 			lines.push(...periodLines);
 		}
@@ -535,7 +628,7 @@ class BaZi extends Component{
 		this.state = {
 			result: null,
 			baziOpt: bzopt,
-			chartStyle: localStorage.getItem(BAZI_CHART_STYLE_KEY) === 'fine' ? 'fine' : 'simple',
+			chartStyle: ['fine', 'ancient'].indexOf(localStorage.getItem(BAZI_CHART_STYLE_KEY)) >= 0 ? localStorage.getItem(BAZI_CHART_STYLE_KEY) : 'simple',
 			currentBaziKey: '',
 			directResult: null,
 			directKey: '',
@@ -623,10 +716,20 @@ class BaZi extends Component{
 	}
 	
 	onBaziOptChange(opt){
+		const prev = this.state.baziOpt || {};
+		// 命宫起法影响后端命宫/身宫 → 改后需带参重取;藏干版本(分野加权)影响五行力量打分 → 也需重取;
+		// 其余(界面样式/刑冲破害等纯显示)不重取。
+		const needRefetch = (prev.minggongMethod || 'tongxing') !== (opt.minggongMethod || 'tongxing')
+				|| (prev.fenyeVersion || 'common') !== (opt.fenyeVersion || 'common')
+				|| (prev.cangVersion || 'common') !== (opt.cangVersion || 'common')
+				|| (prev.dayunPrecision || 'precise') !== (opt.dayunPrecision || 'precise');
 		this.setState({
 			baziOpt: opt,
 		}, ()=>{
 			localStorage.setItem(BaZiOptKey, JSON.stringify(opt));
+			if(needRefetch){
+				this.requestBazi(this.props.fields);
+			}
 		});
 	}
 
@@ -661,6 +764,11 @@ class BaZi extends Component{
 			after23NewDay: flds.after23NewDay.value,
 			lateZiHourUseNextDay: flds.lateZiHourUseNextDay && flds.lateZiHourUseNextDay.value !== undefined ? flds.lateZiHourUseNextDay.value : 1,
 			adjustJieqi: flds.adjustJieqi.value,
+			minggongMethod: (this.state.baziOpt && this.state.baziOpt.minggongMethod) || 'tongxing',
+			fenyeVersion: (this.state.baziOpt && this.state.baziOpt.fenyeVersion) || 'common',
+			// 藏干版本（分野加权 fenye / 通行版 common）：影响五行力量打分（月柱当令司令加权）→ 进 params 让缓存键随之失效并重算。
+			cangVersion: (this.state.baziOpt && this.state.baziOpt.cangVersion) || 'common',
+			dayunPrecision: (this.state.baziOpt && this.state.baziOpt.dayunPrecision) || 'precise',
 		}
 		return params;
 	}
@@ -703,7 +811,9 @@ class BaZi extends Component{
 
 		this.setState(st);
 		// 惰性构建:快照文本拼装挪出排盘关键路径(params/result 为局部量,闭包安全)。
-		saveModuleAISnapshotLazy('bazi', ()=>buildBaziSnapshotText(params, result), {
+		// 须带 school（断命流派）→ 否则不触发 refresh 的场景 AI 快照恒标「传统综合」(与 handleSnapshotRefreshRequest 同口径)。
+		const snapshotParams = { ...params, school: (this.state.baziOpt || {}).school };
+		saveModuleAISnapshotLazy('bazi', ()=>buildBaziSnapshotText(snapshotParams, result), {
 			date: params.date,
 			time: params.time,
 			zone: params.zone,
@@ -772,7 +882,7 @@ class BaZi extends Component{
 		let text = '';
 		try{
 			if(this.props.fields && this.state.result){
-				const params = this.genParams(this.props.fields);
+				const params = { ...this.genParams(this.props.fields), school: (this.state.baziOpt || {}).school };
 				text = `${buildBaziSnapshotText(params, this.state.result) || ''}`.trim();
 			}
 		}catch(e){
@@ -817,7 +927,7 @@ class BaZi extends Component{
 		let bazi = this.state.result ? this.state.result.bazi : {};
 		const directBazi = this.state.directResult && this.state.directResult.bazi ? this.state.directResult.bazi : null;
 		const baziParams = this.props.fields ? this.genParams(this.props.fields) : {};
-		const isFineChart = this.state.chartStyle === 'fine';
+		const isFineChart = this.state.chartStyle === 'fine' || this.state.chartStyle === 'ancient';
 		const isLegacyUi = this.state.baziOpt && this.state.baziOpt.uiMode === 'legacy';
 		const chartHeight = typeof height === 'number' ? Math.max(360, Math.round(height * 0.62)) : height;
 		const flowHeight = typeof height === 'number' ? Math.max(220, height - chartHeight - 18) : 240;
@@ -861,6 +971,8 @@ class BaZi extends Component{
 											jieqiParams={baziParams}
 											onLoad={this.requestBaziDirect}
 											onSelectionChange={this.onFlowSelectionChange}
+											showXiaoyun={!(this.state.baziOpt && this.state.baziOpt.showXiaoyun === false)}
+											ageStyle={(this.state.baziOpt && this.state.baziOpt.ageStyle) || 'nominal'}
 											compact
 										/>
 									</div>
@@ -871,7 +983,7 @@ class BaZi extends Component{
 							{isLegacyUi ? (
 								<BaZiLegacyInfoPanel value={bazi} fields={this.props.fields} height={tabHeight} />
 							) : (
-								<BaZiAppInfoPanel value={bazi} fields={this.props.fields} height={tabHeight} />
+								<BaZiAppInfoPanel value={bazi} fields={this.props.fields} height={tabHeight} showShenSha={!(this.state.baziOpt && this.state.baziOpt.showShenSha === false)} zodiacBoundary={(this.state.baziOpt && this.state.baziOpt.zodiacBoundary) || 'lichun'} school={(this.state.baziOpt && this.state.baziOpt.school) || 'zonghe'} flowSelection={this.state.flowSelection} />
 							)}
 						</div>
 					</div>

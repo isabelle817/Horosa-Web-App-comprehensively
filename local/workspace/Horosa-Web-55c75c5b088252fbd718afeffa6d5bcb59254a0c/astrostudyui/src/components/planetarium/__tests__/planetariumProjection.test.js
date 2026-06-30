@@ -2,8 +2,14 @@ import {
 	meanObliquityDeg,
 	atmosphericRefractionDeg,
 	eclipticToEquatorial,
+	galacticToEquatorial,
 	equatorialToHorizontal,
 	projectedEquatorialItem,
+	apparentSiderealDegrees,
+	localSiderealDeg,
+	hourAngleDeg,
+	riseTransitSet,
+	sunEclipticLongitude,
 } from '../planetariumProjection';
 
 // 天文馆投影核(v11):前端必须复刻后端 swisseph.azalt 的「视位置 + 大气折射」,
@@ -20,6 +26,30 @@ describe('planetariumProjection — 黄赤交角(按日期,非 J2000 硬编码)'
 		const jd2026 = 2461041.5;
 		expect(meanObliquityDeg(jd1994)).toBeGreaterThan(meanObliquityDeg(J2000));
 		expect(meanObliquityDeg(J2000)).toBeGreaterThan(meanObliquityDeg(jd2026));
+	});
+});
+
+describe('planetariumProjection — 银道→赤道(IAU 1958 不变量)', ()=>{
+	test('银心 (l=0,b=0) → ra≈266.4°, decl≈−28.9°', ()=>{
+		const eq = galacticToEquatorial(0, 0);
+		expect(eq.ra).toBeCloseTo(266.4, 1);
+		expect(eq.decl).toBeCloseTo(-28.9, 1);
+	});
+	test('北银极 (l=0,b=90) → ra≈192.86°, decl≈27.13°', ()=>{
+		const eq = galacticToEquatorial(0, 90);
+		expect(eq.ra).toBeCloseTo(192.85948, 3);
+		expect(eq.decl).toBeCloseTo(27.12825, 3);
+	});
+	test('ra 归一化到 [0,360)', ()=>{
+		for(let l=0; l<360; l+=37){
+			for(let b=-60; b<=60; b+=30){
+				const eq = galacticToEquatorial(l, b);
+				expect(eq.ra).toBeGreaterThanOrEqual(0);
+				expect(eq.ra).toBeLessThan(360);
+				expect(eq.decl).toBeGreaterThanOrEqual(-90);
+				expect(eq.decl).toBeLessThanOrEqual(90);
+			}
+		}
 	});
 });
 
@@ -122,5 +152,54 @@ describe('planetariumProjection — ① 天球外观去折射开关(applyRefract
 		const orbit = projectedEquatorialItem(item, jd, obs, false);
 		expect(orbit.altitudeAppa).toBeCloseTo(orbit.altitudeTrue, 10);
 		expect(ground.altitudeAppa).toBeGreaterThanOrEqual(ground.altitudeTrue);
+	});
+});
+
+describe('planetariumProjection — 恒星时 / 时角 / 升中天落(B2)', ()=>{
+	const jd = 2461000.3;
+	test('本地恒星时 = 视恒星时 + 经度(mod 360)', ()=>{
+		const lst = localSiderealDeg(jd, 120);
+		const want = (((apparentSiderealDegrees(jd) + 120) % 360) + 360) % 360;
+		expect(lst).toBeCloseTo(want, 9);
+		expect(lst).toBeGreaterThanOrEqual(0);
+		expect(lst).toBeLessThan(360);
+	});
+	test('时角 = LST − RA;子午线上(HA=0)对应 RA=LST,且 HA∈[0,360)', ()=>{
+		const lst = localSiderealDeg(jd, 100);
+		expect(hourAngleDeg(jd, 100, lst)).toBeCloseTo(0, 9);
+		const ha = hourAngleDeg(jd, 100, 33);
+		expect(ha).toBeGreaterThanOrEqual(0);
+		expect(ha).toBeLessThan(360);
+	});
+	test('赤道天体(decl 0)在赤道观测者:升↔落约半个恒星日,transit 居中', ()=>{
+		const r = riseTransitSet(180, 0, jd, { lat: 0, lon: 0 });
+		expect(r.riseJd).toBeDefined();
+		expect(r.setJd).toBeDefined();
+		expect(r.setJd - r.riseJd).toBeCloseTo(2 * (90.567 / 360.98564736629), 2);
+		expect(r.transitJd).toBeCloseTo((r.riseJd + r.setJd) / 2, 6);
+	});
+	test('高纬:恒显(circumpolar)/ 恒隐(neverRises)', ()=>{
+		const up = riseTransitSet(120, 89, jd, { lat: 80, lon: 0 });
+		expect(up.circumpolar).toBe(true);
+		expect(up.riseJd).toBeUndefined();
+		const down = riseTransitSet(120, -89, jd, { lat: 80, lon: 0 });
+		expect(down.neverRises).toBe(true);
+		expect(down.setJd).toBeUndefined();
+	});
+});
+
+describe('planetariumProjection — 太阳黄经 / 日行迹(F2)', ()=>{
+	test('J2000.0 太阳黄经 ≈ 280.4°(摩羯)', ()=>{
+		expect(Math.abs(sunEclipticLongitude(2451545.0) - 280.4)).toBeLessThan(1.5);
+	});
+	test('2000 夏至前后 ≈ 90°', ()=>{
+		expect(Math.abs(sunEclipticLongitude(2451716.6) - 90)).toBeLessThan(2);
+	});
+	test('始终落在 [0,360)', ()=>{
+		[2451545, 2461000, 2400000, 2470000].forEach((j)=>{
+			const lon = sunEclipticLongitude(j);
+			expect(lon).toBeGreaterThanOrEqual(0);
+			expect(lon).toBeLessThan(360);
+		});
 	});
 });

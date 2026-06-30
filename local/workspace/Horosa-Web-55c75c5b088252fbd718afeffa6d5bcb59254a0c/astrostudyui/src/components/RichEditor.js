@@ -1,7 +1,10 @@
 import * as forge from 'node-forge';
 import { Component, } from 'react';
-import ReactQuill from 'react-quill';
+import * as ReactQuillModule from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
+// 🔒 react-quill 1.3.5 是 CJS 老包;prod 构建 default interop 可能解析成 undefined →
+//   <ReactQuill/> 报 "Element type is invalid: got undefined"。取 default||本体,两种 interop 都稳。
+const ReactQuill = (ReactQuillModule && ReactQuillModule.default) || ReactQuillModule;
 import styles from '../css/styles.less';
 
 

@@ -3,6 +3,8 @@ import { Component } from 'react';
 import {randomStr,} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import GZChart from './GZChart';
+import { chartDrawGuardEnabled } from '../../utils/perfFlags';
+import { buildChartDrawSig, sameChartDrawSig, chartDrawnAtNonZeroSize } from '../../utils/chartDrawGuard';
 
 class GuaZhanChart extends Component{
 	constructor(props) {
@@ -57,13 +59,31 @@ class GuaZhanChart extends Component{
 		if(chartobj === undefined || chartobj === null){
 			return;
 		}
-		
+
+		// 重绘签名守卫:render() 每次调 drawChart,输入(盘/fields/爻/农历/分析 引用 + 主题 + 尺寸)未变则跳过整树 d3 重建。
+		const guardOn = chartDrawGuardEnabled();
+		const sig = guardOn ? buildChartDrawSig(this.state.chartid, {
+			value: chartobj,
+			fields: this.props.fields,
+			yao: this.props.yao,
+			nongli: this.props.nongli,
+			analysis: this.props.analysis,
+		}) : null;
+		if(guardOn && sameChartDrawSig(sig, this._lastDrawnSig)){
+			return;
+		}
+
 		this.gzchart.fields = this.props.fields;
 		this.gzchart.chart = chartobj;
 		this.gzchart.yao = this.props.yao;
 		this.gzchart.nongli = this.props.nongli;
+		this.gzchart.analysis = this.props.analysis;
 
 		this.gzchart.draw();
+
+		if(sig && chartDrawnAtNonZeroSize(this.state.chartid)){
+			this._lastDrawnSig = sig;
+		}
 	}
 
 	componentDidMount(){

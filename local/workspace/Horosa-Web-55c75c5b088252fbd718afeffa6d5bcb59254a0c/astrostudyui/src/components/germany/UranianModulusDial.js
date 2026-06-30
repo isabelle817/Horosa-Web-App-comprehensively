@@ -4,6 +4,10 @@ import { randomStr } from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import { cursorReadout, spreadDialAngles, antiscion } from '../../utils/uranianDial';
+import { factorLabel } from '../../data/uranianMeanings';
+
+// 字形 hover 名(增强):原名 · 因子义(factorLabel 缺则只剩原名)。
+const glyphTip = (id) => { const n = AstroText.AstroMsgCN[id] || id; const lab = factorLabel(id); return lab && lab !== n ? n + ' · ' + lab : n; };
 
 // 真 360° 多环模数盘（与折叠盘并列的另一种汉堡技法）：三层同心环按真实黄道位置画行星，
 // 中央叠一圈可读的模数刻度盘 + 可拖红指针；除本命外每环可拖动旋转，拖指针/环读「指针所指真实度数」
@@ -13,7 +17,9 @@ const TAU = Math.PI * 2;
 const norm360 = (x) => ((x % 360) + 360) % 360;
 // 逆时针(0°在正上、度数向左增)，与全站星盘一致。
 const polar = (cx, cy, R, deg) => { const a = deg / 360 * TAU; return [cx - R * Math.sin(a), cy - R * Math.cos(a)]; };
-const RING_TONE = { natal: 'currentColor', transit: '#c0392b', solararc: '#1f7a5a' };
+const RING_TONE = { natal: 'currentColor', transit: '#c0392b', solararc: '#1f7a5a',
+	// WP-9 合盘叠盘人(最多 4):取应用既有强调色族,四人以蓝/紫/青/琥珀区分(与本命 currentColor/行运红/太阳弧绿 不撞)。
+	syn0: 'var(--horosa-accent, #2f7df1)', syn1: '#8e6fd0', syn2: '#1f8a8a', syn3: '#c08a2f' };
 const POINTER_COLOR = '#e23b3b';
 
 export default class UranianModulusDial extends Component {
@@ -31,9 +37,11 @@ export default class UranianModulusDial extends Component {
 	}
 	componentDidMount(){ this.draw(); }
 	componentDidUpdate(prev){
-		if (prev.base !== this.props.base || prev.rings !== this.props.rings || prev.size !== this.props.size || prev.showTnp !== this.props.showTnp || prev.showAntiscia !== this.props.showAntiscia) this.draw();
+		if (prev.base !== this.props.base || prev.rings !== this.props.rings || prev.size !== this.props.size || prev.showTnp !== this.props.showTnp || prev.showAntiscia !== this.props.showAntiscia
+			|| prev.showHouseFrames !== this.props.showHouseFrames || prev.crossPointer !== this.props.crossPointer) this.draw();
+		else if (prev.showSumPoints !== this.props.showSumPoints || prev.showArcOpenings !== this.props.showArcOpenings || prev.orb !== this.props.orb || prev.orbPersonal !== this.props.orbPersonal) this.emitReadout();
 	}
-	componentWillUnmount(){ this._detach(); }
+	componentWillUnmount(){ this._detach(); if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; } }
 
 	rings(){ return (this.props.rings && this.props.rings.length) ? this.props.rings : [{ key: 'natal', label: '本命', points: this.props.points || [] }]; }
 
@@ -48,17 +56,44 @@ export default class UranianModulusDial extends Component {
 	}
 
 	emitReadout(){
-		const { base, orb, personal, onlyPersonal } = this.props;
-		const out = [];
+		const { base, orb, personal, onlyPersonal, showSumPoints, showArcOpenings, orbPersonal, crossPointer } = this.props;
+		// WP-5:和点/差距读数 + 个人点放宽容许度透传;均缺省时 cursorReadout 行为零回归(只产 body/mid)。
+		const ro = { personal, onlyPersonal, sum: !!showSumPoints, arc: !!showArcOpenings, orbPersonal };
+		// WP-6 十字指针(真位盘 1:1 几何):折叠盘副臂是「视觉 ±22.5°/±67.5°」,在 base 周期里压缩成折叠经偏移 off·base/360;
+		// 真位盘 cursorReadout 收【真实黄经】内部按 base 折叠,故等价副臂 = 在真实 cursor 上加 off·base/360(base=90 时 ±5.625°/±16.875°)。
+		// 与折叠盘逐项同口径,只是把「视觉偏移」换成「真位偏移」(关时仅主臂[0],零回归)。
+		const armOffsets = crossPointer ? [0, 22.5, -22.5, 67.5, -67.5].map((o) => o * base / 360) : [0];
+		const raw = [];
 		this.rings().forEach((ring) => {
 			const rot = this.rotations[ring.key] || 0;
 			// 真位盘：显示角=真实黄经，环旋转 rot 后行星真实角 = lon+rot；指针真实角=pointerAngle。
 			// 折叠对齐的 cursor 黄经 = (pointerAngle − rot)，交给同一 cursorReadout（内部按 base 折叠）。
 			const cursorLon = norm360(this.pointerAngle - rot);
-			cursorReadout(ring.points || [], cursorLon, base, orb, { personal, onlyPersonal }).forEach((h) => out.push({ ...h, ring: ring.label, ringKey: ring.key }));
+			armOffsets.forEach((off) => {
+				cursorReadout(ring.points || [], norm360(cursorLon + off), base, orb, ro).forEach((h) => raw.push({ ...h, ring: ring.label, ringKey: ring.key, cross: off !== 0 }));
+			});
 		});
+		// 合并去重:同环+同类+同因子取最小 sep;任一命中来自副臂则标十字(与折叠盘 _mergeCrossHits 同口径)。
+		const out = crossPointer ? this._mergeCrossHits(raw) : raw;
 		out.sort((a, b) => a.sep - b.sep);
 		if (this.props.onCursorChange) this.props.onCursorChange(out);
+	}
+
+	// WP-6:四臂读数合并去重(与折叠盘同实现)。键 = ring|kind|因子(无序对);保留最小 sep;cross 标记保留。
+	_mergeCrossHits(raw){
+		const keyOf = (h) => {
+			const ids = h.kind === 'body' ? [h.id] : [h.a, h.b].slice().sort();
+			return `${h.ringKey}|${h.kind}|${ids.join('+')}`;
+		};
+		const byKey = new Map();
+		raw.forEach((h) => {
+			const k = keyOf(h);
+			const prev = byKey.get(k);
+			if (!prev) { byKey.set(k, { ...h }); return; }
+			if (h.sep < prev.sep) byKey.set(k, { ...h, cross: h.cross && prev.cross });
+			else prev.cross = prev.cross && h.cross;
+		});
+		return Array.from(byKey.values());
 	}
 
 	applyRingRotation(key, R, emit){
@@ -150,6 +185,16 @@ export default class UranianModulusDial extends Component {
 			if (isLong){ const [nx, ny] = polar(cx, cy, Rtick - 16, k); root.append('text').attr('x', nx).attr('y', ny).attr('dy', '0.35em').attr('text-anchor', 'middle').attr('font-size', 9).attr('fill', stroke).attr('opacity', 0.7).text(k); }
 		}
 
+		// —— 六宫框(流派可选;汉堡/美国对称开):真位盘=真实黄道,六等分=每 60° 一根径向虚线,
+		//    跨中央模数盘外缘(Rmod)→ 行星带内缘(Rringtop),固定不旋转,辅助读「象限/宫位」结构(零回归:默认关) ——
+		if (this.props.showHouseFrames){
+			for (let h = 0; h < 6; h++){
+				const vis = h / 6 * 360;
+				const [hx1, hy1] = polar(cx, cy, Rmod, vis), [hx2, hy2] = polar(cx, cy, Rringtop, vis);
+				root.append('line').attr('x1', hx1).attr('y1', hy1).attr('x2', hx2).attr('y2', hy2).attr('stroke', stroke).attr('stroke-width', 0.8).attr('stroke-dasharray', '3 3').attr('opacity', 0.22);
+			}
+		}
+
 		// —— 旋转：每环行星带（真实黄道位置；本命=最内圈，行运/太阳弧向外）——
 		const band = Rringtop - Rmod - 12;
 		const per = band / rings.length;
@@ -179,7 +224,7 @@ export default class UranianModulusDial extends Component {
 					.attr('font-family', tnp ? 'inherit' : AstroConst.AstroChartFont).attr('font-weight', tnp ? 600 : 400)
 					.style('letter-spacing', tnp ? '0.3px' : '0').style('pointer-events', 'none')
 					.text(glyphCh);
-				gl.append('title').text(ring.label + ' · ' + (AstroText.AstroMsgCN[p.id] || p.id) + ' ' + norm360(p.lon).toFixed(2) + '°');
+				gl.append('title').text(ring.label + ' · ' + glyphTip(p.id) + ' ' + norm360(p.lon).toFixed(2) + '°');
 				labels.push({ node: gl, x: lx, y: ly });
 				// 逆行 ℞ 小标(lonspeed<0):随环标签反向旋转保持竖直。
 				if (p.speed != null && p.speed < 0){
@@ -208,7 +253,7 @@ export default class UranianModulusDial extends Component {
 		}
 
 		// —— 中央模数刻度盘（0..base 绕一圈，读指针折叠位）——
-		root.append('circle').attr('cx', cx).attr('cy', cy).attr('r', Rmod).attr('fill', 'var(--horosa-card-bg, rgba(255,255,255,0.6))').attr('stroke', stroke).attr('stroke-width', 0.8).attr('opacity', 0.85);
+		root.append('circle').attr('cx', cx).attr('cy', cy).attr('r', Rmod).attr('fill', 'var(--horosa-surface, rgba(255,255,255,0.6))').attr('stroke', stroke).attr('stroke-width', 0.8).attr('opacity', 0.85);
 		// 内圈模数刻度自适应(支持任意谐波)：d3.ticks 取整齐主刻度 + 均分次刻度。
 		const modMajors = d3.ticks(0, base, 9);
 		const modMajorStep = modMajors.length > 1 ? (modMajors[1] - modMajors[0]) : (base / 9);
@@ -237,6 +282,15 @@ export default class UranianModulusDial extends Component {
 		pg.append('polygon').attr('points', `${tipx},${tipy} ${tipx - 5},${tipy + 11} ${tipx + 5},${tipy + 11}`).attr('fill', POINTER_COLOR);
 		const [hx, hy] = polar(cx, cy, R - 6, 0);
 		pg.append('circle').attr('cx', hx).attr('cy', hy).attr('r', 5).attr('fill', POINTER_COLOR).attr('opacity', 0.92).append('title').text('拖动红指针扫描');
+		// —— 十字指针副臂(流派可选;真位盘 1:1 几何)：副臂读数取真实黄经 ±off·base/360,视觉上画在该真位上(主臂同侧近端短虚线 + 对侧),
+		//    随 pg 的 rotate(-A) 同转。关时一根不画(零回归)。读数合并去重见 emitReadout/_mergeCrossHits。
+		if (this.props.crossPointer){
+			[22.5, -22.5, 67.5, -67.5].forEach((o) => {
+				const d = o * base / 360;                       // 视觉=真位偏移(base=90 → ±5.625°/±16.875°)
+				const [a1x, a1y] = polar(cx, cy, R + 1, d), [a2x, a2y] = polar(cx, cy, Rringtop, d);
+				pg.append('line').attr('x1', a1x).attr('y1', a1y).attr('x2', a2x).attr('y2', a2y).attr('stroke', POINTER_COLOR).attr('stroke-width', 0.9).attr('stroke-dasharray', '4 3').attr('opacity', 0.5);
+			});
+		}
 
 		const hit = root.append('circle').attr('cx', cx).attr('cy', cy).attr('r', R).attr('fill', 'transparent').style('cursor', 'grab').style('pointer-events', 'all');
 		hit.node().addEventListener('pointerdown', (e) => { e.preventDefault(); this._onDown(e); });

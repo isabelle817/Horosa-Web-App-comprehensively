@@ -1,0 +1,219 @@
+// =========================================================
+// 玄学史(中国玄学史)· 视觉系统 —— 忠实移植源 app(宣纸×墨×朱砂,古籍排印)
+// 经 app.less @import 全局加载;**必须 :global 包裹**(umi 对 .less 类名做 CSS-Module 哈希,
+// 含 @import 的也哈希 → 平名 className 对不上;:global 内的类名不哈希)。
+// 配色 scoped 在 .xuanshi-app,不污染 app 的 --horosa-* 令牌。暗黑随 :root[data-horosa-appearance='dark']。
+// =========================================================
+:global {
+	.xuanshi-app {
+		// —— Light / 宣纸 ——
+		--paper: #faf6ec;
+		--paper-soft: #f3ecdc;
+		--paper-card: #fffcf3;
+		--ink: #1c1611;
+		--ink-soft: #4a4036;
+		--ink-muted: #8a7e6b;
+		--line: #ddd2b9;
+		--line-soft: #ebe2cb;
+		--vermilion: #a63d2a;
+		--vermilion-soft: rgba(166, 61, 42, .10);
+		--jade: #4d7560;
+		--jade-soft: rgba(77, 117, 96, .10);
+		--gold: #b48a3c;
+		--gold-soft: rgba(180, 138, 60, .10);
+		--xs-shadow-sm: 0 1px 2px rgba(28, 22, 17, .04), 0 1px 1px rgba(28, 22, 17, .03);
+		--xs-shadow: 0 8px 24px -10px rgba(28, 22, 17, .18), 0 2px 6px -2px rgba(28, 22, 17, .08);
+		--xs-serif: "Noto Serif SC", "Songti SC", "STSong", "SimSun", serif;
+
+		display: flex;
+		width: 100%;
+		box-sizing: border-box;
+		overflow: hidden;
+		background: var(--paper);
+		color: var(--ink);
+		font-family: "Noto Sans SC", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+		.xuanshi-side {
+			flex: 0 0 196px;
+			width: 196px;
+			box-sizing: border-box;
+			border-right: 1px solid var(--line);
+			background: var(--paper-soft);
+			padding: 20px 14px;
+			overflow-y: auto;
+
+			.xuanshi-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+			.xuanshi-nav-item {
+				display: block;
+				padding: 8px 13px;
+				margin-bottom: 2px;
+				border-radius: 8px;
+				font-size: 14px;
+				color: var(--ink-soft);
+				cursor: pointer;
+				letter-spacing: .04em;
+				transition: background .15s, color .15s;
+				&:hover { background: var(--paper-card); color: var(--ink); }
+				&.is-active {
+					background: var(--vermilion-soft);
+					color: var(--vermilion);
+					font-weight: 600;
+					box-shadow: inset 2px 0 0 var(--vermilion);
+				}
+			}
+		}
+
+		.xuanshi-stage {
+			flex: 1 1 auto;
+			min-width: 0;
+			overflow-y: auto;
+			padding: 30px 36px 48px;
+			box-sizing: border-box;
+		}
+		// 内容居中容器(对齐参考 repo max-w-1300 mx-auto):各子页内容居中、两侧边距平衡,消除左偏的右侧大空白。
+		.xuanshi-stage-inner { max-width: 1240px; margin: 0 auto; }
+	}
+
+	:root[data-horosa-appearance='dark'] .xuanshi-app {
+		--paper: #1a1610;
+		--paper-soft: #251e16;
+		--paper-card: #2b231a;
+		--ink: #efe6d2;
+		--ink-soft: #cab9a0;
+		--ink-muted: #93876f;
+		--line: #3a3122;
+		--line-soft: #2c2519;
+		--vermilion: #e87a64;
+		--vermilion-soft: rgba(232, 122, 100, .14);
+		--jade: #7eaf94;
+		--jade-soft: rgba(126, 175, 148, .14);
+		--gold: #d4ad5e;
+		--gold-soft: rgba(212, 173, 94, .14);
+		--xs-shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
+		--xs-shadow: 0 10px 28px -10px rgba(0, 0, 0, .55), 0 2px 6px -2px rgba(0, 0, 0, .30);
+	}
+
+	.xuanshi-seal {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 34px;
+		height: 34px;
+		flex: 0 0 34px;
+		border-radius: 7px;
+		background: var(--vermilion);
+		color: #fff7ef;
+		font-family: "Ma Shan Zheng", var(--xs-serif);
+		font-size: 21px;
+		line-height: 1;
+		box-shadow: var(--xs-shadow-sm);
+		user-select: none;
+	}
+
+	.xuanshi-brand-name { font-family: var(--xs-serif); font-size: 18px; font-weight: 600; color: var(--ink); letter-spacing: .14em; }
+
+	.xuanshi-eyebrow { font-size: 11px; letter-spacing: .34em; color: var(--vermilion); text-transform: uppercase; font-weight: 500; }
+
+	.xuanshi-display { font-family: var(--xs-serif); font-weight: 300; color: var(--ink); line-height: 1.18; letter-spacing: -0.004em; margin: 0; }
+	.xuanshi-display.is-hero { font-size: clamp(30px, 4vw, 46px); }
+	.xuanshi-display.is-h2 { font-size: 24px; font-weight: 400; }
+
+	.xuanshi-card {
+		background: var(--paper-card);
+		border: 1px solid var(--line);
+		border-radius: 14px;
+		box-shadow: var(--xs-shadow-sm);
+		padding: 20px;
+		transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+	}
+	.xuanshi-card.is-link { cursor: pointer; }
+	.xuanshi-card.is-link:hover { transform: translateY(-2px); box-shadow: var(--xs-shadow); border-color: var(--ink-muted); }
+
+	.xuanshi-chip {
+		display: inline-flex; align-items: center; gap: 4px;
+		padding: 1px 9px; border-radius: 999px; font-size: 11px; line-height: 1.7;
+		border: 1px solid var(--line); color: var(--ink-muted); background: transparent; white-space: nowrap;
+	}
+	.xuanshi-chip.is-vermilion { color: var(--vermilion); border-color: var(--vermilion); background: var(--vermilion-soft); }
+	.xuanshi-chip.is-jade { color: var(--jade); border-color: var(--jade); background: var(--jade-soft); }
+	.xuanshi-chip.is-gold { color: var(--gold); border-color: var(--gold); background: var(--gold-soft); }
+	.xuanshi-chip.is-ink { color: var(--ink-soft); border-color: var(--line); background: var(--paper-soft); }
+
+	.xuanshi-stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+	.xuanshi-stat { text-align: center; padding: 4px 0; }
+	.xuanshi-stat-num { font-family: var(--xs-serif); font-size: 30px; font-weight: 600; color: var(--ink); line-height: 1.05; font-variant-numeric: tabular-nums; }
+	.xuanshi-stat-label { margin-top: 5px; font-size: 12px; letter-spacing: .14em; color: var(--ink-muted); }
+	.xuanshi-stat-sub { margin-top: 3px; font-size: 11px; color: var(--ink-muted); opacity: .8; }
+
+	.xuanshi-btn {
+		display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px;
+		border: 1px solid var(--line); background: var(--paper-card); color: var(--ink-soft); font-size: 13px; cursor: pointer;
+		transition: border-color .15s, color .15s, background .15s;
+		&:hover { border-color: var(--ink-muted); color: var(--ink); }
+	}
+	.xuanshi-btn.is-primary { background: var(--vermilion); border-color: var(--vermilion); color: #fff7ef; }
+
+	.xuanshi-deco-line { height: 1px; background: linear-gradient(90deg, transparent, var(--line) 18%, var(--line) 82%, transparent); margin: 30px 0; }
+
+	.xuanshi-section-sub { font-size: 13px; color: var(--ink-muted); margin: 4px 0 18px; line-height: 1.7; }
+	.xuanshi-hint { margin-top: 20px; font-size: 13px; line-height: 1.85; color: var(--ink-muted); }
+	.xuanshi-center { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 340px; gap: 12px; color: var(--ink-muted); }
+	.xuanshi-link { color: var(--vermilion); cursor: pointer; }
+
+	// —— antd 组件适配宣纸/暗黑(Pagination / Input / Search / Select)——
+	.xuanshi-app {
+		.ant-pagination { color: var(--ink-soft); }
+		.ant-pagination-simple-pager input {
+			background: var(--paper-card) !important; border: 1px solid var(--line) !important; color: var(--ink) !important; border-radius: 6px;
+		}
+		.ant-pagination-slash { color: var(--ink-muted) !important; }
+		.ant-pagination-prev button, .ant-pagination-next button,
+		.ant-pagination-prev .ant-pagination-item-link, .ant-pagination-next .ant-pagination-item-link {
+			color: var(--ink-soft) !important; background: var(--paper-card) !important; border: 1px solid var(--line) !important; border-radius: 6px;
+		}
+		.ant-pagination-prev:hover button, .ant-pagination-next:hover button { color: var(--vermilion); border-color: var(--vermilion); }
+		.ant-pagination-disabled button, .ant-pagination-disabled .ant-pagination-item-link { opacity: .4; }
+
+		.ant-input, .ant-input-affix-wrapper {
+			background: var(--paper-card); border-color: var(--line); color: var(--ink);
+		}
+		.ant-input::placeholder { color: var(--ink-muted); }
+		.ant-input-search-button, .ant-input-group-addon .ant-btn {
+			background: var(--paper-soft) !important; border-color: var(--line) !important; color: var(--ink-soft) !important;
+		}
+		.ant-input-search-button:hover { color: var(--vermilion) !important; border-color: var(--vermilion) !important; }
+		.ant-select-selector {
+			background: var(--paper-card) !important; border-color: var(--line) !important; color: var(--ink) !important;
+		}
+		.ant-select-selection-placeholder { color: var(--ink-muted); }
+		.ant-select-arrow, .ant-select-clear { color: var(--ink-muted); background: transparent; }
+		.ant-spin-text, .ant-empty-description { color: var(--ink-muted); }
+	}
+
+	// —— prose:markdown → HTML 内容(列传/故事/词条 body_html)成熟排印 ——
+	.xuanshi-prose {
+		color: var(--ink-soft); line-height: 1.85; font-size: 18px;
+		h1, h2, h3, h4 { font-family: var(--xs-serif); color: var(--ink); margin: 1.2em 0 .5em; font-weight: 700; line-height: 1.35; }
+		h1 { font-size: 30px; } h2 { font-size: 25px; } h3 { font-size: 21px; } h4 { font-size: 19px; }
+		h1:first-child, h2:first-child, h3:first-child { margin-top: 0.2em; }
+		// 事件正文用「**整行加粗**」当子标题(源数据无 ### heading)→ 独占一段的加粗渲成子标题:加大、加间距
+		p > strong:only-child { display: inline-block; font-size: 1.08em; margin: .5em 0 .1em; color: var(--ink); }
+		p { margin: .7em 0; }
+		strong, b { color: var(--ink); font-weight: 600; }
+		em { color: var(--ink); }
+		a { color: var(--vermilion); text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		ul, ol { padding-left: 1.5em; margin: .6em 0; }
+		li { margin: .3em 0; }
+		blockquote { border-left: 3px solid var(--vermilion); padding: 2px 0 2px 14px; color: var(--ink-muted); margin: .8em 0; background: var(--vermilion-soft); border-radius: 0 6px 6px 0; }
+		code { background: var(--paper-soft); padding: 1px 6px; border-radius: 4px; font-size: .92em; color: var(--vermilion); }
+		hr { border: none; border-top: 1px solid var(--line); margin: 1.2em 0; }
+		img { max-width: 100%; border-radius: 8px; }
+		table { border-collapse: collapse; margin: .8em 0; }
+		th, td { border: 1px solid var(--line); padding: 5px 10px; }
+		th { background: var(--paper-soft); }
+	}
+
+	// SVG <circle>/<text> 会继承祖先的 stroke: var(--horosa-text)(白描边),致力导图圆点带粗白圆环、文字带描边看不清 → 全 xuanshi SVG 重置无描边(瓦片/连线 path 自带 stroke 属性不受影响,同风水盘修法)
+	.xuanshi-app svg circle, .xuanshi-app svg text { stroke: none; paint-order: fill; }
+}

@@ -3,6 +3,7 @@ import * as AstroText from '../../constants/AstroText';
 import {
 	SIGN_NAMES,
 	getAscSignNumber,
+	getAspectedSignNumbers,
 	getHouseCuspDegree,
 	getHouseLabel,
 	getHouseNumberForSign,
@@ -12,6 +13,13 @@ import {
 	getObjectsBySign,
 	getIndiaChartOptionNote,
 	getSignSymbol,
+	isAspectCaster,
+	mirrorPolygonIf,
+	mirrorXIf,
+	resolveLagnaRefSignNumber,
+	resolveObjectGlyph,
+	indiaChartShouldUpdate,
+	INDIA_CHART_SCU_KEYS_MIRROR,
 } from './IndiaSouthChart';
 import '../../css/styles.less';
 
@@ -60,6 +68,23 @@ const EAST_OBJECT_ANCHOR_POSITIONS = {
 	12: [11.5, 22.5, 14, 14],
 };
 
+// 东印盘按「星座」固定布局(positions 以 signNumber 为键):4 个边中矩形 + 8 个角三角。
+// WP-A 相映高亮直接按被相映的星座号在 SVG 里画浅色面(避免给叠满整盘的分层 div 着色)。
+const EAST_SIGN_POLYGONS = {
+	1: '0,33.333 33.333,33.333 33.333,66.667 0,66.667',
+	2: '0,66.667 33.333,66.667 0,100',
+	3: '33.333,66.667 33.333,100 0,100',
+	4: '33.333,66.667 66.667,66.667 66.667,100 33.333,100',
+	5: '100,100 66.667,100 66.667,66.667',
+	6: '100,66.667 100,100 66.667,66.667',
+	7: '66.667,33.333 100,33.333 100,66.667 66.667,66.667',
+	8: '100,0 100,33.333 66.667,33.333',
+	9: '66.667,0 100,0 66.667,33.333',
+	10: '33.333,0 66.667,0 66.667,33.333 33.333,33.333',
+	11: '0,0 33.333,0 33.333,33.333',
+	12: '0,0 33.333,33.333 0,33.333',
+};
+
 function buildChartHeightStyle(height){
 	const value = height || 720;
 	return {
@@ -68,6 +93,11 @@ function buildChartHeightStyle(height){
 }
 
 class IndiaEastChart extends Component{
+	shouldComponentUpdate(nextProps){
+		// 东印为图形盘,消费 counterClockwise(镜像)→ 用含镜像项的 keys。
+		return indiaChartShouldUpdate(this, nextProps, INDIA_CHART_SCU_KEYS_MIRROR);
+	}
+
 	renderObjects(objects, signNumber){
 		const degreeDisplayMode = this.props.degreeDisplayMode;
 		const countClass = objects.length > 3 ? ' horosa-india-diagram-objects-very-dense' : (objects.length > 1 ? ' horosa-india-diagram-objects-dense' : ' horosa-india-diagram-objects-single');
@@ -75,14 +105,22 @@ class IndiaEastChart extends Component{
 			<div className={`horosa-india-diagram-objects${countClass}`} data-count={objects.length}>
 				{objects.map((obj, idx)=>{
 					const degree = getObjectDegree(obj, degreeDisplayMode);
+					const glyph = resolveObjectGlyph(obj, this.props.planetGlyphMode);
+					const clickable = !!(obj && obj.id && typeof this.props.onPlanetClick === 'function');
+					const caster = !!(obj && isAspectCaster(obj.id));
+					const isSource = !!(obj && this.props.aspectSourceId && this.props.aspectSourceId === obj.id);
+					const handleClick = clickable ? (e)=>{ e.stopPropagation(); this.props.onPlanetClick(obj.id); } : undefined;
 					return (
 						<span
-							className="horosa-india-square-object"
+							className={`horosa-india-square-object${clickable ? ' horosa-india-square-object-clickable' : ''}${isSource ? ' is-aspect-source' : ''}`}
 							key={`${signNumber}_${obj.id}_${idx}_${obj.lon}`}
-							title={`${AstroText.AstroMsgCN[obj.id] || obj.name || obj.id} ${degree}`}
+							title={`${AstroText.AstroMsgCN[obj.id] || obj.name || obj.id} ${degree}${clickable ? (caster ? ' · 点击高亮相映宫' : ' · 点击选中') : ''}`}
 							style={{ '--india-object-color': getObjectColor(obj) }}
+							onClick={handleClick}
 						>
-							<span className="horosa-india-square-object-name">{getObjectLabel(obj)}</span>
+							{glyph
+								? <span className="horosa-india-square-object-name horosa-india-square-object-glyph">{glyph}</span>
+								: <span className="horosa-india-square-object-name">{getObjectLabel(obj)}</span>}
 							<span className="horosa-india-square-object-degree">{degree}</span>
 							{Number(obj.lonspeed) < 0 ? <span className="horosa-india-square-retro">R</span> : null}
 						</span>
@@ -95,6 +133,7 @@ class IndiaEastChart extends Component{
 	renderSign(signNumber, ascSignNumber, objectsBySign, chartObj){
 		const houseNumber = getHouseNumberForSign(signNumber, ascSignNumber);
 		const objects = objectsBySign[signNumber] || [];
+		const doMirror = this.props.counterClockwise === false;
 		const housePos = EAST_HOUSE_LABEL_POSITIONS[signNumber];
 		const signPos = EAST_SIGN_BADGE_POSITIONS[signNumber];
 		const objectsPos = EAST_OBJECT_ANCHOR_POSITIONS[signNumber];
@@ -107,17 +146,17 @@ class IndiaEastChart extends Component{
 				className="horosa-india-diagram-layer"
 				title={`${signName} · 第${houseNumber}宫`}
 			>
-				<div className="horosa-india-diagram-house horosa-india-diagram-house-corner" style={{ left: `${housePos[0]}%`, top: `${housePos[1]}%` }}>
+				<div className="horosa-india-diagram-house horosa-india-diagram-house-corner" style={{ left: `${mirrorXIf(housePos[0], doMirror)}%`, top: `${housePos[1]}%` }}>
 					<div className="horosa-india-square-roman">{getHouseLabel(houseNumber)}</div>
 					{cuspDegree ? <div className="horosa-india-square-cusp">{cuspDegree}</div> : null}
 				</div>
-				<div className="horosa-india-diagram-sign horosa-india-diagram-sign-corner" aria-label={`${signNumber} ${signName}`} style={{ left: `${signPos[0]}%`, top: `${signPos[1]}%` }}>
+				<div className="horosa-india-diagram-sign horosa-india-diagram-sign-corner" aria-label={`${signNumber} ${signName}`} style={{ left: `${mirrorXIf(signPos[0], doMirror)}%`, top: `${signPos[1]}%` }}>
 					<span className="horosa-india-square-sign-symbol">{getSignSymbol(signNumber)}</span>
 				</div>
 				<div
 					className="horosa-india-diagram-object-anchor horosa-india-diagram-object-anchor-roomy"
 					data-sign={signNumber}
-					style={{ left: `${objectsPos[0]}%`, top: `${objectsPos[1]}%`, width: `${objectsPos[2]}%`, height: `${objectsPos[3]}%` }}
+					style={{ left: `${mirrorXIf(objectsPos[0], doMirror)}%`, top: `${objectsPos[1]}%`, width: `${objectsPos[2]}%`, height: `${objectsPos[3]}%` }}
 				>
 					{this.renderObjects(objects, signNumber)}
 				</div>
@@ -138,13 +177,19 @@ class IndiaEastChart extends Component{
 				</div>
 			);
 		}
-		const ascSignNumber = getAscSignNumber(chartObj);
+		const ascSignNumber = resolveLagnaRefSignNumber(chartObj, this.props.lagnaRef);
 		const objectsBySign = getObjectsBySign(chartObj, this.props.planetDisplay, this.props.lotsDisplay);
+		this._aspectedSigns = getAspectedSignNumbers(chartObj, this.props.aspectSourceId, this.props.aspectParadigm);
+		const aspectedSignNumbers = Array.from(this._aspectedSigns);
+		const doMirror = this.props.counterClockwise === false;
 		return (
 			<div className="horosa-india-square-shell xq-chart-renderer xq-chart-renderer-india" style={chartHeightStyle}>
 				<div className="horosa-india-square-board horosa-india-diagram-board horosa-india-east-board xq-india-board">
 					<svg className="horosa-india-diagram-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
 						<rect x="0" y="0" width="100" height="100" />
+						{aspectedSignNumbers.map((sn)=>(
+							EAST_SIGN_POLYGONS[sn] ? <polygon key={`east_aspect_${sn}`} className="horosa-india-aspect-fill" points={mirrorPolygonIf(EAST_SIGN_POLYGONS[sn], doMirror)} /> : null
+						))}
 						<line x1="33.333" y1="0" x2="33.333" y2="33.333" />
 						<line x1="66.667" y1="0" x2="66.667" y2="33.333" />
 						<line x1="33.333" y1="66.667" x2="33.333" y2="100" />

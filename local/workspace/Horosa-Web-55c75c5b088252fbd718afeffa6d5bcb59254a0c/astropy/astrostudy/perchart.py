@@ -1,4 +1,5 @@
 import copy
+import threading
 import flatlib
 import datetime
 import math
@@ -272,6 +273,148 @@ def takeAttackDelta(stars):
 ARCUS_VISIONIS = {
     const.MERCURY: 10.0, const.VENUS: 5.0, const.MARS: 11.5, const.JUPITER: 10.0, const.SATURN: 11.0,
 }
+
+
+
+# ── 界系(terms)/三分(triplicity)请求级变体:perchart 共享 essential.TERMS/TABLE,按请求换表+锁 ──
+_TERMS_TABLES = [tables.EGYPTIAN_TERMS, tables.TETRABIBLOS_TERMS, tables.LILLY_TERMS]
+# G15 托勒密界·狮子土星优先变体:狮子段首星 Jupiter↔Saturn 互换(度界 0-6/13-19 不变),余座同托勒密。
+# 默认走 _TERMS_TABLES[1](木优先);仅 leoBoundFirst 且 termsVariant==1 时换本表。
+_TETRABIBLOS_LEO_SATURN_FIRST = copy.deepcopy(tables.TETRABIBLOS_TERMS)
+_TETRABIBLOS_LEO_SATURN_FIRST['Leo'] = [['Saturn', 0, 6], ['Mercury', 6, 13], ['Jupiter', 13, 19], ['Venus', 19, 25], ['Mars', 25, 30]]
+
+# G15 迦勒底界(界系 3·推演慎用):宽度 [8,7,6,5,4](和 30),星序按元素昼序;夜盘土↔水位置互换。
+# 仅白羊有源、余按规则推演(故 UI 标「推演·慎用」)。按 sect 预生成昼/夜两表,perchart 据 isDiurnal 选。
+_CHALDEAN_WIDTHS = [8, 7, 6, 5, 4]
+_CHALDEAN_DAY_ORDER = {
+    'Fire':  ['Jupiter', 'Venus', 'Saturn', 'Mercury', 'Mars'],
+    'Earth': ['Venus', 'Saturn', 'Mercury', 'Mars', 'Jupiter'],
+    'Air':   ['Saturn', 'Mercury', 'Mars', 'Jupiter', 'Venus'],
+    'Water': ['Mercury', 'Venus', 'Saturn', 'Mars', 'Jupiter'],
+}
+_CHALDEAN_SIGN_ELEMENT = {
+    'Aries': 'Fire', 'Leo': 'Fire', 'Sagittarius': 'Fire',
+    'Taurus': 'Earth', 'Virgo': 'Earth', 'Capricorn': 'Earth',
+    'Gemini': 'Air', 'Libra': 'Air', 'Aquarius': 'Air',
+    'Cancer': 'Water', 'Scorpio': 'Water', 'Pisces': 'Water',
+}
+
+def _build_chaldean_terms(night=False):
+    tbl = {}
+    for sign, elem in _CHALDEAN_SIGN_ELEMENT.items():
+        order = list(_CHALDEAN_DAY_ORDER[elem])
+        if night:   # 夜盘:土↔水位置互换
+            si, mi = order.index('Saturn'), order.index('Mercury')
+            order[si], order[mi] = order[mi], order[si]
+        segs, start = [], 0
+        for lord, w in zip(order, _CHALDEAN_WIDTHS):
+            segs.append([lord, start, start + w]); start += w
+        tbl[sign] = segs
+    return tbl
+
+_CHALDEAN_TERMS_DAY = _build_chaldean_terms(False)
+_CHALDEAN_TERMS_NIGHT = _build_chaldean_terms(True)
+_PERCHART_TERMS_LOCK = threading.Lock()
+
+
+def parse_terms_variant(v):
+    """界系入参 → 合法 0/1/2/3(非法回落 0=埃及)。3=迦勒底界(推演慎用)。"""
+    try:
+        tv = int(v)
+    except (TypeError, ValueError):
+        tv = 0
+    return tv if tv in (0, 1, 2, 3) else 0
+
+
+def push_request_terms(termsVariant, leoBoundFirst=False):
+    """/chart 请求级界系:获取锁 + 换 essential.TERMS,返回还原令牌(原表);必须在 finally 配对 pop_request_terms。
+    G15:leoBoundFirst 且托勒密界(tv==1)时换狮子土星优先变体表;默认木优先零回归。"""
+    tv = parse_terms_variant(termsVariant)
+    _PERCHART_TERMS_LOCK.acquire()
+    orig = essential.TERMS
+    if tv == 3:
+        essential.TERMS = _CHALDEAN_TERMS_DAY   # 迦勒底界:先昼表;夜盘由 perchart setupPlanets 据 isDiurnal 换夜表(锁内安全)
+    elif tv == 1 and leoBoundFirst in (True, 1, '1', 'true'):
+        essential.TERMS = _TETRABIBLOS_LEO_SATURN_FIRST
+    else:
+        essential.TERMS = _TERMS_TABLES[tv]
+    return orig
+
+
+def pop_request_terms(token):
+    """还原 essential.TERMS 并释放锁;token=None(未 push)时安全 no-op。"""
+    if token is None:
+        return
+    try:
+        essential.TERMS = token
+    finally:
+        _PERCHART_TERMS_LOCK.release()
+
+
+# G20-P2 三分集变体:默认 Dorothean(=ESSENTIAL_DIGNITIES,零回归);Ptolemaic 二主(无共同主、水象单主火星)。
+# essential.TABLE 是模块级全局(尊贵评分/almuten 读 trip);请求级换表(同 terms 机制,独立锁)。
+_PTOL_TRIP = {
+    'Fire': ['Sun', 'Jupiter', ''], 'Earth': ['Venus', 'Moon', ''],
+    'Air': ['Saturn', 'Mercury', ''], 'Water': ['Mars', 'Mars', ''],
+}
+
+def _build_ptolemaic_dignities():
+    tbl = copy.deepcopy(tables.ESSENTIAL_DIGNITIES)
+    for sign, elem in _CHALDEAN_SIGN_ELEMENT.items():
+        if sign in tbl:
+            tbl[sign]['trip'] = list(_PTOL_TRIP[elem])
+    return tbl
+
+_PTOLEMAIC_DIGNITIES = _build_ptolemaic_dignities()
+
+# PtolemaicWaterVariant(托勒密·水象变体):火/土/风三象同托勒密二主;唯水象座(巨蟹/天蝎/双鱼)
+# 改取另一套水象主星——昼盘 火主+金次、夜盘 火主+月次(对齐前端 triplicityRulers.js / hellenisticData
+# Water.text_variant: day=[Mars,Venus] / night=[Mars,Moon])。
+# essential.score()/getInfo() 非 sect-aware(dayTrip/nightTrip 一律各 +3,不查 isDiurnal),
+# 故单张静态 trip 三元无法把「昼第二主=金、夜第二主=月」的区别投影到评分上(两套的曜集合都是 {火,金,月},
+# 与默认水象 [Venus,Mars,Moon] 同集合→评分塌成默认)。因此按 sect 预生成昼/夜两表:
+#   昼:水象 trip=[Mars, Venus, '']  → 评分计 火(昼主)+金(昼次)
+#   夜:水象 trip=[Mars, Moon,  '']  → 评分计 火(夜主)+月(夜次)
+# push_request_trip 先置昼表(锁内),夜盘由 perchart.setupPlanets 据 isDiurnal 换夜表(同迦勒底界夜表机制)。
+_PTOL_WATER_TRIP_DAY = ['Mars', 'Venus', '']
+_PTOL_WATER_TRIP_NIGHT = ['Mars', 'Moon', '']
+
+def _build_ptolemaic_water_variant_dignities(night=False):
+    # 起点=普通托勒密表(火/土/风三象二主不变),仅水象座覆盖为昼/夜专表 → 非水象座与 Ptolemaic 字节一致。
+    tbl = copy.deepcopy(_PTOLEMAIC_DIGNITIES)
+    water_trip = _PTOL_WATER_TRIP_NIGHT if night else _PTOL_WATER_TRIP_DAY
+    for sign, elem in _CHALDEAN_SIGN_ELEMENT.items():
+        if elem == 'Water' and sign in tbl:
+            tbl[sign]['trip'] = list(water_trip)
+    return tbl
+
+_PTOLEMAIC_WATER_VARIANT_DIGNITIES_DAY = _build_ptolemaic_water_variant_dignities(night=False)
+_PTOLEMAIC_WATER_VARIANT_DIGNITIES_NIGHT = _build_ptolemaic_water_variant_dignities(night=True)
+_PERCHART_TRIP_LOCK = threading.Lock()
+
+def push_request_trip(triplicity):
+    """G20-P2 请求级三分集:Ptolemaic 换 essential.TABLE 的 trip;默认 Dorothean 不动零回归。配对 pop_request_trip。
+    PtolemaicWaterVariant:先置水象变体「昼」表(火/土/风同托勒密,水象昼=火+金);夜盘由 setupPlanets 据
+    isDiurnal 换「夜」表(水象夜=火+月)——sect 区分仅在水象座可见(火/土/风与 Ptolemaic 一致)。"""
+    tv = str(triplicity or 'Dorothean')
+    if tv not in ('Ptolemaic', 'PtolemaicWaterVariant'):
+        return None
+    _PERCHART_TRIP_LOCK.acquire()
+    orig = essential.TABLE
+    if tv == 'PtolemaicWaterVariant':
+        essential.TABLE = _PTOLEMAIC_WATER_VARIANT_DIGNITIES_DAY
+    else:
+        essential.TABLE = _PTOLEMAIC_DIGNITIES
+    return orig
+
+def pop_request_trip(token):
+    """还原 essential.TABLE 并释放锁;token=None(未 push,默认 Dorothean)时安全 no-op。"""
+    if token is None:
+        return
+    try:
+        essential.TABLE = token
+    finally:
+        _PERCHART_TRIP_LOCK.release()
 
 
 class PerChart:

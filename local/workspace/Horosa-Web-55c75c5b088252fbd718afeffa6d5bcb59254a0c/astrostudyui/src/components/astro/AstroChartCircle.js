@@ -6,6 +6,7 @@ import {randomStr, detectOS, distanceInCircleAbs, creatTooltip, setupFloatingToo
 import {drawTextV, drawTextH} from '../graph/GraphHelper';
 import { appendAstroMeaningTips, buildSignMeaningTip, buildAspectMeaningTip } from './AstroMeaningData';
 import { getChartRendererClass } from '../../renderers/xqChartTheme';
+import { termsTableForVariant } from '../../divination/data/hellenisticData';
 
 const RETROGRADE_SYMBOL_COLOR = '#8f2d2d';
 const PLANET_MINUTE_TEXT_COLOR = '#80786e';
@@ -131,6 +132,11 @@ export default class AstroChartCircle {
 
 	setShowAstroMeaning(flag){
 		this.showAstroMeaning = flag ? true : false;
+	}
+
+	// 黄道星释点运高亮:主座 id(如 'Leo'),空则清除。座扇区绘制时据此叠主座(色A)+ 第4/7/10座(色B)。
+	setZRHighlight(sign){
+		this.zrHlSign = sign || null;
 	}
 
 	setupToolTip(){
@@ -359,6 +365,24 @@ export default class AstroChartCircle {
 				.attr('d', arcd).attr('stroke', AstroConst.AstroColor.Stroke)
 				.attr('fill', signFill)
 				.attr('fill-opacity', getChartLayerFillOpacity(signFill, DARK_SIGN_FILL_OPACITY));
+
+			// 黄道星释「点运高亮」:主座(本运)色A、以其为基准的第4/7/10座色B,叠在座扇区上(additive,不改原绘制)。
+			if(this.zrHlSign){
+				const pIdx = AstroConst.LIST_SIGNS.indexOf(this.zrHlSign);
+				if(pIdx >= 0){
+					const isP = i === pIdx;
+					const isS = !isP && (i === (pIdx + 3) % 12 || i === (pIdx + 6) % 12 || i === (pIdx + 9) % 12);
+					if(isP || isS){
+						siggroup.append('path')
+							.attr('d', arcd)
+							.attr('fill', isP ? 'var(--horosa-accent, #d7ad69)' : 'var(--horosa-direction-level-2, #c72d22)')
+							.attr('fill-opacity', isP ? 0.26 : 0.13)
+							.attr('stroke', isP ? 'var(--horosa-accent, #d7ad69)' : 'var(--horosa-direction-level-2, #c72d22)')
+							.attr('stroke-width', isP ? 2.4 : 1.6)
+							.attr('pointer-events', 'none');
+					}
+				}
+			}
 	
 			let lblgroup = siggroup.append('g').attr("text-anchor", "middle");
 			let txts = [
@@ -597,7 +621,7 @@ export default class AstroChartCircle {
 			.attr('fill', markerFill ? `${markerFill}` : markerStroke);
 	}
 	
-	termBand(svg, r, rStep, flags, termHighlight){
+	termBand(svg, r, rStep, flags, termHighlight, termsTable){
 		let samecolorwithsign = (flags & AstroConst.CHART_PLANETCOLORWITHSIGN) === 0 ? false : true;
 		let innerR = r - rStep;
 		let txtPosR = r - rStep / 2 - this.TxtOffsetTop;
@@ -612,7 +636,7 @@ export default class AstroChartCircle {
 		const signStep = 30;
 		for(let i=0; i<12; i++){
 			let sig = AstroConst.LIST_SIGNS[i];
-			let sigterm = AstroConst.EGYPTIAN_TERMS[sig];
+			let sigterm = (termsTable || AstroConst.EGYPTIAN_TERMS)[sig];
 			let sigstart = signStep * i;
 			for(let j=0; j<sigterm.length; j++){
 				let term = sigterm[j];	
@@ -1581,7 +1605,11 @@ export default class AstroChartCircle {
 		if(needTerm){
 			let termR = radius - outerBandStep;
 			let termStep = 20;
-			let terms = this.termBand(topgroup, termR, termStep, flags, termHighlight);
+			// 界限环按所选界系(termsVariant 0埃及/1托勒密/2莉莉/3迦勒底)取对应界主表,度数随界变;
+			// 迦勒底界按昼夜(isDiurnal)取昼/夜表(土水互换),异于其它三套;默认埃及=现状。
+			let _tv = (chartObj && chartObj.params && chartObj.params.termsVariant) || 0;
+			let _termsTable = termsTableForVariant(_tv, isDiurnal, AstroConst.TERMS_TABLES_BY_VARIANT, AstroConst.EGYPTIAN_TERMS);
+			let terms = this.termBand(topgroup, termR, termStep, flags, termHighlight, _termsTable);
 		
 			let houseR = termR - termStep;
 			return houseR;	

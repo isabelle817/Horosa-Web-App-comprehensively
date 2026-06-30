@@ -1156,7 +1156,9 @@ function patSignCn(s){ const k = s ? String(s).toLowerCase() : null; return (SIG
 // 经 buildClassicalSection→[古典]段，贯通 AI 导出/挂载/储存。绝不抛(失败回空)。
 function buildPatternOverviewLines(chartObj){
 	let data;
-	try{ data = buildPatternOverview(chartObj.chart, chartObj); }catch(_){ return []; }
+	// 先验权力等取自互容/接纳联结,须与「仅按本垣擢升计算互容接纳」设置同步(同信息/格局 tab 口径)。
+	const onlyRulExalt = resolveOnlyRulerExaltReception();
+	try{ data = buildPatternOverview(chartObj.chart, chartObj, { onlyRulExalt }); }catch(_){ return []; }
 	if(!data || data.empty){ return []; }
 	const lines = [];
 	const d = data.dragon;
@@ -1308,12 +1310,21 @@ export function buildClassicalAnalysisSection(analysis){
 	const coll = (ad.collection || []).map((c)=> `${msg(c.collector)} 聚 ${msg(c.p1)}、${msg(c.p2)} 之光`);
 	const aver = (ad.aversion || []).map((v)=> `${msg(v.a)} 与 ${msg(v.b)} 不合意`);
 	const bend = (ad.bending || []).map((b)=> `${msg(b.planet)} 交点弯曲${b.at ? `（${b.at}）` : ''}`);
-	if(trans.length || coll.length || aver.length || bend.length){
+	// G10 连接学说后四式:空亡/阻止/挫败/收回(后端 aspectDynamics 追加,缺则空)。
+	const voidc = (ad.void || []).map((v)=> `${msg(v.planet)} 空亡（${v.mode === 'classical' ? '30°内' : '本座内'}不再成相）`);
+	const prohib = (ad.prohibition || []).map((p)=> `${msg(p.blocker)} 阻止 ${msg(p.between)}→${msg(p.to)} 入相`);
+	const frust = (ad.frustration || []).map((f)=> `${msg(f.frustrated)} 挫败（${msg(f.via)} 先成相 ${msg(f.to)}）`);
+	const refran = (ad.refranation || []).map((r)=> `${msg(r.planet)} 收回（趋留撤离 ${msg(r.to)}）`);
+	if(trans.length || coll.length || aver.length || bend.length || voidc.length || prohib.length || frust.length || refran.length){
 		lines.push('相位动态');
 		if(trans.length){ lines.push(`传光：${trans.join('；')}`); }
 		if(coll.length){ lines.push(`聚光：${coll.join('；')}`); }
 		if(aver.length){ lines.push(`不合意：${aver.join('；')}`); }
 		if(bend.length){ lines.push(`交点弯曲：${bend.join('；')}`); }
+		if(voidc.length){ lines.push(`空亡：${voidc.join('；')}`); }
+		if(prohib.length){ lines.push(`阻止：${prohib.join('；')}`); }
+		if(frust.length){ lines.push(`挫败：${frust.join('；')}`); }
+		if(refran.length){ lines.push(`收回：${refran.join('；')}`); }
 	}
 	// FIX-3 Topical Almuten 补 significator(自然象征,对齐侧栏列)。
 	const ta = (analysis.topicAlmuten || []).filter((t)=> t && t.almuten).map((t)=>{

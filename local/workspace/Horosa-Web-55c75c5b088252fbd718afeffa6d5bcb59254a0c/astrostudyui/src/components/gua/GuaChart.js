@@ -44,6 +44,11 @@ export default class GuaChart {
 			return null;
 		}
 
+		// 🔒 防黑屏:部分派生卦对象(旁通/覆卦/互卦等)可能缺 yao 数组 → yao.length 抛 TypeError,
+		// 且 draw() 在 render 期同步调用、无 error boundary 兜底 → 整页空白(Mac/JSC 更易触发)。缺即跳过绘制。
+		if(!this.chartObj.yao || !this.chartObj.yao.length){
+			return null;
+		}
         let yaosz = this.chartObj.yao.length;
         let yaoary = this.chartObj.yao;
 

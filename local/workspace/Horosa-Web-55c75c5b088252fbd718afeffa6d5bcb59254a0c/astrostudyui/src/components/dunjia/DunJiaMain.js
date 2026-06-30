@@ -1,5 +1,5 @@
 import { Component } from 'react';
-import { Spin, Tag, message, Popover } from 'antd';
+import { Spin, Tag, message, Popover, Modal } from 'antd';
 import { XQButton as Button, XQCard as Card, XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
 import XQIcon from '../xq-icons';
 import { saveModuleAISnapshot, loadModuleAISnapshot } from '../../utils/moduleAiSnapshot';
@@ -25,9 +25,11 @@ import { listLocalCharts } from '../../utils/localcharts';
 import {
 	SEX_OPTIONS,
 	PAIPAN_OPTIONS,
-	ZHISHI_OPTIONS,
 	YUEJIA_QIJU_OPTIONS,
+	ZHISHI_OPTIONS,
 	QIJU_METHOD_OPTIONS,
+	ZHIRUN_LEAP_OPTIONS,
+	SCHOOL_OPTIONS,
 	KONG_MODE_OPTIONS,
 	MA_MODE_OPTIONS,
 	TIME_ALG_OPTIONS,
@@ -40,6 +42,8 @@ import {
 	isKinqimenMode,
 	normalizeKinqimenData,
 	buildDunJiaSnapshotText,
+	buildQimenWangShuai,
+	computeShuziYongShenGong,
 } from './DunJiaCalc';
 import {
 	BAGONG_PALACE_ORDER,
@@ -71,6 +75,7 @@ import {
 } from './DunJiaFaDoc';
 import { BaZiColor, ZhiColor } from '../../msg/bazimsg';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
+import DunJiaBoard from './DunJiaBoard';
 
 const { Option } = Select;
 const TabPane = Tabs.TabPane;
@@ -86,11 +91,13 @@ const DEFAULT_OPTIONS = {
 	jieQiType: 1,
 	paiPanType: 3,
 	zhiShiType: 0,
-	yueJiaQiJuType: 1,
+	yueJiaQiJuType: 0,
+	shuziReportNumber: '',
 	yearGanZhiType: 2,
 	monthGanZhiType: 1,
 	dayGanZhiType: 0,
 	qijuMethod: 'zhirun',
+	school: '转盘',
 	kongMode: 'day',
 	yimaMode: 'day',
 	timeAlg: 0,
@@ -98,7 +105,15 @@ const DEFAULT_OPTIONS = {
 	after23NewDay: defaultAfter23NewDay(),
 	lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
 	fengJu: false,
+	zhirunLeapDays: 9,
 };
+
+// 起局下拉(非时家):年/月/日家有各自「本家默认」定局(三元/年符头/节气三元),节气四法(置闰/拆补/茅山/无闰)仅时家相关。
+// 故非时家只给两项「本家默认 / 阴盘(报数)」——阴盘报数与排盘正交、可叠加任意家;避免「选了阴盘后节气四法被禁→无法切回本家默认」的死锁。
+const QIJU_METHOD_NONSHI_OPTIONS = [
+	{ value: 'zhirun', label: '本家默认' },   // 非时家忽略具体节气法→等同本家原生定局(zhirun 仅占位)
+	{ value: 'shuzi', label: '阴盘' },
+];
 
 const DUNJIA_BOARD_BASE_WIDTH = 662;
 const DUNJIA_BOARD_BASE_HEIGHT = 870;
@@ -111,8 +126,11 @@ function normalizeKenQimenOptions(options){
 		...DEFAULT_OPTIONS,
 		...(options || {}),
 	};
-	if(next.paiPanType === 1){
-		next.paiPanType = 3;
+	// 旧数据迁移:阴盘曾为「盘式」(school='阴盘'),现为「起局法」(qijuMethod='shuzi',报数定局)。
+	// 旧存命盘/事盘载入时:盘式回落转盘、起局切阴盘(保留 shuziReportNumber),否则盘式下拉显非法值、且报数定局失效。
+	if(next.school === '阴盘'){
+		next.school = '转盘';
+		next.qijuMethod = 'shuzi';
 	}
 	return next;
 }
@@ -124,6 +142,39 @@ const DUNJIA_LEGEND_ITEMS = [
 	{ key: 'kongwang', label: '空亡', color: '#2f54eb', bg: 'rgba(47, 84, 235, 0.10)' },
 	{ key: 'yima', label: '🐎 驿马', color: 'var(--horosa-text, #262626)', bg: 'rgba(140, 140, 140, 0.10)' },
 ];
+
+// 用神取用速查(§16):一事一测,先定用神,再看其落宫旺衰/格局/生克。静态参考字典。
+const QIMEN_YONGSHEN_BASIC = [
+	['日干', '求测人自己(主方/我方)'],
+	['时干', '所测之事 / 对方 / 客方'],
+	['值符(星)', '领导、贵人、大环境、核心势力'],
+	['值使(门)', '事情发展通道、办事"门路"'],
+	['年命', '求测者本人(年支/年干所落宫=年命宫)'],
+	['旬空·马星', '事之虚实、动静缓急'],
+];
+const QIMEN_YONGSHEN_LOOKUP = [
+	['求财·生意', '生门、日干、财(我克者/戊)', '天任、值符、生门落宫旺衰'],
+	['事业·求官·求职', '开门、值符', '日干生旺、官星、太岁'],
+	['婚姻(男测)', '日干(己)、庚/对方干、六合', '太阴、咸池、乙(女方)'],
+	['婚姻(女测)', '日干、乙/对方干、六合', '太阴、庚(男方)'],
+	['官司诉讼', '开门(官府)、庚(对方/法)、值符', '伤门、惊门、白虎、日干vs时干'],
+	['疾病', '天芮(病)、死门、年命宫', '天心(医)、休门(药)、日干旺衰'],
+	['出行·外出', '马星、开门、日干', '所往方位之宫、杜门(阻)'],
+	['考试·文书·信息', '景门、天辅、丁奇', '值符、日干、文书宫旺衰'],
+	['寻人·走失', '玄武(逃向)、日干、马星', '杜门(藏)、所落宫方位'],
+	['失物·盗窃', '玄武、天蓬(盗)、生门(财物)', '物类象干、地盘方位'],
+	['合作·谈判·交易', '六合、日干vs时干、生门', '值符、太阴'],
+	['怀孕·生育', '九地、天芮(胎)、生门', '乙、年命、子孙'],
+	['房产·置业', '生门、坤2/艮8宫、戊(不动产)', '天任、值符'],
+];
+const QIMEN_YONGSHEN_SHENGKE = [
+	['比和', '用神与所临星门宫同五行——平稳、顺'],
+	['生入(生我)', '他来生用神——得助、有利、被帮'],
+	['生出(我生)', '用神生他——耗泄、付出、被求'],
+	['克入(克我)', '他来克用神——受制、阻碍、被压'],
+	['克出(我克)', '用神克他——我主动、得财/得制(克者为财)'],
+];
+
 
 function clamp(val, min, max){
 	return Math.max(min, Math.min(max, val));
@@ -391,6 +442,8 @@ function getQimenOptionsKey(options){
 		safe(options.monthGanZhiType),
 		safe(options.dayGanZhiType),
 		safe(options.qijuMethod),
+		safe(options.school),
+		safe(options.shuziReportNumber),
 		safe(options.kongMode),
 		safe(options.yimaMode),
 		safe(options.shiftPalace),
@@ -398,15 +451,28 @@ function getQimenOptionsKey(options){
 		safe(options.lateZiHourUseNextDay),
 		getTimeAlgValue(options),
 		options.fengJu ? 1 : 0,
+		safe(options.zhirunLeapDays),
 	].join('|');
 }
 
 function needJieqiYearSeed(options){
 	const opt = options || {};
+	// 置闰/无闰=超神接气;茅山=按交节时刻足60时辰(须任意节气的精确交节时刻种子)。三者都要节气种子。
+	const usesShenJie = opt.qijuMethod === 'zhirun' || opt.qijuMethod === 'wurun' || opt.qijuMethod === 'maoshan';
+	// 日家(本地全盘):局=节气三元六十日一局,须节气种子(冬/夏至日期+日柱)定「至甲子」60日块;
+	// 缺种子会退 findYuan 漏置闰→局错(如1964-11-10日家应阴三却给阴六)。任何盘式/起局下日家都要种子。
+	if(opt.paiPanType === 2){
+		return true;
+	}
+	// 飞盘/混合走本地短路计算(非后端),置闰/无闰/茅山需 jieqi 种子(超神/交节时刻);否则退曆法节气漏超神/茅山退拆补。
+	// 转盘等后端模式由后端处理节气,本地种子无关。
+	if(opt.school === '飞盘' || opt.school === '混合'){
+		return usesShenJie;
+	}
 	if(isKinqimenMode(opt.paiPanType)){
 		return false;
 	}
-	return opt.paiPanType === 3 && opt.qijuMethod === 'zhirun';
+	return opt.paiPanType === 3 && usesShenJie;
 }
 
 function sameRelatedPeople(a, b){
@@ -487,6 +553,7 @@ class DunJiaMain extends Component {
 			options: initialOptions,
 			faRelatedPeople: restoredLiveState && Array.isArray(restoredLiveState.faRelatedPeople) ? restoredLiveState.faRelatedPeople : [],
 			chartCategory: 'shi',
+			shuziInput: '',
 		};
 
 		this.unmounted = false;
@@ -557,6 +624,8 @@ class DunJiaMain extends Component {
 			getQimenOptionsKey(options),
 			safe(ctx && ctx.isDiurnal, ''),
 			safe(ctx && ctx.displaySolarTime, ''),
+			// 种子签名:日家(节气三元60日块)/飞盘超神等依赖节气种子;种子异步到达后 key 变→不命中旧(退化)缓存,强制带种子重算。
+			'seed:' + Object.keys((ctx && ctx.jieqiYearSeeds) || {}).filter((y)=>(ctx.jieqiYearSeeds[y])).sort().join(','),
 		].join('|');
 		if(this.panCache.has(key)){
 			return this.panCache.get(key);
@@ -575,7 +644,9 @@ class DunJiaMain extends Component {
 	async getResolvedPan(fields, nongli, options, displaySolarTime){
 		const ctx = this.getContext(fields, displaySolarTime);
 		const fallbackPan = this.getCachedPan(fields, nongli, options, displaySolarTime);
-		if(!fallbackPan || !isKinqimenMode(options && options.paiPanType)){
+		// 飞盘(飞宫九神)/混合(飞转结合)/数字起局(报数定局)均走本地 calcDunJia——后端不支持(飞盘/混合 须重启:8899 才认 school;
+		// 数字报数定局后端无此入参,走后端会被节气定局覆盖)。转盘等仍走后端(时/刻/综合)。
+		if(!fallbackPan || !isKinqimenMode(options && options.paiPanType) || (options && (options.school === '飞盘' || options.school === '混合' || options.qijuMethod === 'shuzi'))){
 			return fallbackPan;
 		}
 		const backendPan = await fetchQimenPan(fields, nongli, options, ctx);
@@ -754,10 +825,6 @@ class DunJiaMain extends Component {
 				}
 			});
 		}
-		if(nextOptions.paiPanType === 1){
-			nextOptions.paiPanType = 3;
-			changed = true;
-		}
 		const pan = payload.pan && typeof payload.pan === 'object' ? payload.pan : null;
 		if(pan){
 			if(pan.shiftPalace !== undefined){
@@ -830,10 +897,6 @@ class DunJiaMain extends Component {
 					changed = true;
 				}
 			});
-		}
-		if(nextOptions.paiPanType === 1){
-			nextOptions.paiPanType = 3;
-			changed = true;
 		}
 		const nextFaRelated = Array.isArray(qimen.faRelatedPeople) ? qimen.faRelatedPeople : [];
 		if(!sameRelatedPeople(nextFaRelated, this.state.faRelatedPeople)){
@@ -1228,7 +1291,8 @@ class DunJiaMain extends Component {
 		if(!year || Number.isNaN(year)){
 			return null;
 		}
-		if(this.jieqiYearSeeds[year]){
+		// 缓存命中须含日家所需「冬至/夏至」(旧版种子只取大雪/芒种);缺则放行重取(避免返回不全的旧种子致日家退化)。
+		if(this.jieqiYearSeeds[year] && this.jieqiYearSeeds[year].冬至 && this.jieqiYearSeeds[year].夏至){
 			return this.jieqiYearSeeds[year];
 		}
 		if(this.jieqiSeedPromises[year]){
@@ -1242,6 +1306,16 @@ class DunJiaMain extends Component {
 			let seed = await fetchPreciseJieqiSeed(params);
 			if(seed){
 				this.jieqiYearSeeds[year] = seed;
+				// 新 jieqi 种子到达:飞盘/混合短路的本地置闰·无闰超神·茅山交节 + 日家(节气三元60日块)依赖此种子;panCache key 不含种子→
+				// 可能缓存了漏超神/漏块/茅山退拆补的盘,故失效缓存并重算其视图(转盘走后端不受影响)。
+				if(!this.unmounted && this.state.hasPlotted && (['飞盘', '混合'].indexOf((this.state.options || {}).school) >= 0 || (this.state.options || {}).paiPanType === 2)){
+					if(this.panCache){ this.panCache.clear(); }
+					this.lastPanSignature = '';
+					const flds = this.state.localFields || this.props.fields;
+					if(flds && this.state.nongli){
+						this.recalc(flds, this.state.nongli, this.state.options, this.state.displaySolarTime);
+					}
+				}
 			}
 			return seed;
 		}).finally(()=>{
@@ -1269,10 +1343,13 @@ class DunJiaMain extends Component {
 		if(!year || Number.isNaN(year)){
 			return;
 		}
-		Promise.all([
+		const seedTasks = [
 			this.ensureJieqiSeed(flds, year - 1),
 			this.ensureJieqiSeed(flds, year),
-		]).catch(()=>null);
+		];
+		// 日家(节气三元60日块)晚12月冬至界需次年冬至定半年/至甲子。
+		if(fixedOptions && fixedOptions.paiPanType === 2){ seedTasks.push(this.ensureJieqiSeed(flds, year + 1)); }
+		Promise.all(seedTasks).catch(()=>null);
 	}
 
 	prefetchNongliForFields(fields){
@@ -1336,10 +1413,9 @@ class DunJiaMain extends Component {
 				year = parseInt(flds.date.value.format('YYYY'), 10);
 			}
 			const waitSeed = !!(year && shouldWaitSeed);
-			const seedPromise = waitSeed ? Promise.all([
-				this.ensureJieqiSeed(flds, year - 1),
-				this.ensureJieqiSeed(flds, year),
-			]) : null;
+			// 日家(节气三元60日块)晚12月过冬至需次年冬至定半年/至甲子 → 加载 year+1。
+			const seedYears = (fixedOptions && fixedOptions.paiPanType === 2) ? [year - 1, year, year + 1] : [year - 1, year];
+			const seedPromise = waitSeed ? Promise.all(seedYears.map((yy)=>this.ensureJieqiSeed(flds, yy))) : null;
 			const missingSeed = waitSeed && (!this.jieqiYearSeeds[year - 1] || !this.jieqiYearSeeds[year]);
 			if(missingSeed && !this.state.loading){
 				this.setState({ loading: true });
@@ -1417,10 +1493,6 @@ class DunJiaMain extends Component {
 	}
 
 	onOptionChange(key, value, opts){
-		if(key === 'paiPanType' && value === 1){
-			message.warning('月家奇门暂未由 Ken 后端支持，已从排盘选项移除');
-			return;
-		}
 		// 用户拍板: 左栏改过 after23NewDay 后,全局事件不再覆盖(最高权限)。fromGlobal 时不打用户改过的标记。
 		if(key === 'after23NewDay' && !(opts && opts.fromGlobal)){
 			this._after23BoundaryUserOverrode = true;
@@ -1435,6 +1507,10 @@ class DunJiaMain extends Component {
 			[key]: nextVal,
 		});
 		const nextState = { options };
+		// 切 排盘体例/盘式/起局 → 八宫子选复位到默认宫(右栏各 tab 数据本就随 resolved pan 重算,此处只复位子选避免停留旧宫)。
+		if(['paiPanType', 'school', 'qijuMethod'].indexOf(key) >= 0){
+			nextState.bagongPalace = BAGONG_PALACE_ORDER[0];
+		}
 		if(key === 'timeAlg'){
 			nextState.localFields = {
 				...(this.state.localFields || this.props.fields || {}),
@@ -1656,6 +1732,8 @@ class DunJiaMain extends Component {
 		// 八神不跟随值符或天盘干状态染色，保持独立显示。
 		const godColor = 'var(--horosa-text, #262626)';
 		const line2Color = cell.hasMenPo ? '#fa8c16' : 'var(--horosa-text, #262626)';
+		// 飞盘九门含中门(数据层 FEI_GATE_HOME[5]='中' 已随飞填宫),直接取门;无门留空格。
+		const doorDisp = cell.door || ' ';
 		const line3Color = 'var(--horosa-text, #262626)';
 		const diGanColor = 'var(--horosa-text, #262626)';
 		const centerMinorColor = 'var(--horosa-muted, #8c8c8c)';
@@ -1700,7 +1778,8 @@ class DunJiaMain extends Component {
 			centerItems.push({ text: `五合${centerHeGan}`, color: centerMinorColor });
 		}
 
-		if(cell.isCenter){
+		// 转盘中宫无神(仅天盘干+五合);飞盘九星九神含中宫(天禽/九地飞入)→ 走常规格(无门)显示。
+		if(cell.isCenter && !cell.isFeipan){
 			return (
 				<div
 					key={`cell_${cell.palaceNum}`}
@@ -1818,7 +1897,7 @@ class DunJiaMain extends Component {
 				)}
 				{this.renderQimenHoverNode(
 					'door',
-					cell.door || ' ',
+					doorDisp,
 					{
 						position: 'absolute',
 						left: '50%',
@@ -1858,171 +1937,9 @@ class DunJiaMain extends Component {
 		if(!pan){
 			return <Card bordered={false}>暂无遁甲盘数据</Card>;
 		}
-		const cellSize = 214;
-		const boardGap = 10;
-		const boardWidth = (cellSize * 3) + (boardGap * 2);
-		const boardScale = this.calcBoardScale();
-		const scaledWidth = Math.round(boardWidth * boardScale);
-		const scaledHeight = Math.round(DUNJIA_BOARD_BASE_HEIGHT * boardScale);
-		const timeInfo = getBoardTimeInfo(pan);
-		const dateTitle = timeInfo.dateText;
-		const shiftTitle = pan && pan.shiftPalace > 0 ? `（顺转${pan.shiftPalace}宫）` : '';
-		const timeLine = `直接时间：${timeInfo.clockHm}  真太阳时：${timeInfo.solarHm}`;
-		const pillars = [
-			{
-				key: 'year',
-				label: '年',
-				gan: (pan.ganzhi.year || '').substr(0, 1),
-				zhi: (pan.ganzhi.year || '').substr(1, 1),
-			},
-			{
-				key: 'month',
-				label: '月',
-				gan: (pan.ganzhi.month || '').substr(0, 1),
-				zhi: (pan.ganzhi.month || '').substr(1, 1),
-			},
-			{
-				key: 'day',
-				label: '日',
-				gan: (pan.ganzhi.day || '').substr(0, 1),
-				zhi: (pan.ganzhi.day || '').substr(1, 1),
-			},
-			{
-				key: 'time',
-				label: '时',
-				gan: (pan.ganzhi.time || '').substr(0, 1),
-				zhi: (pan.ganzhi.time || '').substr(1, 1),
-			},
-		].map((item)=>({
-			...item,
-			ganColor: getBaZiStemColor(item.gan),
-			zhiColor: getBaZiBranchColor(item.zhi),
-		}));
-		return (
-			<div
-				className="horosa-dunjia-board-shell xq-chart-renderer xq-chart-renderer-qimen"
-				style={{ width: scaledWidth, height: scaledHeight, maxWidth: '100%', margin: '0 auto' }}
-			>
-					<div style={{ width: boardWidth, transform: `scale(${boardScale})`, transformOrigin: 'top left' }}>
-						<div
-							className="horosa-dunjia-board-summary"
-							style={{
-								padding: 12,
-								borderRadius: 14,
-								background: 'var(--horosa-surface-solid, #fbfbfb)',
-								border: '1px solid var(--horosa-border, #efefef)',
-								marginBottom: 8,
-								width: boardWidth,
-								maxWidth: '100%',
-							}}
-						>
-							<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-									<div style={{ display: 'flex', alignItems: 'baseline', minWidth: 0 }}>
-										<span style={{ fontSize: 18, lineHeight: '22px', fontWeight: 700, color: 'var(--horosa-text, #222)' }}>
-											{dateTitle}
-										</span>
-										<span
-											style={{
-												marginLeft: '1.2em',
-												fontSize: 18,
-												lineHeight: '22px',
-												fontWeight: 700,
-												color: 'var(--horosa-text, #222)',
-												whiteSpace: 'nowrap',
-											}}
-										>
-										{timeLine}
-									</span>
-								</div>
-								{shiftTitle ? (
-									<div style={{ fontSize: 16, lineHeight: '20px', fontWeight: 700, color: 'var(--horosa-text-soft, #595959)' }}>
-										{shiftTitle}
-									</div>
-								) : null}
-							</div>
-							<div
-								style={{
-									marginTop: 6,
-									display: 'flex',
-									alignItems: 'flex-end',
-									gap: 14,
-								}}
-							>
-								{pillars.map((p)=>(
-									<div key={`pillar_${p.key}`} style={{ display: 'flex', alignItems: 'center' }}>
-										<div
-											style={{
-												display: 'flex',
-												flexDirection: 'column',
-												alignItems: 'center',
-												lineHeight: 1,
-												fontWeight: 700,
-												fontSize: 32,
-											}}
-										>
-											{this.renderQimenHoverInline('stem', p.gan, <span style={{ color: p.ganColor }}>{p.gan || ' '}</span>, `qimen_hd_gan_${p.key}`)}
-											{this.renderQimenHoverInline('branch', p.zhi, <span style={{ color: p.zhiColor, marginTop: 4 }}>{p.zhi || ' '}</span>, `qimen_hd_zhi_${p.key}`)}
-										</div>
-										<span
-											style={{
-												marginLeft: 6,
-												color: 'var(--horosa-muted, #8c8c8c)',
-												fontSize: 24,
-												lineHeight: 1,
-												fontWeight: 700,
-											}}
-										>
-											{p.label}
-										</span>
-									</div>
-								))}
-							</div>
-							<div style={{ marginTop: 6, fontSize: 16, lineHeight: '20px', fontWeight: 700, color: 'var(--horosa-text, #202020)' }}>
-								{pan.juText} 值符:{this.renderQimenHoverInline('star', pan.zhiFu, <span>{pan.zhiFu}</span>, 'qimen_hd_zhifu')} 值使:{this.renderQimenHoverInline('door', pan.zhiShi, <span>{pan.zhiShi}</span>, 'qimen_hd_zhishi')}
-							</div>
-							<div style={{ marginTop: 4, fontSize: 14, lineHeight: '18px', color: 'var(--horosa-text-soft, #595959)' }}>
-								{pan.options.kongModeLabel}-{pan.kongWang} 旬首-{pan.xunShou}
-							</div>
-						</div>
-						<div className="horosa-dunjia-grid-wrap" style={{ position: 'relative', width: boardWidth, maxWidth: '100%' }}>
-							<div style={{ display: 'grid', gridTemplateColumns: `repeat(3, ${cellSize}px)`, gap: boardGap }}>
-								{pan.cells.map((cell)=>this.renderCell(cell))}
-							</div>
-							{pan.fengJu ? (
-								<div
-									style={{
-										position: 'absolute',
-										left: '50%',
-										top: '50%',
-										transform: 'translate(-50%, -50%)',
-										width: '62%',
-										maxWidth: 430,
-										opacity: 0.22,
-										pointerEvents: 'none',
-										zIndex: 9,
-									}}
-								>
-									<img src={sealedImage} alt="雷霆都司印章" style={{ width: '100%', height: 'auto', display: 'block' }} />
-								</div>
-							) : null}
-						</div>
-						<div className="horosa-dunjia-board-tags" style={{ marginTop: 12 }}>
-							{DUNJIA_LEGEND_ITEMS.map((item)=>(
-								<span
-									key={item.key}
-									className="horosa-dunjia-legend-tag"
-									style={{
-										'--qimen-legend-color': item.color,
-										'--qimen-legend-bg': item.bg,
-									}}
-								>
-									{item.label}
-								</span>
-							))}
-						</div>
-					</div>
-			</div>
-		);
+		// 盘面九宫×~45 Popover + 表头悬浮抽进 <DunJiaBoard>(sCU 按 pan/boardScale 守门),父无关 setState 不再重建整盘。
+		// 渲染内容与原内联实现逐字一致(byte-perfect),仅多一层纯透传组件;kill-switch=chartSCU 关。
+		return <DunJiaBoard pan={pan} boardScale={this.calcBoardScale()} />;
 	}
 
 	renderInputPanel(){
@@ -2065,27 +1982,49 @@ class DunJiaMain extends Component {
 							</Select>
 						</label>
 						<label className="horosa-dunjia-select-field">
-							<span>值使</span>
-							<Select size="small" value={opt.zhiShiType} onChange={(v)=>this.onOptionChange('zhiShiType', v)}>
-								{ZHISHI_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							<span>起局</span>
+							<Select
+								size="small"
+								value={opt.paiPanType === 3 ? opt.qijuMethod : (opt.qijuMethod === 'shuzi' ? 'shuzi' : 'zhirun')}
+								onChange={(v)=>this.onOptionChange('qijuMethod', v)}
+							>
+								{(opt.paiPanType === 3 ? QIJU_METHOD_OPTIONS : QIJU_METHOD_NONSHI_OPTIONS).map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
 						<label className="horosa-dunjia-select-field">
-							<span>起局</span>
-							<Select size="small" value={opt.qijuMethod} disabled={[3, 4, 5].indexOf(opt.paiPanType) < 0} onChange={(v)=>this.onOptionChange('qijuMethod', v)}>
-								{QIJU_METHOD_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							<span>盘式</span>
+							<Select size="small" value={opt.school || '转盘'} onChange={(v)=>this.onOptionChange('school', v)}>
+								{SCHOOL_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
+						{opt.qijuMethod === 'shuzi' ? (
+							<label className="horosa-dunjia-select-field is-wide">
+								<span>报数</span>
+								<input
+									value={opt.shuziReportNumber || ''}
+									onChange={(e)=>this.onOptionChange('shuziReportNumber', e.target.value)}
+									placeholder="阴盘起局:输入报数(各位求和÷9定局,余0作9)"
+									inputMode="numeric"
+									style={{ flex: 1, minWidth: 120, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--horosa-border, #d9d9d9)', background: 'var(--horosa-surface-solid, #fff)', color: 'var(--horosa-text, #262626)' }}
+								/>
+							</label>
+						) : null}
 						<label className="horosa-dunjia-select-field">
 							<span>盘类</span>
 							<Select size="small" value={this.state.chartCategory} onChange={this.onChartCategoryChange}>
 								{CHART_CATEGORY_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
-						<label className="horosa-dunjia-select-field is-wide">
+						<label className="horosa-dunjia-select-field">
 							<span>月家</span>
 							<Select size="small" value={opt.yueJiaQiJuType} disabled={opt.paiPanType !== 1} onChange={(v)=>this.onOptionChange('yueJiaQiJuType', v)}>
 								{YUEJIA_QIJU_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-dunjia-select-field">
+							<span>值使</span>
+							<Select size="small" value={opt.zhiShiType} onChange={(v)=>this.onOptionChange('zhiShiType', v)}>
+								{ZHISHI_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
 							</Select>
 						</label>
 						<label className="horosa-dunjia-select-field">
@@ -2143,6 +2082,29 @@ class DunJiaMain extends Component {
 								{showPatternInterpretation ? '显示' : '隐藏'}
 							</Button>
 						</div>
+						<div className="horosa-dunjia-toggle-field">
+							<span>设置</span>
+							<Button onClick={()=>this.setState({ showSettings: true })}>传本设置</Button>
+						</div>
+						<Modal
+							title="奇门·传本设置(手动自定义)"
+							open={!!this.state.showSettings}
+							onOk={()=>this.setState({ showSettings: false })}
+							onCancel={()=>this.setState({ showSettings: false })}
+							okText="完成"
+							cancelText="关闭"
+							width={380}
+						>
+							<div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+								<label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+									<span style={{ fontSize: 12, color: 'var(--horosa-muted, #8c8c8c)' }}>置闰天数(超神接气置闰法·传本差异)</span>
+									<Select size="small" value={opt.zhirunLeapDays || 9} onChange={(v)=>this.onOptionChange('zhirunLeapDays', v)}>
+										{ZHIRUN_LEAP_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+									</Select>
+								</label>
+								<div style={{ fontSize: 11, color: 'var(--horosa-muted, #8c8c8c)', lineHeight: 1.6 }}>仅影响「置闰」起局法;默认「大于9天」为本仓口径。改后中间盘与右栏信息即时按所选重算。</div>
+							</div>
+						</Modal>
 						<label className="horosa-dunjia-select-field is-wide">
 							<span>相关人员</span>
 							<Select
@@ -2292,8 +2254,33 @@ class DunJiaMain extends Component {
 				))}
 			</div>
 		);
+		const shuzi = computeShuziYongShenGong(this.state.shuziInput);
+		const shuziCard = (
+			<Card size='small' style={{ marginBottom: 8, borderRadius: 8 }}>
+				<div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+					<span style={{ fontWeight: 600 }}>数字报数</span>
+					<input
+						value={this.state.shuziInput}
+						onChange={(e)=>this.setState({ shuziInput: e.target.value })}
+						placeholder="报数(可多位/手机号)"
+						inputMode="numeric"
+						style={{ flex: 1, minWidth: 120, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--horosa-border, #d9d9d9)', background: 'var(--horosa-surface-solid, #fff)', color: 'var(--horosa-text, #262626)' }}
+					/>
+				</div>
+				{shuzi ? (
+					<div style={{ marginTop: 6, color: soft, lineHeight: '22px' }}>
+						数字和 {shuzi.sum} ÷9 余 → 用神宫 <span style={{ fontWeight: 700, color: 'var(--horosa-text, #262626)' }}>{shuzi.gong}宫</span>
+						{this.renderQimenHoverInline('palace', shuzi.gua, <span style={{ fontWeight: 600, margin: '0 4px' }}>{shuzi.gua}</span>, 'shuzi_gua')}
+						<span style={{ color: muted }}>{shuzi.direction}</span>
+						<div style={{ color: muted, fontSize: 12, marginTop: 2 }}>除9取余(余0作9)定用神宫,再看该宫卦象/方位/类象断事。各家规则有别(通则),精确依所宗课本。</div>
+					</div>
+				) : (
+					<div style={{ marginTop: 6, color: muted, fontSize: 12 }}>输入所报之数 → 除9取余(余0作9)定用神宫。各家规则有别,此为通则。</div>
+				)}
+			</Card>
+		);
 		if(!pan){
-			return <div>{topicBtns}<Card size='small'><div style={{ color: muted }}>请先起盘后查看用神分论。</div></Card></div>;
+			return <div>{topicBtns}{shuziCard}<Card size='small'><div style={{ color: muted }}>请先起盘后查看用神分论。</div></Card></div>;
 		}
 		const ys = computeYongShen(pan, { faceToFace: true });
 		const guGua = computeGuGua(pan);
@@ -2384,7 +2371,38 @@ class DunJiaMain extends Component {
 				</div>
 			</Card>
 		) : null;
-		return <div>{topicBtns}{yongShenCard}{topicCard}{guGuaCard}</div>;
+		const yongShenRefCard = (
+			<Card size='small' style={{ marginTop: 8, borderRadius: 8 }}>
+				<details>
+					<summary style={{ cursor: 'pointer', fontWeight: 600, listStyle: 'revert' }}>用神取用速查<span style={{ color: muted, fontWeight: 400, marginLeft: 6, fontSize: 12 }}>一事一测·先定用神(参考字典)</span></summary>
+					<div style={{ marginTop: 8 }}>
+						<div style={{ fontWeight: 600, color: soft, marginBottom: 4 }}>基本用神</div>
+						{QIMEN_YONGSHEN_BASIC.map((r, i)=>(
+							<div key={`ysb_${i}`} style={{ lineHeight: '22px' }}><span style={{ fontWeight: 600 }}>{r[0]}</span><span style={{ color: muted }}>：{r[1]}</span></div>
+						))}
+						<div style={{ fontWeight: 600, color: soft, margin: '8px 0 4px' }}>分类取用</div>
+						<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, lineHeight: '18px' }}>
+							<thead><tr style={{ color: muted }}><th style={{ textAlign: 'left', padding: '2px 4px' }}>所测</th><th style={{ textAlign: 'left', padding: '2px 4px' }}>主用神</th><th style={{ textAlign: 'left', padding: '2px 4px' }}>辅看</th></tr></thead>
+							<tbody>
+								{QIMEN_YONGSHEN_LOOKUP.map((r, i)=>(
+									<tr key={`ysl_${i}`} style={{ borderTop: '1px solid var(--horosa-border, #f0f0f0)' }}>
+										<td style={{ padding: '2px 4px', fontWeight: 600, whiteSpace: 'nowrap' }}>{r[0]}</td>
+										<td style={{ padding: '2px 4px' }}>{r[1]}</td>
+										<td style={{ padding: '2px 4px', color: muted }}>{r[2]}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+						<div style={{ fontWeight: 600, color: soft, margin: '8px 0 4px' }}>取用生克(断成败)</div>
+						{QIMEN_YONGSHEN_SHENGKE.map((r, i)=>(
+							<div key={`yss_${i}`} style={{ lineHeight: '22px' }}><span style={{ fontWeight: 600 }}>{r[0]}</span><span style={{ color: muted }}>：{r[1]}</span></div>
+						))}
+						<div style={{ color: muted, fontSize: 12, marginTop: 6 }}>断成败核心:看用神之间(日干vs时干、日干vs用事门)生克——生我合我者成、克我冲我者败,再叠旺衰格局。</div>
+					</div>
+				</details>
+			</Card>
+		);
+		return <div>{topicBtns}{shuziCard}{yongShenCard}{topicCard}{guGuaCard}{yongShenRefCard}</div>;
 	}
 
 	renderRight(){
@@ -2427,7 +2445,7 @@ class DunJiaMain extends Component {
 							</div>
 							<div style={{ flex: 1 }}>
 								<Select size="small" value={opt.qijuMethod} disabled={[3, 4, 5].indexOf(opt.paiPanType) < 0} onChange={(v)=>this.onOptionChange('qijuMethod', v)} style={{ width: '100%' }}>
-									{QIJU_METHOD_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+									{QIJU_METHOD_OPTIONS.map((item)=><Option key={item.value} value={item.value} disabled={(item.value === 'maoshan' || item.value === 'wurun') && [4, 5].indexOf(opt.paiPanType) >= 0}>{item.label}</Option>)}
 								</Select>
 							</div>
 							<div style={{ flex: 1 }}>
@@ -2446,11 +2464,6 @@ class DunJiaMain extends Component {
 							<div style={{ flex: 1 }}>
 								<Select size="small" value={opt.paiPanType} onChange={(v)=>this.onOptionChange('paiPanType', v)} style={{ width: '100%' }}>
 									{PAIPAN_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
-								</Select>
-							</div>
-							<div style={{ flex: 1 }}>
-								<Select size="small" value={opt.zhiShiType} onChange={(v)=>this.onOptionChange('zhiShiType', v)} style={{ width: '100%' }}>
-									{ZHISHI_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
 								</Select>
 							</div>
 							<div style={{ flex: 1.45 }}>
@@ -2528,6 +2541,9 @@ class DunJiaMain extends Component {
 							<div style={{ lineHeight: '26px' }}>
 								<div>命式：{pan ? pan.options.sexLabel : '—'}</div>
 								<div>起盘方式：{pan ? (pan.qimenModeLabel || pan.options.paiPanLabel || '—') : '—'}</div>
+								<div>盘式：{pan ? (pan.options.schoolLabel || '—') : '—'}</div>
+								<div>定局法：{pan ? (pan.options.dingFaLabel || pan.options.qijuMethodLabel || '—') : '—'}</div>
+								{pan && pan.shuziInfo ? <div>报数：{pan.shuziInfo.digits}（和 {pan.shuziInfo.sum} → 用神宫 {pan.shuziInfo.gong}·{pan.shuziInfo.gua}{pan.shuziInfo.direction}）</div> : null}
 								<div>符头：{pan ? pan.fuTou : '—'}</div>
 								<div>节气：{pan ? pan.jieqiText : '—'}</div>
 								<div>局数：{pan ? pan.juText : '—'}</div>
@@ -2552,6 +2568,28 @@ class DunJiaMain extends Component {
 								<div>节气段：{pan ? (pan.jiedelta || '—') : '—'}</div>
 							</div>
 						</Card>
+						{(()=>{
+							const ws = pan ? buildQimenWangShuai(pan) : null;
+							if(!ws || !ws.monthElem){ return null; }
+							const tone = { 旺: '#2e7d32', 相: '#558b2f', 休: 'var(--horosa-text-soft, #8c8c8c)', 囚: '#b26a00', 死: '#b71c1c' };
+							return (
+								<Card bordered={false} bodyStyle={{ padding: '10px 12px' }} style={{ marginTop: 8 }}>
+									<div style={{ fontWeight: 600, marginBottom: 6 }}>旺相休囚死<span style={{ color: 'var(--horosa-muted, #8c8c8c)', fontWeight: 400, marginLeft: 6 }}>月令 {ws.monthBranch}（{ws.monthElem}令）· 当令旺·我生相·生我休·克我囚·我克死</span></div>
+									<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 14, rowGap: 4, lineHeight: '22px' }}>
+										{ws.palaces.map((p)=>(
+											<div key={`ws_${p.palaceNum}`}>
+												<span style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>{p.palaceName}{p.palaceNum}：</span>
+												<span>星{p.star}</span>
+												<span style={{ color: tone[p.starWangShuai] || 'inherit', fontWeight: 600 }}>{p.starWangShuai || '—'}</span>
+												<span style={{ color: 'var(--horosa-muted, #8c8c8c)', margin: '0 2px' }}>·</span>
+												<span>门{p.door}</span>
+												<span style={{ color: tone[p.doorWangShuai] || 'inherit', fontWeight: 600 }}>{p.doorWangShuai || '—'}</span>
+											</div>
+										))}
+									</div>
+								</Card>
+							);
+						})()}
 					</TabPane>
 					<TabPane tab="神煞" key="shensha">
 						<Card bordered={false} bodyStyle={{ padding: '10px 12px' }}>
@@ -2790,5 +2828,12 @@ class DunJiaMain extends Component {
 		);
 	}
 }
+
+// 用神取用速查的静态数据(基本用神 / 分类取用 / 取用生克),供「三式合一」遁甲页用神子tab复用同款表。
+export {
+	QIMEN_YONGSHEN_BASIC,
+	QIMEN_YONGSHEN_LOOKUP,
+	QIMEN_YONGSHEN_SHENGKE,
+};
 
 export default DunJiaMain;

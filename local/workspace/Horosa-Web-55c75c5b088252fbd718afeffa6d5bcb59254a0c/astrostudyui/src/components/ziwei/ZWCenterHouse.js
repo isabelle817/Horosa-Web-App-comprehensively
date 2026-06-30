@@ -30,7 +30,7 @@ class ZWCenterHouse extends ZWCommHouse {
 		this.owner.select('#' + this.id).remove();
 		let container = this.owner.append('g').attr('id', this.id);
 		container.append('rect')
-				.attr('fill', AstroConst.AstroColor.ChartBackgroud)
+				.attr('fill', 'var(--horosa-ziwei-chart-bg, #f6f1e7)')
 				.attr('x', this.x).attr('y', this.y)
 				.attr('width', this.width).attr('height', this.height);
 		this.svg = container;

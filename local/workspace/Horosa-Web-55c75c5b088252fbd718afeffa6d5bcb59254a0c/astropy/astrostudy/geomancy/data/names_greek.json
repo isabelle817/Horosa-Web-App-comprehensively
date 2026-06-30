@@ -1,0 +1,23 @@
+{
+ "schema": "geomancy.names_greek/v1",
+ "attested": false,
+ "note": "义译(意义对应转写),非历史实证抄本。",
+ "names": {
+  "Via": "Hodós",
+  "Populus": "Laós",
+  "Albus": "Leukón",
+  "Rubeus": "Erythrón",
+  "Puer": "Kóros",
+  "Puella": "Kórē",
+  "Coniunctio": "Sýnodos",
+  "Caput Draconis": "Kephalḕ Drákontos",
+  "Cauda Draconis": "Ourà Drákontos",
+  "Acquisitio": "Kérdos",
+  "Amissio": "Apṓleia",
+  "Fortuna Maior": "Meízōn Týchē",
+  "Fortuna Minor": "Elássōn Týchē",
+  "Laetitia": "Chará",
+  "Tristitia": "Lýpē",
+  "Carcer": "Phylakḗ"
+ }
+}

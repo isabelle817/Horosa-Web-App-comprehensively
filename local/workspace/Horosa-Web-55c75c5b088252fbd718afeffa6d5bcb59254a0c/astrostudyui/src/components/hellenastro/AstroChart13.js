@@ -27,6 +27,17 @@ function fieldsToParams(fields){
 		pos: fields.pos.value,
 		after23NewDay: (fields.after23NewDay && fields.after23NewDay.value !== undefined) ? fields.after23NewDay.value : defaultAfter23NewDay(),
 		lateZiHourUseNextDay: (fields.lateZiHourUseNextDay && fields.lateZiHourUseNextDay.value !== undefined) ? fields.lateZiHourUseNextDay.value : defaultLateZiHourUseNextDay(),
+		// 界系(bounds)：默认 0/缺省 不下发 → 请求体零变 + 不扰缓存键(同主盘 fieldsToParams 口径);仅非 0 才传。
+		...(fields.termsVariant && fields.termsVariant.value ? { termsVariant: fields.termsVariant.value } : {}),
+		// 希腊化变体(西占交点真平 / 昼夜缓冲 / 迦勒底界狮子首星 / 三分集 / 福点反转):照主盘 models/astro.js:311-315 同款条件透传。
+		// 默认(平 / 几何地平 / 狮子木首 / Dorothean / 反转 ON)不下发 → 请求体零变·缓存键零回归;仅非默认才传。后端 webchartsrv.py:206/284(chart13/chart12)已能接收。
+		...(fields.westNodeType && fields.westNodeType.value === 'true' ? { westNodeType: 'true' } : {}),
+		...(fields.sectBuffer && fields.sectBuffer.value === 'ptolemy5' ? { sectBuffer: 'ptolemy5' } : {}),
+		...(fields.leoBoundFirst && (fields.leoBoundFirst.value === 1 || fields.leoBoundFirst.value === '1') ? { leoBoundFirst: 1 } : {}),
+		...(fields.triplicity && fields.triplicity.value && fields.triplicity.value !== 'Dorothean' ? { triplicity: fields.triplicity.value } : {}),
+		...(fields.lotReversal && (fields.lotReversal.value === 0 || fields.lotReversal.value === '0') ? { lotReversal: 0 } : {}),
+		orbs: (fields.orbs && fields.orbs.value) ? fields.orbs.value : undefined,
+		orbScale: (fields.orbScale && fields.orbScale.value) ? fields.orbScale.value : undefined,
 	};
 
 	return params;
@@ -63,16 +74,17 @@ function pushCache(map, key, val){
 	}
 }
 
-function buildChart13Key(params){
+function buildChart13Key(params, endpoint){
 	try{
-		return JSON.stringify(params || {});
+		return `${endpoint || 'chart13'}|${JSON.stringify(params || {})}`;
 	}catch(e){
 		return '';
 	}
 }
 
-async function fetchChart13Cached(params, silent){
-	const key = buildChart13Key(params);
+async function fetchChart13Cached(params, silent, endpoint){
+	const ep = endpoint || 'chart13';
+	const key = buildChart13Key(params, ep);
 	if(key && chart13Mem.has(key)){
 		return clonePlain(chart13Mem.get(key));
 	}
@@ -80,7 +92,7 @@ async function fetchChart13Cached(params, silent){
 		const inflight = await chart13Inflight.get(key);
 		return clonePlain(inflight);
 	}
-	const req = request(`${Constants.ServerRoot}/chart13`, {
+	const req = request(`${Constants.ServerRoot}/${ep}`, {
 		body: JSON.stringify(params),
 		silent: !!silent,
 	}).then((data)=>{
@@ -133,7 +145,7 @@ class AstroChart13 extends Component{
 			return;
 		}
 		const seq = ++this.chartReqSeq;
-		const result = await fetchChart13Cached(params, true);
+		const result = await fetchChart13Cached(params, true, this.props.endpoint);
 		if(this.unmounted || seq !== this.chartReqSeq){
 			return;
 		}
@@ -170,7 +182,7 @@ class AstroChart13 extends Component{
 					if(this.unmounted){
 						return;
 					}
-					fetchChart13Cached(params, true).catch(()=>{
+					fetchChart13Cached(params, true, this.props.endpoint).catch(()=>{
 						return null;
 					});
 				}, 240);

@@ -307,7 +307,9 @@ def sweNextTransit(obj, jd, lat, lon, flag):
     sweObj = SWE_OBJECTS[obj]
     ensureEphePath()
     flag = swisseph.CALC_RISE if flag == 'RISE' else swisseph.CALC_SET
-    trans = swisseph.rise_trans(jd, sweObj, lon, lat, 0, 0, 0, flag)
+    # 新版 pyswisseph 签名: rise_trans(tjdut, body, rsmi, geopos_seq, atpress, attemp, flags)。
+    # 旧式 (jd, obj, lon, lat, 0,0,0, flag) 会因参数过多报错并使日出/日没全失败(muhurta/行星时/特殊上升)。
+    trans = swisseph.rise_trans(jd, sweObj, flag, (lon, lat, 0.0))
     return trans[1][0]
 
 

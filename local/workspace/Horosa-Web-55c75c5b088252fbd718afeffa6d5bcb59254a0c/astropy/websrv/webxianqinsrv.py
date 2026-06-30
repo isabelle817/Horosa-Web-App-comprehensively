@@ -22,7 +22,8 @@ from websrv.kentang.kinastro_common import (
 
 ensure_kinastro_path()
 
-from astro.cetian_ziwei import _solar_to_lunar  # noqa: E402
+# 策天引擎已摘出至自有树(astrostudy);此处仅复用其朔望月换算工具。
+from astrostudy.cetian_ziwei import _solar_to_lunar  # noqa: E402
 from astro.chinstar.chinstar import (  # noqa: E402
     BRANCHES,
     HOSTS,

@@ -64,6 +64,10 @@ export default class DoubleMeiyiGuaSym extends Component{
         if(up === null || down === null){
             return;
         }
+        // 卦对象缺爻线(yao)时直接返回,避免后续 upyao[0] 在 JSC 上抛 TypeError。
+        if(!up.yao || !down.yao){
+            return;
+        }
 
         let upyao = up.yao;
         let downyao = down.yao;
@@ -106,7 +110,8 @@ export default class DoubleMeiyiGuaSym extends Component{
             body: JSON.stringify(params),
         });
 
-        const descresult = descdata[Constants.ResultKey];
+        const descresult = descdata && descdata[Constants.ResultKey];
+        if(!descresult){ return; } // request 软失败返 undefined → 不 setState 半成品,避免 Unhandled Rejection
 
         let st = {
             gua64: descresult[orgyao.join('')],
@@ -133,7 +138,8 @@ export default class DoubleMeiyiGuaSym extends Component{
         const meiyidata = await request(`${Constants.ServerRoot}/gua/meiyi`, {
             body: JSON.stringify(meiyiparam),
         });
-        const meiyires = meiyidata[Constants.ResultKey];
+        const meiyires = meiyidata && meiyidata[Constants.ResultKey];
+        if(!meiyires){ return; } // 同上:互卦取象软失败时不渲染半盘
 
         st.huGuaUp = meiyires[huUpYao.join('')];
         st.huGuaDown = meiyires[huDownYao.join('')];
@@ -244,6 +250,13 @@ export default class DoubleMeiyiGuaSym extends Component{
 
         let upGua = st.upChanged ? st.upChanged : valUp;
         let downGua = st.downChanged ? st.downChanged : valDown;
+
+        // 🔒 防黑屏:选第二卦的中间态(desc 尚未取回)下,huGuaUp/huGuaDown/upGua/downGua 可能为空,
+        // 而下方 dom 直接取 upGua.name / huGuaUp.name / huGuaDown.abrname 等。任一缺失即先不渲染,
+        // 待数据齐再画;否则 render 抛 TypeError → 全树无 error boundary → 整页空白(Mac/JSC 调度更易触发)。
+        if(!upGua || !downGua || !huGuaUp || !huGuaDown){
+            return null;
+        }
 
         let gua64descDom = null;
         let type = st.guaType;

@@ -260,6 +260,7 @@ class RengChart {
 			ke: this.ke,
 			nongli: this.nongli,
 			guireng: this.guireng,
+			seHaiOpts: this.castOverride ? this.castOverride.seHaiOpts : null,
 			liuRengChart: this.rengs[0],
 			divTooltip: this.tooltipId ? d3.select(`#${this.tooltipId}`) : null,
 		};
@@ -614,21 +615,23 @@ class RengChart {
 		const padBottom = Math.max(20, cord.h * 0.028); // ② Y 间距收紧(原 32/0.035)
 		const bodyY = cord.y + padTop;
 		const bodyH = Math.max(0, cord.h - padTop - padBottom);
-		const splitX = cord.x + cord.w * 0.43;
-		const left = {
-			x: cord.x + padX,
-			y: bodyY,
-			w: splitX - cord.x - padX * 0.9,
-			h: bodyH,
+		// 统一几何(还原参考图):8 行等距、行距=ring、字号 main=ring/1.35(灰黑同号、行间隙≈半字高)。
+		// 方盘 7ring 见方 + 间距 0.6ring + 四课三传 4 列(列距 ring),整体紧凑居中、尽量放大填满中栏。
+		// 总内容宽 W ≈ 11.6ring;宽度预算取中栏 80%(两侧各留约 10% 余白)、高度取 8 行容量,二者最小者。
+		const ring = Math.max(24, Math.min(bodyH / 7.1, (cord.w * 0.8) / 11.6));
+		const W = 11.6 * ring;
+		const blockX0 = cord.x + Math.max(padX * 0.5, (cord.w - W) / 2);
+		const geo = {
+			cy: bodyY + bodyH / 2,
+			ring: ring,
+			main: ring / 1.35,
+			panCx: blockX0 + 3.5 * ring,                  // 方盘中心
+			keX: blockX0 + 7 * ring + 0.6 * ring + 0.5 * ring, // 四课三传第 1 列中心(方盘右缘 + 0.6ring 间距)
 		};
-		const right = {
-			x: splitX + Math.max(18, cord.w * 0.018),
-			y: bodyY,
-			w: cord.x + cord.w - splitX - padX,
-			h: bodyH,
-		};
-		this.drawSimpleTextPan(group, left, chart);
-		this.drawSimpleKeChuan(group, right, csvg);
+		const left = { x: blockX0, y: bodyY, w: 7 * ring, h: bodyH };
+		const right = { x: geo.keX, y: bodyY, w: 4 * ring, h: bodyH };
+		this.drawSimpleTextPan(group, left, chart, geo);
+		this.drawSimpleKeChuan(group, right, csvg, geo);
 		this.drawCirclePreviewButton(group, {
 			x: cord.x + cord.w - 92,
 			y: cord.y + Math.max(12, cord.h * 0.02),
@@ -658,77 +661,44 @@ class RengChart {
 		};
 	}
 
-	drawSimpleTextPan(group, cord, chart){
+	drawSimpleTextPan(group, cord, chart, geo){
 		const panGroup = group.append('g').attr('class', 'liureng-simple-pan');
 		const gold = 'var(--horosa-liureng-square-jiang, #d8ad63)';
 		const main = 'var(--horosa-liureng-square-main, #f0eee7)';
 		const muted = 'var(--horosa-liureng-square-muted, #8f9694)';
-		const size = Math.min(cord.w, cord.h);
-		const branchSize = Math.max(18, Math.min(42, size * 0.096));
-		const jiangSize = Math.max(16, Math.min(34, size * 0.084));
-		const ganSize = Math.max(15, Math.min(30, size * 0.074));
-		const maxRowGap = Math.max(branchSize * 1.45, (cord.h - 16) / 7.55);
-		// 收纳钳制(用户实告方盘下端超界):盘面垂直总需求 ≈ rowGap*(0.82顶偏+7.58行距)+半字高,
-		// 旧公式无此约束、正常窗口下末行就已画到 cord 之外(被 svg 底边裁掉/溢出窗口)。
-		// fitRowGap 保证「末行基线+下半字」收在 cord.h 内;20 为硬下限(对应 draw() 的 360 回落滚动阈值)。
-		const fitRowGap = (cord.h - branchSize * 0.6) / 8.4;
-		const rowGap = Math.max(20, Math.min(92, size * 0.17, maxRowGap, fitRowGap));
-		// 超矮窗下行距被压缩时字号随行距缩,防上下行文字重叠;正常窗口 rowGap 远大于阈值,字号不变。
-		const branchSizeFit = Math.min(branchSize, rowGap * 0.72);
-		const jiangSizeFit = Math.min(jiangSize, rowGap * 0.66);
-		const ganSizeFit = Math.min(ganSize, rowGap * 0.60);
-		const colGap = Math.max(branchSizeFit * 1.48, Math.min(68, cord.w * 0.16));
-		const centerX = cord.x + cord.w * 0.46;
-		const panHeight = rowGap * 7.75;
-		// min() 第三项 = 「底部必须装得下」上限:正常窗口下大于前两项不生效,矮窗时把盘面整体上提。
-		const topY = cord.y + Math.max(rowGap * 0.82, Math.min(cord.h * 0.36,
-			(cord.h - panHeight) / 2 + rowGap * 0.86,
-			cord.h - rowGap * 7.58 - branchSizeFit * 0.6));
+		// 8 行等距网格(行 i 的 y = cy+(i-3.5)*ring):顶边巳午未申占行0-2、左右辰卯/酉戌占行3-4、底边寅丑子亥占行5-7。
+		const ring = (geo && geo.ring) || Math.min(cord.w, cord.h) / 7.8;
+		const F = (geo && geo.main) || ring / 1.35;
+		const cx = (geo && geo.panCx) || (cord.x + cord.w / 2);
+		const cy = (geo && geo.cy) || (cord.y + cord.h / 2);
+		const rowY = (i)=> cy + (i - 3.5) * ring;
 		const branches = LRConst.ZiList;
-		const house = branches.reduce((acc, branch)=>{
-			acc[branch] = this.getSimpleHouse(chart, branch);
-			return acc;
-		}, {});
-		const drawRow = (list, y, field, fill, fontSize, weight)=>{
-			list.forEach((branch, idx)=>{
-				const data = house[branch] || {};
-				const tipOptions = field === 'jiang' ? { houseIndex: data.idx } : (field === 'up' ? { branch: data.up } : {});
-				this.drawSimpleText(panGroup, data[field] || '', centerX + (idx - (list.length - 1) / 2) * colGap, y, {
-					fill,
-					size: fontSize,
-					weight,
-					...tipOptions,
-				});
-			});
-		};
-		drawRow(['巳', '午', '未', '申'], topY, 'jiang', gold, jiangSizeFit, 760);
-		drawRow(['巳', '午', '未', '申'], topY + rowGap, 'gan', muted, ganSizeFit, 560);
-		drawRow(['巳', '午', '未', '申'], topY + rowGap * 2, 'up', main, branchSizeFit, 760);
-
-			const middleY = topY + rowGap * 3.18;
-		[
-				{ branch: '辰', x: centerX - colGap * 2.18, y: middleY },
-				{ branch: '卯', x: centerX - colGap * 2.18, y: middleY + rowGap },
-		].forEach((item)=>{
-			const data = house[item.branch] || {};
-			this.drawSimpleText(panGroup, data.jiang, item.x - colGap * 0.74, item.y, { fill: gold, size: jiangSizeFit, weight: 760, houseIndex: data.idx });
-			this.drawSimpleText(panGroup, data.gan, item.x, item.y, { fill: muted, size: ganSizeFit, weight: 560 });
-			this.drawSimpleText(panGroup, data.up, item.x + colGap * 0.74, item.y, { fill: main, size: branchSizeFit, weight: 760, branch: data.up });
+		const house = branches.reduce((acc, b)=>{ acc[b] = this.getSimpleHouse(chart, b); return acc; }, {});
+		const T = (text, x, y, fill, tip)=> this.drawSimpleText(panGroup, text || '', x, y, { fill: fill, size: F, weight: (fill === muted ? 560 : 760), ...(tip || {}) });
+		// 顶边:jiang(行0)/gan(行1)/up(行2),列 j=0..3
+		['巳', '午', '未', '申'].forEach((b, j)=>{ const d = house[b] || {}; const x = cx + (j - 1.5) * ring;
+			T(d.jiang, x, rowY(0), gold, { houseIndex: d.idx });
+			T(d.gan, x, rowY(1), muted, {});
+			T(d.up, x, rowY(2), main, { branch: d.up });
 		});
-		[
-				{ branch: '酉', x: centerX + colGap * 2.18, y: middleY },
-				{ branch: '戌', x: centerX + colGap * 2.18, y: middleY + rowGap },
-		].forEach((item)=>{
-			const data = house[item.branch] || {};
-			this.drawSimpleText(panGroup, data.up, item.x - colGap * 0.74, item.y, { fill: main, size: branchSizeFit, weight: 760, branch: data.up });
-			this.drawSimpleText(panGroup, data.gan, item.x, item.y, { fill: muted, size: ganSizeFit, weight: 560 });
-			this.drawSimpleText(panGroup, data.jiang, item.x + colGap * 0.74, item.y, { fill: gold, size: jiangSizeFit, weight: 760, houseIndex: data.idx });
+		// 底边:up(行5)/gan(行6)/jiang(行7)
+		['寅', '丑', '子', '亥'].forEach((b, j)=>{ const d = house[b] || {}; const x = cx + (j - 1.5) * ring;
+			T(d.up, x, rowY(5), main, { branch: d.up });
+			T(d.gan, x, rowY(6), muted, {});
+			T(d.jiang, x, rowY(7), gold, { houseIndex: d.idx });
 		});
-
-			const bottomY = topY + rowGap * 5.58;
-		drawRow(['寅', '丑', '子', '亥'], bottomY, 'up', main, branchSizeFit, 760);
-		drawRow(['寅', '丑', '子', '亥'], bottomY + rowGap, 'gan', muted, ganSizeFit, 560);
-		drawRow(['寅', '丑', '子', '亥'], bottomY + rowGap * 2, 'jiang', gold, jiangSizeFit, 760);
+		// 左边 辰(行3)卯(行4):jiang(cx-3.5ring)/gan(cx-2.5ring)/up(cx-1.5ring)
+		[['辰', 3], ['卯', 4]].forEach((it)=>{ const d = house[it[0]] || {}; const y = rowY(it[1]);
+			T(d.jiang, cx - 3.5 * ring, y, gold, { houseIndex: d.idx });
+			T(d.gan, cx - 2.5 * ring, y, muted, {});
+			T(d.up, cx - 1.5 * ring, y, main, { branch: d.up });
+		});
+		// 右边 酉(行3)戌(行4):up(cx+1.5ring)/gan(cx+2.5ring)/jiang(cx+3.5ring)
+		[['酉', 3], ['戌', 4]].forEach((it)=>{ const d = house[it[0]] || {}; const y = rowY(it[1]);
+			T(d.up, cx + 1.5 * ring, y, main, { branch: d.up });
+			T(d.gan, cx + 2.5 * ring, y, muted, {});
+			T(d.jiang, cx + 3.5 * ring, y, gold, { houseIndex: d.idx });
+		});
 	}
 
 	formatChuanGanZi(gz){
@@ -758,96 +728,42 @@ class RengChart {
 		};
 	}
 
-	drawSimpleKeChuan(group, cord, csvg){
+	drawSimpleKeChuan(group, cord, csvg, geo){
 		const rightGroup = group.append('g').attr('class', 'liureng-simple-ke-chuan');
 		const gold = 'var(--horosa-liureng-square-jiang, #d8ad63)';
 		const main = 'var(--horosa-liureng-square-main, #f0eee7)';
 		const muted = 'var(--horosa-liureng-square-muted, #8f9694)';
-		const size = Math.min(cord.w, cord.h);
-		const big = Math.max(22, Math.min(52, size * 0.112));
-		const small = Math.max(14, Math.min(30, size * 0.058));
-		// 收纳钳制(同 drawSimpleTextPan):三行课/三传必须收在 cord.h 内——字号随高缩(下限 14),
-		// keGap 加「keY(0.27h) 以下两段行距装得下」上限项;正常窗口取值与旧公式一致(124 封顶)。
-		const bigFit = Math.min(big, Math.max(14, cord.h * 0.135));
-		const keOrder = [3, 2, 1, 0];
+		// 四课对齐天盘上 3 行(行0/1/2)、三传对齐下 3 行(行5/6/7);4 列居中铺右区,字号灰黑同 main。
+		const ring = (geo && geo.ring) || Math.min(cord.w, cord.h) / 7.8;
+		const F = (geo && geo.main) || ring / 1.35;
+		const cy = (geo && geo.cy) || (cord.y + cord.h / 2);
+		const rowY = (i)=> cy + (i - 3.5) * ring;
+		const tokenGap = ring; // 列距=方盘列距(紧凑还原参考图)
+		const keX = (geo && geo.keX) || (cord.x + Math.max(4, (cord.w - tokenGap * 3) / 2));
 		const keList = Array.isArray(this.ke) ? this.ke : [];
-		const keX = cord.x + cord.w * 0.03;
-		const keY = cord.y + cord.h * 0.27;
-		const keGap = Math.max(bigFit * 1.3, Math.min(124, cord.h * 0.205, (cord.h * 0.73 - bigFit * 0.6) / 2));
-		const tokenGap = bigFit * 1.06;
-		const drawKeTokenRow = (rowIdx, y)=>{
-			keOrder.forEach((keIdx, tokenIdx)=>{
-				const ke = keList[keIdx] || [];
-				let text = '';
-				let options = {};
-				if(rowIdx === 0){
-					text = this.getShortJiang(ke[0]);
-					options.houseIndex = this.getHouseIndexByUpBranch(ke[1]);
-				}else if(rowIdx === 1){
-					text = ke[1] || '';
-					options.branch = extractBranch(text);
-				}else{
-					text = ke[2] || '';
-					const branch = extractBranch(text);
-					if(branch && isBranch(branch)){
-						options.branch = branch;
-					}
-				}
-				this.drawSimpleText(rightGroup, text, keX + tokenIdx * tokenGap, y, {
-					anchor: 'start',
-					fill: rowIdx === 0 ? gold : (rowIdx === 1 ? main : muted),
-					size: rowIdx === 0 ? bigFit : bigFit * 0.96,
-					weight: rowIdx === 0 ? 760 : 620,
-					...options,
-				});
+		const keOrder = [3, 2, 1, 0];
+		const T = (text, x, y, fill, w, tip)=> this.drawSimpleText(rightGroup, text || '', x, y, { anchor: 'middle', fill: fill, size: F, weight: w || 620, ...(tip || {}) });
+		// 四课:行0 天将 / 行1 上神 / 行2 下神
+		[0, 1, 2].forEach((rowIdx)=>{ const y = rowY(rowIdx);
+			keOrder.forEach((keIdx, tokenIdx)=>{ const ke = keList[keIdx] || []; const x = keX + tokenIdx * tokenGap;
+				if(rowIdx === 0){ T(this.getShortJiang(ke[0]), x, y, gold, 760, { houseIndex: this.getHouseIndexByUpBranch(ke[1]) }); }
+				else if(rowIdx === 1){ const t = ke[1] || ''; T(t, x, y, main, 700, { branch: extractBranch(t) }); }
+				else { const t = ke[2] || ''; const b = extractBranch(t); T(t, x, y, muted, 620, (b && isBranch(b)) ? { branch: b } : {}); }
 			});
-		};
-		[0, 1, 2].forEach((idx)=>{
-			drawKeTokenRow(idx, keY + idx * keGap);
 		});
-
-			const cuangs = csvg && csvg.cuangs ? csvg.cuangs : {};
-			const liuQin = Array.isArray(cuangs.liuQin) ? cuangs.liuQin : [];
-			const chuan = Array.isArray(cuangs.cuang) ? cuangs.cuang : [];
-			const tianJiang = Array.isArray(cuangs.tianJiang) ? cuangs.tianJiang : [];
-			const startX = cord.x + cord.w * 0.61;
-			const startY = keY;
-			const rowGap = keGap;
-			const chuanAuxSize = bigFit * 0.78;
-			const chuanGanX = startX + Math.max(bigFit * 1.02, cord.w * 0.060);
-			const chuanBranchX = startX + Math.max(bigFit * 1.86, cord.w * 0.124);
-			const chuanJiangX = startX + Math.max(bigFit * 2.72, cord.w * 0.190) + bigFit * 0.52;
-			for(let i=0; i<3; i++){
-				const y = startY + i * rowGap;
-				const liuqin = liuQin[i] ? `${liuQin[i]}`.substr(0, 1) : '';
-				const chuanText = chuan[i] ? chuan[i] : '';
-				const parsedChuan = this.parseChuanGanZi(chuanText);
-				this.drawSimpleText(rightGroup, liuqin, startX, y, {
-					anchor: 'middle',
-					fill: muted,
-					size: chuanAuxSize,
-					weight: 560,
-				});
-				this.drawSimpleText(rightGroup, parsedChuan.gan, chuanGanX, y, {
-					anchor: 'middle',
-					fill: muted,
-					size: chuanAuxSize,
-					weight: 560,
-				});
-			this.drawSimpleText(rightGroup, parsedChuan.branch, chuanBranchX, y, {
-				anchor: 'middle',
-				fill: main,
-				size: bigFit,
-				weight: 760,
-				branch: parsedChuan.branch,
-				});
-				this.drawSimpleText(rightGroup, this.getShortJiang(tianJiang[i] ? tianJiang[i] : ''), chuanJiangX, y, {
-					anchor: 'middle',
-					fill: gold,
-					size: bigFit,
-					weight: 760,
-				houseIndex: this.getHouseIndexByUpBranch(chuanText),
-			});
+		// 三传:六亲/干/支/将 4 列,对齐天盘下 3 行
+		const cuangs = csvg && csvg.cuangs ? csvg.cuangs : {};
+		const liuQin = Array.isArray(cuangs.liuQin) ? cuangs.liuQin : [];
+		const chuan = Array.isArray(cuangs.cuang) ? cuangs.cuang : [];
+		const tianJiang = Array.isArray(cuangs.tianJiang) ? cuangs.tianJiang : [];
+		for(let i = 0; i < 3; i++){ const y = rowY(5 + i);
+			const lq = liuQin[i] ? `${liuQin[i]}`.substr(0, 1) : '';
+			const ct = chuan[i] ? chuan[i] : '';
+			const pc = this.parseChuanGanZi(ct);
+			T(lq, keX + 0 * tokenGap, y, muted, 620, {});
+			T(pc.gan, keX + 1 * tokenGap, y, muted, 620, {});
+			T(pc.branch, keX + 2 * tokenGap, y, main, 760, { branch: pc.branch });
+			T(this.getShortJiang(tianJiang[i] ? tianJiang[i] : ''), keX + 3 * tokenGap, y, gold, 760, { houseIndex: this.getHouseIndexByUpBranch(ct) });
 		}
 	}
 
@@ -959,6 +875,7 @@ class RengChart {
 			ke: this.ke,
 			nongli: this.nongli,	
 			guireng: this.guireng,
+			seHaiOpts: this.castOverride ? this.castOverride.seHaiOpts : null,
 			liuRengChart: this.rengs[0],
 			divTooltip: this.tooltipId ? d3.select(`#${this.tooltipId}`) : null,
 		};
@@ -980,6 +897,7 @@ class RengChart {
 			ke: this.ke,
 			nongli: this.nongli,
 			guireng: this.guireng,
+			seHaiOpts: this.castOverride ? this.castOverride.seHaiOpts : null,
 			liuRengChart: this.rengs[0],
 			divTooltip: this.tooltipId ? d3.select(`#${this.tooltipId}`) : null,
 		};

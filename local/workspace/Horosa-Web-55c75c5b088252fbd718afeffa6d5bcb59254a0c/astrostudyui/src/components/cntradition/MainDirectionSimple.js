@@ -4,6 +4,7 @@ import { randomStr } from '../../utils/helper';
 import { BaZiMsg } from '../../msg/bazimsg';
 import MDSDirect from './MDSDirect';
 import MDSYear from './MDSYear';
+import { birthMonthDayFromBazi } from './starChargerLazy';
 import styles from '../../css/styles.less';
 
 
@@ -18,7 +19,7 @@ class MainDirectionSimple extends Component{
 	}
 
 
-	genDoms(dirs){
+	genDoms(dirs, birthMonth, birthDay){
 		let dom = [];
 		if(dirs && dirs.length){
 			let sz = dirs.length;
@@ -37,8 +38,8 @@ class MainDirectionSimple extends Component{
 							<Col span={24}><MDSDirect value={dir} /></Col>
 						</Row>
 						<Row>
-							<Col span={24}><MDSYear value={dir} /></Col>
-						</Row>						
+							<Col span={24}><MDSYear value={dir} birthMonth={birthMonth} birthDay={birthDay} /></Col>
+						</Row>
 					</Col>
 				)
 				dom.push(col)
@@ -53,11 +54,13 @@ class MainDirectionSimple extends Component{
 		let height = this.props.height ? this.props.height : '100%';
 		let style = {
 			height: (height-130) + 'px',
-			overflowY:'auto', 
+			overflowY:'auto',
 			overflowX:'hidden',
 		};
 
-		let doms = this.genDoms(rec.direction);
+		// starCharger 惰性补算所需出生月/日（从 nongli.birth 解析），下传 MDSYear。
+		const bmd = birthMonthDayFromBazi(rec);
+		let doms = this.genDoms(rec.direction, bmd.month, bmd.day);
 
 		return (
 			<div className={styles.scrollbar} style={style}>

@@ -149,9 +149,30 @@
 }
 
 .avatar {
-  color: var(--horosa-accent-strong);
-  background: var(--horosa-panel-bg);
+  // 🛡 fallback 显式色:CSS var 未注入时仍保留对比鲜明的头像(prod app 切主题后 icon 不再丢)。
+  color: #2167d4;
+  color: var(--horosa-accent-strong, #2167d4);
+  background: #ffffff;
+  background: var(--horosa-panel-bg, #ffffff);
   vertical-align: middle;
+}
+
+// 🔴 提高特异性覆盖 antd .ant-avatar 默认背景(#ccc 灰):dev 里 .avatar 后置生效正常,但 app build 中
+// antd 可能排在 .avatar 之后(同 1 类特异性,靠顺序决胜)→ 头像最内圈背景在暗黑模式下错显灰白。
+// .avatar.ant-avatar(2 类)稳压 .ant-avatar(1 类),不依赖 CSS 加载顺序;明亮/暗黑均随 --horosa-panel-bg。
+.avatar:global(.ant-avatar) {
+  background: #ffffff;
+  background: var(--horosa-panel-bg, #ffffff);
+}
+
+// 🛡 暗色模式显式 fallback:即使 --horosa-panel-bg/--horosa-accent-strong 这两个 var 都没解析,
+// 用户仍看到深色背景 + 金色人头剪影,不会"切主题后 icon 没了"。
+:global(:root[data-horosa-appearance='dark']) .avatar,
+:global(:root[data-horosa-appearance='dark']) .avatar:global(.ant-avatar) {
+  color: #f2cf91;
+  color: var(--horosa-accent-strong, #f2cf91);
+  background: #0b0d10;
+  background: var(--horosa-panel-bg, #0b0d10);
 }
 
 .userMenuItem {

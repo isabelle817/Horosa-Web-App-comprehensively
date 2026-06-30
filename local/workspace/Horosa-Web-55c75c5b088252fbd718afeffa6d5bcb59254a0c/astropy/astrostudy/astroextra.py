@@ -10,7 +10,7 @@ from flatlib import angle
 from flatlib.dignities import essential
 from flatlib.protocols.temperament import Temperament
 
-from astrostudy.perchart import PerChart
+from astrostudy.perchart import PerChart, push_request_terms, pop_request_terms, parse_terms_variant
 from astrostudy.perpredict import dateSolarReturn, dateLunarReturn
 from astrostudy.thirteenthchart import HarmonicChart, DraconicChart
 
@@ -699,8 +699,9 @@ _PTOL = [0, 60, 90, 120, 180]
 _PTOL_CN = {0: '合', 60: '六分', 90: '四分', 120: '三分', 180: '冲'}
 
 
-def compute_aspect_dynamics(perchart):
-    """WI-10 入相/出相 · 传光 · 聚光 + WI-11 左右相位 · 不合意 · 交点弯曲。七政两两托勒密相位为底。"""
+def compute_aspect_dynamics(perchart, void_classical=False):
+    """WI-10 入相/出相 · 传光 · 聚光 + WI-11 左右相位 · 不合意 · 交点弯曲
+    + G10 空亡 void · 阻止 prohibition · 挫败 frustration · 收回 refranation。七政两两托勒密相位为底。"""
     objs = {o.id: o for o in perchart.chart.objects if getattr(o, 'id', None) in
             (const.SUN, const.MOON, const.MERCURY, const.VENUS, const.MARS, const.JUPITER, const.SATURN)}
     ids = [i for i in (const.SUN, const.MOON, const.MERCURY, const.VENUS, const.MARS, const.JUPITER, const.SATURN) if i in objs]
@@ -774,8 +775,97 @@ def compute_aspect_dynamics(perchart):
     except Exception:
         pass
 
+    # ===== G10 连接学说后四式(度数级;快星施动、慢星受者) =====
+    # 入相相位列表(施动星 = 该对中更快者)与「剩余度数 r」查表:r 取当前到精确的角差(aspects[*].orb)。
+    applying_list = []
+    for x in aspects:
+        if not x['applying']:
+            continue
+        sa = speeds.get(x['a'], 0.0)
+        sb = speeds.get(x['b'], 0.0)
+        mover = x['a'] if sa >= sb else x['b']
+        target = x['b'] if mover == x['a'] else x['a']
+        applying_list.append({'mover': mover, 'target': target, 'aspect': x['aspect'], 'r': x['orb']})
+
+    # 空亡 void:指定星(默认月)在离开本座前不再完成任何精确相位。
+    # 默认本座义:以当前黄经到本座末(30°)的度数为窗口,看是否还有入相且在窗口内完成的精确相位。
+    # 空亡古典义(30°内,void_classical):窗口固定 30°,不限本座。默认 OFF。
+    void = []
+    void_id = const.MOON if const.MOON in objs else (ids[0] if ids else None)
+    if void_id is not None and void_id in objs:
+        vo = objs[void_id]
+        vspeed = speeds.get(void_id, 0.0)
+        # 离座窗口:本座义 = 30 - 本座度数;古典义 = 30。逆行则窗口为已走过的本座度数。
+        signlon = getattr(vo, 'signlon', vo.lon % 30.0)
+        raw_speed = getattr(vo, 'lonspeed', 0.0) or 0.0
+        if void_classical:
+            window = 30.0
+        else:
+            window = (signlon if raw_speed < 0 else (30.0 - signlon))
+        will_perfect = False
+        next_within = None
+        for x in applying_list:
+            if void_id not in (x['mover'], x['target']):
+                continue
+            # 完成该入相还需移动 r 度(近似:施动星主导闭合);r<=窗口 ⇒ 离座前可成。
+            if x['r'] <= window:
+                will_perfect = True
+                if next_within is None or x['r'] < next_within:
+                    next_within = x['r']
+        if not will_perfect:
+            void.append({'planet': void_id, 'window': round(window, 2),
+                         'mode': 'classical' if void_classical else 'sign'})
+
+    # 阻止 prohibition:甲→乙入相(剩余 r_AB),丙→乙入相 r_CB<r_AB 且丙更快 → 丙先到、截断甲。
+    prohibition = []
+    for ab in applying_list:
+        a, b = ab['mover'], ab['target']
+        for cb in applying_list:
+            if cb['target'] != b or cb['mover'] == a:
+                continue
+            c = cb['mover']
+            if cb['r'] < ab['r'] and speeds.get(c, 0.0) > speeds.get(a, 0.0):
+                prohibition.append({'blocker': c, 'between': a, 'to': b,
+                                    'rBlocker': round(cb['r'], 2), 'rOriginal': round(ab['r'], 2)})
+
+    # 挫败 frustration:甲→乙 applying;乙又→丁 applying 且剩余 orb 更小(乙先到丁移情)→ 甲落空。
+    frustration = []
+    for ab in applying_list:
+        a, b = ab['mover'], ab['target']
+        for bd in applying_list:
+            if b not in (bd['mover'], bd['target']):
+                continue
+            d = bd['target'] if bd['mover'] == b else bd['mover']
+            if d in (a, b):
+                continue
+            if bd['r'] < ab['r']:
+                frustration.append({'frustrated': a, 'via': b, 'to': d,
+                                    'rOriginal': round(ab['r'], 2), 'rDefect': round(bd['r'], 2)})
+
+    # 收回 refranation:甲→乙 applying,但甲速度趋零/将变号(扩 0.02 天投影 speed*speed_future<0)→ 撤离。
+    refranation = []
+    seen_refran = set()
+    for ab in applying_list:
+        a = ab['mover']
+        if a in seen_refran:
+            continue
+        try:
+            o = objs[a]
+            sp = getattr(o, 'lonspeed', 0.0) or 0.0
+            ms = getattr(o, 'meanSpeed', None)
+            # 留点临界(将变号/趋零):速率极小相对平均速率(< 4%),或绝对值近零 → 入相中途撤离。
+            # lonspeed 在 0.02 天内近恒,无独立未来采样;以「趋零」为留点的自洽判据。
+            tiny = (ms is not None and abs(ms) > 0 and abs(sp) < abs(ms) * 0.04) or abs(sp) < 0.0005
+            if tiny:
+                refranation.append({'planet': a, 'to': ab['target'], 'r': round(ab['r'], 2)})
+                seen_refran.add(a)
+        except Exception:
+            pass
+
     return {'aspects': aspects, 'translation': translation, 'collection': collection,
-            'aversion': aversion, 'bending': bending}
+            'aversion': aversion, 'bending': bending,
+            'void': void, 'prohibition': prohibition,
+            'frustration': frustration, 'refranation': refranation}
 
 
 # 题别 → (宫位, 自然象征星, 中文)。逐题复合主星 = 该宫起始星座的必然尊贵胜出星 + 自然象征星。
@@ -970,7 +1060,7 @@ def analyze_chart(data):
         'classicalPatterns': compute_classical_patterns(perchart),
         'accidentalDignity': compute_accidental_dignity(perchart),
         'bonification': compute_bonification(perchart),
-        'aspectDynamics': compute_aspect_dynamics(perchart),
+        'aspectDynamics': compute_aspect_dynamics(perchart, to_bool(data.get('voidClassical'), False)),
         'topicAlmuten': compute_topic_almuten(perchart),
         'planetaryHours': compute_planetary_hours(params),
         'egyptianCalendar': compute_egyptian_calendar(perchart, params),
@@ -1368,14 +1458,23 @@ def build_ephemeris(data):
     }
 
 
-def progression_date(base_dt, target_dt, method):
+def progression_date(base_dt, target_dt, method, minor_variant='engine'):
+    # 次要推运(minor)月长算法由前端「月长算法」选择(minorVariant)驱动:
+    #   synodic  = 一个朔望月(29.530589d)对应一年(权威标准:Astrodienst/Wikipedia「a lunar month for a year」);
+    #   sidereal = 一个月亮回归(恒星月 27.321661d)对应一年;
+    #   engine   = 保留引擎历史取值(疑似漏乘一次 /365.2425),作默认以保证既有调用零字节差(铁律1)。
     age_days = target_dt.jd - base_dt.jd
     if method == 'secondary':
         delta_days = age_days / 365.2425
     elif method == 'tertiary':
         delta_days = age_days / 27.321661
     elif method == 'minor':
-        delta_days = age_days / 12.3685 / 365.2425
+        if minor_variant == 'synodic':
+            delta_days = age_days * 29.530589 / 365.2425
+        elif minor_variant == 'sidereal':
+            delta_days = age_days * 27.321661 / 365.2425
+        else:  # 'engine' 历史现状(默认,零回归)
+            delta_days = age_days / 12.3685 / 365.2425
     else:
         delta_days = age_days / 365.2425
     return base_dt.jd + delta_days
@@ -1409,13 +1508,14 @@ def build_progressions(data):
     target_dt = Datetime(target_date, target_time, params.get('zone', '+00:00'))
     natal_chart = PerChart(params)
     natal_points = chart_points(natal_chart, include_angles=True)
+    minor_variant = data.get('minorVariant') or 'engine'
     methods = []
     for method, label in (
         ('secondary', 'Secondary Progression'),
         ('tertiary', 'Tertiary Progression'),
         ('minor', 'Minor Progression'),
     ):
-        jd = progression_date(natal_dt, target_dt, method)
+        jd = progression_date(natal_dt, target_dt, method, minor_variant)
         p_params = chart_params_from_jd(params, jd)
         p_chart = PerChart(p_params)
         p_points = chart_points(p_chart, include_angles=True)
@@ -1480,13 +1580,14 @@ def build_declination_progressions(data):
     target_dt = Datetime(target_date, target_time, params.get('zone', '+00:00'))
     natal_decls = _decls_at(natal_dt.jd)
     orb = safe_float(data.get('orb', 1.0), 1.0)
+    minor_variant = data.get('minorVariant') or 'engine'
     methods = []
     for method, label in (
         ('secondary', 'Secondary Progression'),
         ('tertiary', 'Tertiary Progression'),
         ('minor', 'Minor Progression'),
     ):
-        jd = progression_date(natal_dt, target_dt, method)
+        jd = progression_date(natal_dt, target_dt, method, minor_variant)
         p_decls = _decls_at(jd)
         methods.append({
             'method': method,
@@ -1541,39 +1642,100 @@ def build_return_timeline(data):
 def build_harmonic(data):
     params = base_params(data)
     harmonic = max(1, min(int(data.get('harmonic', 9)), 360))
-    perchart = PerChart(params)
-    positions = []
-    for p in chart_points(perchart, include_angles=True):
-        if p['id'] not in DEFAULT_EVENT_PLANETS and p['id'] not in (const.ASC, const.MC, const.PARS_FORTUNA):
-            continue
-        lon = norm360(p['lon'] * harmonic)
-        positions.append({
-            'id': p['id'],
-            'natalLon': p['lon'],
-            'lon': lon,
-            'sign': sign_name_from_lon(lon),
-            'signlon': lon % 30,
-            'harmonic': harmonic,
-        })
-    aspects = aspects_between(positions, positions, [0], safe_float(data.get('orb', 2.0), 2.0))
-    aspects = [a for a in aspects if a['a'] != a['b']]
+    # 界系(termsVariant)请求级临界区:push 取锁+换 essential.TERMS,finally 必还原+释放锁。默认埃及=零回归。
+    _terms_orig = None
+    try:
+        _terms_orig = push_request_terms(data.get('termsVariant', 0))
+        perchart = PerChart(params)
+        positions = []
+        for p in chart_points(perchart, include_angles=True):
+            if p['id'] not in DEFAULT_EVENT_PLANETS and p['id'] not in (const.ASC, const.MC, const.PARS_FORTUNA):
+                continue
+            lon = norm360(p['lon'] * harmonic)
+            positions.append({
+                'id': p['id'],
+                'natalLon': p['lon'],
+                'lon': lon,
+                'sign': sign_name_from_lon(lon),
+                'signlon': lon % 30,
+                'harmonic': harmonic,
+            })
+        aspects = aspects_between(positions, positions, [0], safe_float(data.get('orb', 2.0), 2.0))
+        aspects = [a for a in aspects if a['a'] != a['b']]
 
-    # 调波盘本身：把命盘各点黄经乘以调波数，得到完整盘对象（与 /chart 同形），
-    # 供前端复用量化盘的 AstroChart 直接绘制。纯 Python，无需重编 jar。
+        # 调波盘本身：把命盘各点黄经乘以调波数，得到完整盘对象（与 /chart 同形），
+        # 供前端复用量化盘的 AstroChart 直接绘制。纯 Python，无需重编 jar。
+        chart_obj = None
+        try:
+            HarmonicChart(perchart, harmonic).apply()
+            chart_obj = {
+                'params': {
+                    'birth': perchart.getBirthStr(),
+                    'ad': -1 if getattr(perchart, 'isBC', False) else 1,
+                    'lat': params.get('lat'),
+                    'lon': params.get('lon'),
+                    'hsys': params.get('hsys'),
+                    'zone': params.get('zone'),
+                    'tradition': perchart.tradition,
+                    'zodiacal': perchart.zodiacal,
+                    'termsVariant': parse_terms_variant(data.get('termsVariant', 0)),
+                    'harmonic': harmonic,
+                },
+                'chart': perchart.getChartObj(),
+                'aspects': {
+                    'normalAsp': perchart.getAspects(),
+                    'immediateAsp': perchart.getImmediateAspects(),
+                    'signAsp': perchart.getSignAspects(),
+                },
+                'lots': perchart.getPars(perchart.chart),
+                'receptions': perchart.getReceptions(),
+                'mutuals': perchart.getMutuals(),
+                'declParallel': perchart.getParallel(),
+            }
+        except Exception:
+            traceback.print_exc()
+            chart_obj = None
+
+        return {'harmonic': harmonic, 'positions': positions, 'conjunctions': aspects[:120], 'chart': chart_obj}
+    finally:
+        pop_request_terms(_terms_orig)
+
+
+def build_relocation(data):
+    """重置盘(异地 relocation):保留出生 UT(date/time/zone 不变),仅用新经纬重算十二宫 + 上升/中天。
+    行星黄经由 UT 决定 → 不变;宫位/角点随地点变。复用 PerChart 宫位计算管线,不另写星历调用。
+    返回 {chart, relocLat, relocLon}(chart 与 /chart 同形,供前端 AstroChart 直接绘制)。"""
+    base = base_params(data)
+    natal_lat = base.get('lat')
+    natal_lon = base.get('lon')
+    reloc_lat = data.get('relocLat') or data.get('reloc_lat') or natal_lat
+    reloc_lon = data.get('relocLon') or data.get('reloc_lon') or natal_lon
+
+    params = dict(base)
+    params['lat'] = reloc_lat
+    params['lon'] = reloc_lon
+    params['tradition'] = False
+    params['predictive'] = False
+
+    # 界系(termsVariant)请求级临界区:push 取锁+换 essential.TERMS,finally 必还原+释放锁。默认埃及=零回归。
+    _terms_orig = push_request_terms(data.get('termsVariant', 0))
     chart_obj = None
     try:
-        HarmonicChart(perchart, harmonic).apply()
+        perchart = PerChart(params)
         chart_obj = {
             'params': {
                 'birth': perchart.getBirthStr(),
                 'ad': -1 if getattr(perchart, 'isBC', False) else 1,
-                'lat': params.get('lat'),
-                'lon': params.get('lon'),
+                'lat': reloc_lat,
+                'lon': reloc_lon,
                 'hsys': params.get('hsys'),
                 'zone': params.get('zone'),
                 'tradition': perchart.tradition,
                 'zodiacal': perchart.zodiacal,
-                'harmonic': harmonic,
+                'termsVariant': parse_terms_variant(data.get('termsVariant', 0)),
+                'relocation': True,
+                'natalLat': natal_lat,
+                'natalLon': natal_lon,
             },
             'chart': perchart.getChartObj(),
             'aspects': {
@@ -1589,8 +1751,10 @@ def build_harmonic(data):
     except Exception:
         traceback.print_exc()
         chart_obj = None
+    finally:
+        pop_request_terms(_terms_orig)
 
-    return {'harmonic': harmonic, 'positions': positions, 'conjunctions': aspects[:120], 'chart': chart_obj}
+    return {'chart': chart_obj, 'relocLat': reloc_lat, 'relocLon': reloc_lon, 'natalLat': natal_lat, 'natalLon': natal_lon}
 
 
 def compute_great_conjunctions(data):
@@ -1639,7 +1803,7 @@ def compute_great_conjunctions(data):
             y, m, dd, hh = swisseph.revjul(cjd)
             results.append({
                 'jd': round(cjd, 4),
-                'year': int(y), 'month': int(m), 'day': int(dd),
+                'year': int(y), 'month': int(m), 'day': int(dd), 'hour': round(hh, 4),
                 'lon': round(jl, 2),
                 'sign': int(jl / 30.0) % 12,
             })
@@ -1721,7 +1885,7 @@ def compute_planet_cycles(data):
             y, m, dd, hh = swisseph.revjul(cjd)
             results.append({
                 'jd': round(cjd, 4),
-                'year': int(y), 'month': int(m), 'day': int(dd),
+                'year': int(y), 'month': int(m), 'day': int(dd), 'hour': round(hh, 4),
                 'lon': round(jl, 2), 'sign': int(jl / 30.0) % 12,
             })
         prev_jd, prev_d = cur, d
@@ -1731,6 +1895,85 @@ def compute_planet_cycles(data):
         'startYear': start_year, 'endYear': end_year,
         'p1': str(data.get('p1', 'Jupiter')), 'p2': str(data.get('p2', 'Saturn')),
         'aspect': aspect, 'center': center,
+    }
+
+
+def compute_barbault(data):
+    """ Barbault 行星周期指数(§9.3 Indice Cyclique):取慢星两两角距和成「行星聚散」曲线。
+        默认 5 慢星 ♃♄♅♆♇ → C(5,2)=10 对;每对 d=min(|λi−λj|,360−) ∈[0,180];Index=Σ ∈[0,1800]。
+        低(→0,聚集)=危机/战争(史上 1914、1939-40 极小与两次大战吻合);高(→1800,四散)=扩张繁荣。
+        params: startYear,endYear,stepMonths(默认1),planets(名表,可配「仅外三星」等变体),center。 """
+    try:
+        start_year = int(data.get('startYear', 1900))
+    except Exception:
+        start_year = 1900
+    try:
+        end_year = int(data.get('endYear', 2050))
+    except Exception:
+        end_year = 2050
+    if end_year < start_year:
+        start_year, end_year = end_year, start_year
+    if end_year - start_year > 300:          # 上限 300 年(逐月 ~3600 点),防超大请求
+        end_year = start_year + 300
+    try:
+        step_months = int(data.get('stepMonths', 1))
+    except Exception:
+        step_months = 1
+    if step_months < 1:
+        step_months = 1
+    if step_months > 12:
+        step_months = 12
+    DEFAULT = ['Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto']
+    names = data.get('planets')
+    ids = []
+    if isinstance(names, list):
+        for n in names:
+            pid = _SWE_PLANET_BY_NAME.get(str(n))
+            if pid is not None:
+                ids.append((str(n), pid))
+    if len(ids) < 2:
+        ids = [(n, _SWE_PLANET_BY_NAME[n]) for n in DEFAULT]
+    center = str(data.get('center', 'geo') or 'geo').lower()
+    extra_flag = center_flag(center) if center in ('helio', 'topo') else 0
+
+    def _lon(jd_, planet):
+        if extra_flag:
+            return swisseph.calc_ut(jd_, planet, swisseph.FLG_SWIEPH | extra_flag)[0][0]
+        return swisseph.calc_ut(jd_, planet)[0][0]
+
+    n_pairs = len(ids) * (len(ids) - 1) // 2
+    max_index = round(180.0 * n_pairs, 2)
+    points = []
+    y, m = start_year, 1
+    while y < end_year or (y == end_year and m <= 12):
+        jd = swisseph.julday(y, m, 1, 0.0)
+        lons = [_lon(jd, pid) % 360.0 for _, pid in ids]
+        total = 0.0
+        for i in range(len(lons)):
+            for j in range(i + 1, len(lons)):
+                d = abs(lons[i] - lons[j]) % 360.0
+                if d > 180.0:
+                    d = 360.0 - d
+                total += d
+        points.append({'year': y, 'month': m, 'index': round(total, 2)})
+        m += step_months
+        while m > 12:
+            m -= 12
+            y += 1
+    # 局部极小/极大(拐点候选)
+    extrema = []
+    for k in range(1, len(points) - 1):
+        a, b, c2 = points[k - 1]['index'], points[k]['index'], points[k + 1]['index']
+        if b < a and b <= c2:
+            extrema.append({'year': points[k]['year'], 'month': points[k]['month'], 'index': b, 'kind': 'min'})
+        elif b > a and b >= c2:
+            extrema.append({'year': points[k]['year'], 'month': points[k]['month'], 'index': b, 'kind': 'max'})
+    return {
+        'points': points,
+        'extrema': extrema,
+        'maxIndex': max_index,
+        'planets': [n for n, _ in ids],
+        'startYear': start_year, 'endYear': end_year, 'stepMonths': step_months, 'center': center,
     }
 
 
@@ -1790,6 +2033,95 @@ def compute_planet_return(data):
     return {'returns': results, 'natalLon': round(natal_lon, 3), 'body': str(data.get('body', 'Saturn'))}
 
 
+def compute_prenatal_syzygy(data):
+    """ G11 产前朔望:自出生时刻回溯,求最近的朔(日月合,elongation=0°)与望(日月冲,elongation=180°),
+        取更晚(更接近出生)者为产前朔望。取度:朔→合相黄经;望→望时地平之上发光体黄经(无则取月)。
+        params: date/time/zone/lat/lon。返回 {type, jd, datetime, date, time, sunLon, moonLon,
+        daysBeforeBirth, hylegDegree, hylegBody, hylegSign, hylegSignlon}。 """
+    date = data.get('date')
+    time = data.get('time', '12:00:00')
+    zone = data.get('zone', '+00:00')
+    birth_jd = Datetime(date, time, zone).jd
+
+    def find_back(target):
+        # 自出生时刻起以 0.5 天步长向前(过去)扫,找 elongation 过 target 的最近一次,二分细化。
+        # norm180 在 ±180 处回绕,真交叉 step~6°/12h、回绕 step≈360° → abs(cur-prev)<180 排除伪交叉。
+        jd = birth_jd
+        prev = norm180(moon_sun_elongation(jd) - target)
+        # 步进 35 天足够覆盖一个朔望月(~29.53d);找不到则返回 None。
+        steps = int(35.0 / 0.5) + 1
+        for _ in range(steps):
+            nxt = jd - 0.5
+            cur = norm180(moon_sun_elongation(nxt) - target)
+            if ((prev <= 0 <= cur) or (prev >= 0 >= cur)) and abs(cur - prev) < 180:
+                def f(x):
+                    return norm180(moon_sun_elongation(x) - target)
+                return refine_crossing(f, nxt, jd)
+            prev = cur
+            jd = nxt
+        return None
+
+    new_jd = find_back(0.0)
+    full_jd = find_back(180.0)
+    # 取更晚(更大 jd、更接近出生)者;缺一取另一。
+    if new_jd is None and full_jd is None:
+        return {'type': None}
+    if full_jd is None or (new_jd is not None and new_jd >= full_jd):
+        syz_jd, syz_type = new_jd, 'new'
+    else:
+        syz_jd, syz_type = full_jd, 'full'
+
+    sun_lon, _, _ = swe_lon(const.SUN, syz_jd)
+    moon_lon, _, _ = swe_lon(const.MOON, syz_jd)
+
+    # 取度:朔→合相黄经(日月同度,取日);望→望时地平之上的发光体黄经。
+    if syz_type == 'new':
+        hyleg_body = const.SUN
+        hyleg_degree = sun_lon
+    else:
+        lat = geo_to_degree(data.get('lat', '0n00'), 'n', 's')
+        lon = geo_to_degree(data.get('lon', '0e00'), 'e', 'w')
+        # 望时日月对冲,判哪一发光体在地平之上(用赤道坐标 + MC 赤经 + 纬度)。
+        hyleg_body = const.MOON
+        hyleg_degree = moon_lon
+        try:
+            from flatlib import utils as _flutils
+            # swisseph houses 取 MC 黄经(ascmc[1]);Placidus 仅用其 MC,与宫制无关。
+            _cusps, ascmc = swisseph.houses(syz_jd, lat, lon, b'P')
+            mc_lon = ascmc[1]
+            mc_ra, _mc_decl = _flutils.eqCoords(mc_lon, 0.0)
+            sun_ra, sun_decl = _flutils.eqCoords(sun_lon, 0.0)
+            moon_ra, moon_decl = _flutils.eqCoords(moon_lon, 0.0)
+            sun_above = _flutils.isAboveHorizon(sun_ra, sun_decl, mc_ra, lat)
+            moon_above = _flutils.isAboveHorizon(moon_ra, moon_decl, mc_ra, lat)
+            if sun_above and not moon_above:
+                hyleg_body, hyleg_degree = const.SUN, sun_lon
+            elif moon_above and not sun_above:
+                hyleg_body, hyleg_degree = const.MOON, moon_lon
+            else:
+                # 两者同侧(罕见,贴地平):取地平之上者;都在下则取月(发光体默认)。
+                hyleg_body = const.SUN if sun_above else const.MOON
+                hyleg_degree = sun_lon if sun_above else moon_lon
+        except Exception:
+            hyleg_body, hyleg_degree = const.MOON, moon_lon
+
+    det = date_time_from_jd(syz_jd, zone)
+    return {
+        'type': syz_type,
+        'jd': round(syz_jd, 5),
+        'datetime': det['datetime'],
+        'date': det['date'],
+        'time': det['time'],
+        'sunLon': round(sun_lon, 4),
+        'moonLon': round(moon_lon, 4),
+        'daysBeforeBirth': round(birth_jd - syz_jd, 3),
+        'hylegBody': hyleg_body,
+        'hylegDegree': round(hyleg_degree, 4),
+        'hylegSign': sign_name_from_lon(hyleg_degree),
+        'hylegSignlon': round(hyleg_degree % 30.0, 4),
+    }
+
+
 def compute_eclipse_detail(data):
     """ 食时长定则（A4b）：日食持续 N 小时 → 影响约 N 年；月食 N 小时 → N 月。
         params: date/time/zone(食时刻附近) + eclipseKind(solar/lunar)。返回 swe 全球食的初亏-复圆时长。 """
@@ -1819,56 +2151,63 @@ def compute_eclipse_detail(data):
 
 def build_draconic(data):
     params = base_params(data)
-    perchart = PerChart(params)
-    node = perchart.chart.getObject(const.NORTH_NODE)
-    node_lon = norm360(node.lon)
-    positions = []
-    for p in chart_points(perchart, include_angles=True):
-        if p['id'] not in DEFAULT_EVENT_PLANETS and p['id'] not in (const.ASC, const.MC, const.PARS_FORTUNA):
-            continue
-        lon = norm360(p['lon'] - node_lon)
-        positions.append({
-            'id': p['id'],
-            'natalLon': p['lon'],
-            'lon': lon,
-            'sign': sign_name_from_lon(lon),
-            'signlon': lon % 30,
-        })
-    aspects = aspects_between(positions, positions, [0], safe_float(data.get('orb', 2.0), 2.0))
-    aspects = [a for a in aspects if a['a'] != a['b']]
-
-    # 龙盘本身：把命盘各点黄经减去北交点黄经，得到完整盘对象（与 /chart 同形），
-    # 供前端复用量化盘的 AstroChart 直接绘制。纯 Python，无需重编 jar 的计算逻辑。
-    chart_obj = None
+    # 界系(termsVariant)请求级临界区:push 取锁+换 essential.TERMS,finally 必还原+释放锁。默认埃及=零回归。
+    _terms_orig = None
     try:
-        DraconicChart(perchart).apply()
-        chart_obj = {
-            'params': {
-                'birth': perchart.getBirthStr(),
-                'ad': -1 if getattr(perchart, 'isBC', False) else 1,
-                'lat': params.get('lat'),
-                'lon': params.get('lon'),
-                'hsys': params.get('hsys'),
-                'zone': params.get('zone'),
-                'tradition': perchart.tradition,
-                'zodiacal': perchart.zodiacal,
-            },
-            'chart': perchart.getChartObj(),
-            'aspects': {
-                'normalAsp': perchart.getAspects(),
-                'immediateAsp': perchart.getImmediateAspects(),
-                'signAsp': perchart.getSignAspects(),
-            },
-            'lots': perchart.getPars(perchart.chart),
-            'receptions': perchart.getReceptions(),
-            'mutuals': perchart.getMutuals(),
-            'declParallel': perchart.getParallel(),
-        }
-    except Exception:
-        traceback.print_exc()
-        chart_obj = None
+        _terms_orig = push_request_terms(data.get('termsVariant', 0))
+        perchart = PerChart(params)
+        node = perchart.chart.getObject(const.NORTH_NODE)
+        node_lon = norm360(node.lon)
+        positions = []
+        for p in chart_points(perchart, include_angles=True):
+            if p['id'] not in DEFAULT_EVENT_PLANETS and p['id'] not in (const.ASC, const.MC, const.PARS_FORTUNA):
+                continue
+            lon = norm360(p['lon'] - node_lon)
+            positions.append({
+                'id': p['id'],
+                'natalLon': p['lon'],
+                'lon': lon,
+                'sign': sign_name_from_lon(lon),
+                'signlon': lon % 30,
+            })
+        aspects = aspects_between(positions, positions, [0], safe_float(data.get('orb', 2.0), 2.0))
+        aspects = [a for a in aspects if a['a'] != a['b']]
 
-    return {'nodeLon': node_lon, 'positions': positions, 'conjunctions': aspects[:120], 'chart': chart_obj}
+        # 龙盘本身：把命盘各点黄经减去北交点黄经，得到完整盘对象（与 /chart 同形），
+        # 供前端复用量化盘的 AstroChart 直接绘制。纯 Python，无需重编 jar 的计算逻辑。
+        chart_obj = None
+        try:
+            DraconicChart(perchart).apply()
+            chart_obj = {
+                'params': {
+                    'birth': perchart.getBirthStr(),
+                    'ad': -1 if getattr(perchart, 'isBC', False) else 1,
+                    'lat': params.get('lat'),
+                    'lon': params.get('lon'),
+                    'hsys': params.get('hsys'),
+                    'zone': params.get('zone'),
+                    'tradition': perchart.tradition,
+                    'zodiacal': perchart.zodiacal,
+                    'termsVariant': parse_terms_variant(data.get('termsVariant', 0)),
+                },
+                'chart': perchart.getChartObj(),
+                'aspects': {
+                    'normalAsp': perchart.getAspects(),
+                    'immediateAsp': perchart.getImmediateAspects(),
+                    'signAsp': perchart.getSignAspects(),
+                },
+                'lots': perchart.getPars(perchart.chart),
+                'receptions': perchart.getReceptions(),
+                'mutuals': perchart.getMutuals(),
+                'declParallel': perchart.getParallel(),
+            }
+        except Exception:
+            traceback.print_exc()
+            chart_obj = None
+
+        return {'nodeLon': node_lon, 'positions': positions, 'conjunctions': aspects[:120], 'chart': chart_obj}
+    finally:
+        pop_request_terms(_terms_orig)
 
 
 def build_relative_score(data):

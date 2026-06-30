@@ -1,6 +1,6 @@
 import { Component } from 'react';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
-import { Input, InputNumber, Modal, Spin } from 'antd';
+import { Input, InputNumber, Modal, Spin, Switch } from 'antd';
 import DateTime from '../comp/DateTime';
 import { convertLatToStr, convertLonToStr } from '../astro/AstroHelper';
 import { resolveGeoZone } from '../../utils/timezone';
@@ -161,13 +161,15 @@ const TECHNIQUE_CONFIG = {
 	cetian: {
 		pageTitle: '其他',
 		infoTitle: '其他信息',
-		infoSubTitle: '策天飞星、四化与格局',
+		infoSubTitle: '策天十八飞星（书法/原法可切）',
 		serviceKey: 'cetian',
 		moduleKey: 'mingother',
 		techniqueLabel: '策天飞星',
 		showRail: true,
+		// 飞星/格局 tab 仅原法(kentang)有内容时由 visibleTabs 过滤自动出现;书法无该数据则自动隐藏。
 		tabs: [
 			{ key: 'overview', label: '概览' },
+			{ key: 'settings', label: '设置' },
 			{ key: 'palaces', label: '宫位' },
 			{ key: 'flying', label: '飞星' },
 			{ key: 'patterns', label: '格局' },
@@ -618,7 +620,7 @@ function buildKinAstroZiWeiChart(pan, serviceKey){
 		yearGan: '',
 		yearPolar: 'Positive',
 		gender: 'Male',
-		wuxingJuText: serviceKey === 'cetian' ? fmtValue(pan && pan.wuXingJu) : '演禽盘',
+		wuxingJuText: serviceKey === 'cetian' ? '策天十八飞星' : '演禽盘',
 		lifeMaster: serviceKey === 'cetian' ? fmtValue(pan && pan.mingGong) : '命星',
 		bodyMaster: serviceKey === 'cetian' ? fmtValue(pan && pan.shenGong) : '身星',
 		zidou: serviceKey === 'cetian' ? fmtValue(pan && pan.ziwei) : '—',
@@ -729,6 +731,16 @@ class KinAstroMain extends Component{
 			rightPanelTab: 'overview',
 			centerInfoVisible: false,
 			gender: '1',
+			// 策天飞星双法:算法(书法/原法) + 原法子选项(农历/正曜)
+			cetianMethod: 'book',
+			cetianLunarMode: 'sxtwl',
+			cetianStarOrder: 'reverse',
+			// 策天 5 显示开关(默认 1=显示=现状,仅过滤输出不改算法)
+			cetianShowWuXingJu: 1,
+			cetianShowSihua: 1,
+			cetianShowFlying: 1,
+			cetianShowBrightness: 1,
+			cetianShowSolarTerm: 1,
 			ke: '初刻',
 			useKey: '1',
 			pillarOverride: '0',
@@ -790,6 +802,10 @@ class KinAstroMain extends Component{
 		this.unmounted = false;
 		this.timeHook = {};
 		this.requestSeq = 0;
+		// 网络层去重:同一(serviceKey+payload)的请求若已在途,后到的等价触发跳过(不重打后端)。
+		// 起盘/改设置/切技法经 dispatch→save(props 变)+doHook(hook 回调)两路+各入口会对同一输入
+		// 重复触发 fetchPan;requestSeq 只挡「结果应用」,这里挡「重复网络请求」。输入变 → 签名变 → 不跳过。
+		this._inFlightSig = null;
 		this.onTimeChanged = this.onTimeChanged.bind(this);
 		this.changeGeo = this.changeGeo.bind(this);
 		this.clickPlot = this.clickPlot.bind(this);
@@ -987,13 +1003,18 @@ class KinAstroMain extends Component{
 	clickPlot(){
 		const nextFields = this.getTimeFieldsFromSelector(this.props.fields) || this.props.fields;
 		if(nextFields && nextFields.date && nextFields.time && nextFields.zone){
+			// 单路触发:派发 fields → astro/fetchByFields → save(props 变→didUpdate)+doHook(hook 回调)
+			// 经 fetchPan 重排;此处不再显式 fetchPan(否则同一起盘打 2~3 次后端,fetchPan 去重虽能收敛,
+			// 但从源头单路更干净)。若可派发(date/time/zone 齐),交由 dispatch 驱动。
 			this.onFieldsChange({
 				date: nextFields.date,
 				time: nextFields.time,
 				ad: nextFields.ad,
 				zone: nextFields.zone,
 			});
+			return;
 		}
+		// 兜底:fields 不全(无法走 dispatch 重锚)时,仍直接起盘,避免按钮无反应。
 		this.fetchPan(nextFields);
 	}
 
@@ -1059,6 +1080,18 @@ class KinAstroMain extends Component{
 				chunziHourBranch: this.state.chunziHourBranch,
 				chunziResultLimit: this.state.chunziResultLimit,
 			};
+		if(this.config.serviceKey === 'cetian'){
+			// 策天双法:覆盖 method(避免与铁板 tiebanMethod 混用)+ 原法子选项
+			payload.method = this.state.cetianMethod || 'book';
+			payload.lunarMode = this.state.cetianLunarMode || 'sxtwl';
+			payload.starOrder = this.state.cetianStarOrder || 'reverse';
+			// 5 显示开关随盘请求下发(后端按 show_* 过滤输出段/行;默认 1=现状)
+			payload.showWuXingJu = this.state.cetianShowWuXingJu;
+			payload.showSihua = this.state.cetianShowSihua;
+			payload.showFlying = this.state.cetianShowFlying;
+			payload.showBrightness = this.state.cetianShowBrightness;
+			payload.showSolarTerm = this.state.cetianShowSolarTerm;
+		}
 		if(this.state.pillarOverride === '1'){
 			const yearGz = normalizeGanzhiInput(this.state.yearGz);
 			const monthGz = normalizeGanzhiInput(this.state.monthGz);
@@ -1090,10 +1123,21 @@ class KinAstroMain extends Component{
 		if(!payload){
 			return;
 		}
+		// 同输入去重:若一模一样的请求(serviceKey+payload)已在途,跳过(在途那次的结果会落到当前盘)。
+		// 起盘一次会经 clickPlot→onFieldsChange→dispatch→save(props 变 didUpdate)+doHook(hook 回调)两路
+		// 对同一 payload 重复触发;此处把真正的网络请求收敛为 1 次。输入任何变化 → sig 变 → 照常重排。
+		const sig = `${this.config.serviceKey}|${JSON.stringify(payload)}`;
+		if(this._inFlightSig === sig){
+			return;
+		}
 		const reqSeq = ++this.requestSeq;
+		this._inFlightSig = sig;
 		this.setState({ loading: true });
 		try{
 			const pan = await postKinAstro(this.config.serviceKey, payload);
+			if(this._inFlightSig === sig){
+				this._inFlightSig = null;
+			}
 			if(this.unmounted || reqSeq !== this.requestSeq){
 				return;
 			}
@@ -1101,6 +1145,9 @@ class KinAstroMain extends Component{
 				saveKinAstroAISnapshots(this.config, pan);
 			});
 		}catch(e){
+			if(this._inFlightSig === sig){
+				this._inFlightSig = null;
+			}
 			console.warn('kinastro backend failed', this.config.serviceKey, e);
 			if(!this.unmounted && reqSeq === this.requestSeq){
 				this.setState({ loading: false });
@@ -1172,6 +1219,35 @@ class KinAstroMain extends Component{
 									<Option value="0">女</Option>
 								</Select>
 							</label>
+						) : null}
+						{this.config.serviceKey === 'cetian' ? (
+							<>
+								<label className="horosa-huangji-select-field is-wide">
+									<span>算法</span>
+									<Select value={this.state.cetianMethod} onChange={(value)=>this.setState({ cetianMethod: value }, this.clickPlot)}>
+										<Option value="book">书法·策天本法</Option>
+										<Option value="kentang">原法·标准紫微</Option>
+									</Select>
+								</label>
+								{this.state.cetianMethod === 'kentang' ? (
+									<>
+										<label className="horosa-huangji-select-field">
+											<span>农历</span>
+											<Select value={this.state.cetianLunarMode} onChange={(value)=>this.setState({ cetianLunarMode: value }, this.clickPlot)}>
+												<Option value="sxtwl">sxtwl(修正)</Option>
+												<Option value="classic">原(闰月旧法)</Option>
+											</Select>
+										</label>
+										<label className="horosa-huangji-select-field">
+											<span>正曜</span>
+											<Select value={this.state.cetianStarOrder} onChange={(value)=>this.setState({ cetianStarOrder: value }, this.clickPlot)}>
+												<Option value="reverse">逆布(书)</Option>
+												<Option value="forward">顺布(原)</Option>
+											</Select>
+										</label>
+									</>
+								) : null}
+							</>
 						) : null}
 						{this.config.serviceKey === 'shaozi' ? (
 							<>
@@ -2027,13 +2103,13 @@ class KinAstroMain extends Component{
 					style={{ gridRow: item.row, gridColumn: item.col }}
 				>
 					<div className="horosa-kinastro-cetian-cell-top">
-						<span>{fmtValue(palace.stem_name)}{fmtValue(palace.branch_name)}</span>
+						<span>{fmtValue(palace.branch_name)}</span>
 						<em>{fmtValue(palace.da_xian)}</em>
 					</div>
 					<strong>{fmtValue(palace.name)}</strong>
 					<div className="horosa-kinastro-cetian-starline is-main">{fmtValue(palace.stars)}</div>
 					<div className="horosa-kinastro-cetian-starline is-aux">{fmtValue(palace.aux_stars)}</div>
-					<small>{fmtValue(palace.sihua || palace.flying_stars || palace.patterns)}</small>
+					<small className="horosa-kinastro-cetian-brightness">{Object.keys(palace.brightness || {}).map((s)=>`${s}${palace.brightness[s]}`).join(' ')}</small>
 				</div>
 			);
 		};
@@ -2051,14 +2127,14 @@ class KinAstroMain extends Component{
 						<div className="horosa-kinastro-cetian-center-grid">
 							<span>命宫<strong>{fmtValue(pan.mingGong)}</strong></span>
 							<span>身宫<strong>{fmtValue(pan.shenGong)}</strong></span>
-							<span>五行局<strong>{fmtValue(pan.wuXingJu)}</strong></span>
+							{pan.wuXingJu ? <span>五行局<strong>{fmtValue(pan.wuXingJu)}</strong></span> : null}
 							<span>紫微<strong>{fmtValue(pan.ziwei)}</strong></span>
 						</div>
-						<div className="horosa-kinastro-cetian-sihua">
-							{Object.keys(chart.sihua || {}).map((star)=>(
-								<span key={star}>{star}化{chart.sihua[star]}</span>
-							))}
-						</div>
+						{chart.sihua && Object.keys(chart.sihua).length ? (
+							<div className="horosa-kinastro-cetian-sihua">
+								{Object.keys(chart.sihua).map((star)=>(<span key={star}>{star}化{chart.sihua[star]}</span>))}
+							</div>
+						) : null}
 						<small>{fmtValue(chart.solar_term_influence)}</small>
 					</div>
 				</div>
@@ -2325,6 +2401,37 @@ class KinAstroMain extends Component{
 		return sections.slice(0, 4);
 	}
 
+	renderCetianSettings(){
+		// 策天「设置」tab:5 显示开关(默认全显=现状)。算法/农历/正曜在左栏选;此处仅输出显示开关。
+		// 切开关 → setState + clickPlot 重新起盘 → 后端按 show_* 过滤段/行 → 右栏即时增删(铁律3)。
+		const isKentang = this.state.cetianMethod === 'kentang';
+		const toggle = (key, label)=>(
+			<label className="horosa-cetian-toggle">
+				<Switch size="small" checked={!!this.state[key]} onChange={(v)=>this.setState({ [key]: v ? 1 : 0 }, this.clickPlot)} />
+				<span>{label}</span>
+			</label>
+		);
+		return (
+			<div className="horosa-cetian-settings-panel">
+				<div className="horosa-info-card-title">显示选项</div>
+				<div className="horosa-cetian-toggle-list">
+					{toggle('cetianShowBrightness', '亮度（庙旺乐）')}
+					{isKentang ? (
+						<>
+							{toggle('cetianShowWuXingJu', '五行局')}
+							{toggle('cetianShowSihua', '四化（禄权科忌）')}
+							{toggle('cetianShowFlying', '飞星与格局')}
+							{toggle('cetianShowSolarTerm', '节气影响')}
+						</>
+					) : (
+						<div className="horosa-cetian-settings-hint">书法仅「亮度」可调；切到「原法」（左栏算法）后另有五行局/四化/飞星/节气开关。</div>
+					)}
+				</div>
+				<div className="horosa-cetian-settings-hint">排盘算法（书法/原法）、农历、正曜布法在左栏选择；此处为输出显示开关，默认全显＝现状。</div>
+			</div>
+		);
+	}
+
 	renderRightPanel(){
 		if(this.config.serviceKey === 'canping'){
 			return <div className="horosa-huangji-section-list"><CanPingMain slot="aux" fields={this.props.fields} method={this.state.canpingMethod} /></div>;
@@ -2344,6 +2451,9 @@ class KinAstroMain extends Component{
 				const classics = this.state.pan && this.state.pan.classics;
 				return !!(classics && classics.sections && classics.sections.length);
 			}
+			if(item.key === 'settings'){
+				return this.config.serviceKey === 'cetian';
+			}
 			return this.getTabSections(item.key).length > 0;
 		});
 		const activeKey = visibleTabs.some((item)=>item.key === this.state.rightPanelTab)
@@ -2357,6 +2467,8 @@ class KinAstroMain extends Component{
 							<pre className="horosa-huangji-snapshot">{snapshot}</pre>
 						) : item.key === 'classics' ? (
 							<div className="horosa-huangji-section-list">{this.renderClassics()}</div>
+						) : item.key === 'settings' ? (
+							<div className="horosa-huangji-section-list">{this.renderCetianSettings()}</div>
 						) : (
 							<div className="horosa-huangji-section-list">{this.renderRows(this.getTabSections(item.key))}</div>
 						)}
@@ -2378,6 +2490,9 @@ class KinAstroMain extends Component{
 			if(item.key === 'classics'){
 				const classics = this.state.pan && this.state.pan.classics;
 				return !!(classics && classics.sections && classics.sections.length);
+			}
+			if(item.key === 'settings'){
+				return this.config.serviceKey === 'cetian';
 			}
 			return this.getTabSections(item.key).length > 0;
 		});

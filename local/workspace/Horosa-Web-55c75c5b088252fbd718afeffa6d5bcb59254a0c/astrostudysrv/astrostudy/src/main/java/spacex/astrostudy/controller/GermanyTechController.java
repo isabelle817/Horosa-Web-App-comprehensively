@@ -78,7 +78,25 @@ public class GermanyTechController {
 			params.put("gpsLat", TransData.get("gpsLat"));
 			params.put("gpsLon", TransData.get("gpsLon"));
 		}
-		
+		// 量化盘(汉堡学派)WP-0 参数白名单:容许度 / 流派 / 个人点容许度 / 宫框开关。
+		// 条件透传(仅前端非默认才下发)→ 缺省走 Python 默认(orb=1.0/school=classic/frames=true)= 现状字节零回归,不扰缓存。
+		if(TransData.containsParam("orb")) {
+			params.put("orb", TransData.get("orb"));
+		}
+		if(TransData.containsParam("personalOrb")) {
+			params.put("personalOrb", TransData.get("personalOrb"));
+		}
+		if(TransData.containsParam("school")) {
+			params.put("school", TransData.get("school"));
+		}
+		if(TransData.containsParam("frames")) {
+			params.put("frames", TransData.get("frames"));
+		}
+		// 赤纬接触开关:OFF 时下发 declination=false,Python 省算(缺省 True=现状)。不登记则开关关不掉后端计算。
+		if(TransData.containsParam("declination")) {
+			params.put("declination", TransData.get("declination"));
+		}
+
 		return params;
 	}
 }

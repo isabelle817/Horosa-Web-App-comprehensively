@@ -1,3 +1,7 @@
+import { computeTaiyiShuli } from './taiyiShuli';
+import { computeGeju } from './taiyiGeju';
+import { computeVictory, computeFenye, computeShenSuan, computeTaisuiAlias, activeDoorJixiong, computeEhui, computeSanyuan, computeLimitYun } from './taiyiDuanfa';
+
 export const TAIYI_STYLE_OPTIONS = [
 	{ value: 3, label: '時計太乙' },
 	{ value: 0, label: '年計太乙' },
@@ -370,7 +374,7 @@ function calcSetCal(se, taiyiNum){
 	return base;
 }
 
-function findCal(yinYang, kookNum){
+export function findCal(yinYang, kookNum){
 	return (yinYang === '阳' ? YANG_CAL : YIN_CAL)[kookNum - 1] || [0, 0, 0];
 }
 
@@ -428,9 +432,10 @@ function getFlyFu(accNum){
 	return rotateFrom(DI_ZHI, '辰')[Math.floor((mod(accNum, 360) % 36) / 3) - 1] || '中';
 }
 
-function getWufu(accNum){
-	const fv = mod((mod(accNum + 250, 225) % 45), 5);
-	return fv === 0 ? 5 : fv;
+// 五福:按「年」算(对齐后端 wufu_year),起乾序乾艮巽坤中=1,3,9,7,5,45 年/宫;返回宫数,外层 num2gong 包装不变。
+export function getWufu(year){
+	const a = 12607 + year + (year < 0 ? 1 : 0);
+	return [1, 3, 9, 7, 5][Math.floor((((a % 225) + 225) % 225) / 45)];
 }
 
 function getKingFu(accNum){
@@ -487,30 +492,16 @@ function getEightWind(accNum){
 	return [2, 3, 4, 6, 7, 8, 9, 1][idx - 1] || 1;
 }
 
-function getBigYo(accNum){
-	let big = mod(accNum + 34, 288);
-	if(big > 36){
-		big = Math.floor(big / 36);
-	}
-	if(big < 6){
-		big = 6;
-	}
-	return { 7: 1, 8: 2, 9: 3, 1: 4, 2: 5, 3: 6, 4: 7, 6: 8 }[big] || 1;
+// 大游:按「年」算(对齐后端 bigyo_year),起七宫序 7,8,9,1,2,3,4,6(不入中5),36 年/宫;返回宫数。
+export function getBigYo(year){
+	const a = 12607 + year + (year < 0 ? 1 : 0);
+	return [7, 8, 9, 1, 2, 3, 4, 6][Math.floor((((a % 4320) % 288 + 288) % 288) / 36)];
 }
 
-function getSmallYo(accNum){
-	const small = mod(accNum, 360);
-	if(small < 24){
-		return (small % 3) || 1;
-	}
-	let sm = mod(small, 24);
-	if(small > 10){
-		sm = small - 9;
-	}
-	if(sm % 3 !== 0){
-		return { 1: 1, 2: 2 }[sm % 3] || 1;
-	}
-	return { 1: 1, 2: 2, 3: 3, 4: 4, 6: 5, 7: 6, 8: 7, 9: 8 }[Math.floor(sm / 3)] || 1;
+// 小游:按「年」算(对齐后端 smyo_year),演纪上元积年 2637+年,起一宫序 1,2,3,4,6,7,8,9(不入中5),3 年/宫;返回宫数。
+export function getSmallYo(year){
+	const a = 2637 + year + (year < 0 ? 1 : 0);
+	return [1, 2, 3, 4, 6, 7, 8, 9][Math.floor((((a % 240) % 24 + 24) % 24) / 3)];
 }
 
 function normOptionSex(sex){
@@ -614,9 +605,10 @@ export function calcTaiyiPanFromKintaiyi(fields, nongli, options){
 	const taiyiPalace = TAIYI_PAI[kook.num - 1] || '';
 	const se = getSe(skyeyes, hegod, taishui);
 
-	const homeCal = calcHomeCal(skyeyes, taiyiNum);
-	const awayCal = calcAwayCal(sf, taiyiNum);
-	const setCal = calcSetCal(se, taiyiNum);
+	// 主客定算与主/客大将同源立成表(对齐后端 find_cal[0/1/2],修正几何法自相矛盾)
+	const homeCal = findCal(yinYang, kook.num)[0];
+	const awayCal = findCal(yinYang, kook.num)[1];
+	const setCal = findCal(yinYang, kook.num)[2];
 	const homeGeneral = getHomeGeneral(yinYang, kook.num);
 	const awayGeneral = getAwayGeneral(yinYang, kook.num);
 	const setGeneral = getSetGeneral(setCal);
@@ -633,12 +625,14 @@ export function calcTaiyiPanFromKintaiyi(fields, nongli, options){
 	const zhifu = getCycleValue(ZHI_FU, kook.num);
 	const flyfu = getFlyFu(accNum);
 
-	const wufuNum = getWufu(accNum);
+	// 五福/大游/小游按「年」算(与后端 _taiyi_year 同口径);三/五/八风仍随当前位积数。
+	const taiyiYear = guessLunarYear(dateParts, nongli || {});
+	const wufuNum = getWufu(taiyiYear);
 	const threewindNum = getThreeWind(accNum);
 	const fivewindNum = getFiveWind(accNum);
 	const eightwindNum = getEightWind(accNum);
-	const bigyoNum = getBigYo(accNum);
-	const smyoNum = getSmallYo(accNum);
+	const bigyoNum = getBigYo(taiyiYear);
+	const smyoNum = getSmallYo(taiyiYear);
 
 	const pan = {
 		style,
@@ -734,13 +728,15 @@ export function buildTaiyiSnapshotLines(pan){
 		return [];
 	}
 	const lines = [];
+	if(pan._schoolNote){ lines.push(`流派覆盖：${pan._schoolNote}（其余从盘）`); }
 	lines.push(`盘式：${pan.options ? pan.options.styleLabel : ''}`);
 	lines.push(`古法公式：${pan.options ? (pan.options.methodLabel || pan.options.accumLabel) : ''}`);
 	if(pan.options && pan.options.methodSource && pan.options.methodSource !== '命法不适用'){
 		lines.push(`古法出处：${pan.options.methodSource}`);
 	}
 	if(pan.jiyuan){
-		lines.push(`纪元：${pan.jiyuan}`);
+		const _sy = computeSanyuan(pan);
+		lines.push(`纪元：${pan.jiyuan}${_sy ? `·${_sy}` : ''}`);
 	}
 	lines.push(`局式：${pan.kook ? pan.kook.text : ''}（${pan.kook ? pan.kook.year : ''}）`);
 	lines.push(`积数：${pan.accNum}`);
@@ -748,6 +744,24 @@ export function buildTaiyiSnapshotLines(pan){
 	lines.push(`文昌：${pan.skyeyes} 始击：${pan.sf} 定目：${pan.se || '—'}`);
 	lines.push(`太岁：${pan.taishui} 合神：${pan.hegod} 计神：${pan.jigod}`);
 	lines.push(`主算：${pan.homeCal} 客算：${pan.awayCal} 定算：${pan.setCal}`);
+	const _shuli = computeTaiyiShuli(pan);
+	if(_shuli){ lines.push(`数理(主/客/定算)：主[${_shuli.home.join('、')}] 客[${_shuli.away.join('、')}] 定[${_shuli.set.join('、')}]`); }
+	const _geju = computeGeju(pan);
+	const _victory = computeVictory(pan, _geju);
+	if(_victory){ lines.push(`主客胜负：${_victory.side} — ${_victory.verdict}`); }
+	lines.push(`格局：${_geju.length ? _geju.map((g) => `${g.name}(${g.text})`).join('；') : '无显著掩迫囚格对'}`);
+	const _fenye = computeFenye(pan);
+	if(_fenye && _fenye.taiyi){ lines.push(`分野占：太乙临${_fenye.taiyi.gong}${_fenye.taiyi.gua}·${_fenye.taiyi.zhou}(${_fenye.taiyi.men}·${_fenye.taiyi.qi})·主象${_fenye.taiyi.omen}${_fenye.shiji ? `；始击临${_fenye.shiji.zhou}` : ''}`); }
+	const _alias = computeTaisuiAlias(pan);
+	if(_alias){ lines.push(`太岁古名：${_alias}`); }
+	const _shen = computeShenSuan(pan);
+	if(_shen){ lines.push(`诸神之算：${Object.keys(_shen).map((k) => _shen[k] ? `${k}${_shen[k].value}[${(_shen[k].tags || []).join('、')}]` : '').filter(Boolean).join(' ')}`); }
+	const _door = activeDoorJixiong(pan);
+	if(_door){ lines.push(`值使门：${_door.door}门·${_door.jixiong}`); }
+	const _ehui = computeEhui(pan);
+	if(_ehui.length){ lines.push(`厄会：${_ehui.join('、')}`); }
+	const _ly = computeLimitYun(pan);
+	if(_ly){ lines.push(`限运：大限太乙临${_ly.daxian.at}(${_ly.daxian.span})、小限文昌临${_ly.xiaoxian.at}(${_ly.xiaoxian.span})、二限大游${_ly.erxian.dayou}/小游${_ly.erxian.xiaoyou}`); }
 	lines.push(`主大/主参：${pan.homeGeneralPalace}/${pan.homeVGenPalace} 客大/客参：${pan.awayGeneralPalace}/${pan.awayVGenPalace}`);
 	lines.push(`君臣民基：${pan.kingbase}/${pan.officerbase}/${pan.pplbase}`);
 	lines.push(`四神/天乙/地乙/直符/飞符：${pan.fgd}/${pan.skyyi}/${pan.earthyi}/${pan.zhifu}/${pan.flyfu}`);

@@ -17,11 +17,18 @@ import {
 	KONG_MODE_OPTIONS,
 	MA_MODE_OPTIONS,
 	YIXING_OPTIONS,
+	SCHOOL_OPTIONS,
+	ZHIRUN_LEAP_OPTIONS,
 	calcDunJia,
 	fetchQimenPan,
 	normalizeKinqimenData,
+	getXunHead,
+	GUXU,
+	isKinqimenMode,
+	buildDunJiaSnapshotText,
 } from '../dunjia/DunJiaCalc';
 import GeoCoordModal from '../amap/GeoCoordModal';
+import SanShiZiWeiSihua from './SanShiZiWeiSihua';
 import PlusMinusTime from '../astro/PlusMinusTime';
 import DateTime from '../comp/DateTime';
 import SpaceTimePanel from '../comp/SpaceTimePanel';
@@ -40,29 +47,61 @@ import {
 	TAIYI_ACCUM_OPTIONS,
 	buildTaiyiSnapshotLines,
 } from './core/TaiYiCore';
-import { fetchTaiyiPan } from '../taiyi/TaiYiCalc';
+import { fetchTaiyiPan, buildTaiyiSnapshotText } from '../taiyi/TaiYiCalc';
+import { computeTaiyiShuli, shuliTone } from '../taiyi/core/taiyiShuli';
+import { computeGeju } from '../taiyi/core/taiyiGeju';
+import { computeVictory, computeFenye, computeShenSuan, computeTaisuiAlias, activeDoorJixiong, computeEhui, computeLimitYun, computeSanyuan } from '../taiyi/core/taiyiDuanfa';
+import { applyTaiyiSchool, DEFAULT_TAIYI_SCHOOL, TAIYI_SCHOOL_OPTIONS, normalizeTaiyiSchool } from '../taiyi/core/taiyiSchool';
 import { appendPlanetHouseInfo, } from '../../utils/planetHouseInfo';
 import { buildMeaningTipByCategory, } from '../astro/AstroMeaningData';
 import { isMeaningEnabled, wrapWithMeaning, } from '../astro/AstroMeaningPopover';
 import { buildLiuRengHouseTipObj, buildLiuRengShenTipObj, } from '../liureng/LRShenJiangDoc';
+import { matchBiFa, BIFA_LIST } from '../liureng/LRBiFaDoc';
 import { buildQimenXiangTipObj, } from '../dunjia/QimenXiangDoc';
 import {
 	buildLiuRengReferenceBundle,
 	buildReferenceDocumentText,
 	buildOverviewReferenceText,
+	buildLiuRengSnapshotText,
+	getYueJiangByMethod,
 	XIAO_JU_REFERENCE_TAB_KEYS,
+	buildQiZhengItems,
+	QIZHENG_PLANET_COLOR,
+	QIZHENG_WUXING_COLOR,
 } from '../lrzhan/LiuRengMain';
 import {
 	BAGONG_PALACE_ORDER,
 	BAGONG_PALACE_NAME,
 	buildQimenBaGongPanelData,
+	XUN_SHOU_TO_LIUYI,
 } from '../dunjia/DunJiaBaGongRules';
+// 遁甲「用神 / 化解」子tab静态显示所需的派生函数与速查数据(对齐独立遁甲页同源)。
+import {
+	computeYongShen,
+	computeGuGua,
+	buildJieHua,
+	computeDangers,
+	computeProtect,
+} from '../dunjia/DunJiaFaCalc';
+import {
+	SAN_FA_TEXT,
+	BU_ZHEN_TIPS,
+	DANGER_BRIEF,
+	GAN_XIANG,
+	ZHI_ZODIAC,
+} from '../dunjia/DunJiaFaDoc';
+import {
+	QIMEN_YONGSHEN_BASIC,
+	QIMEN_YONGSHEN_LOOKUP,
+	QIMEN_YONGSHEN_SHENGKE,
+} from '../dunjia/DunJiaMain';
 import styles from './SanShiUnitedMain.less';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
 
 const { Option, OptGroup } = Select;
 const TabPane = Tabs.TabPane;
 const BRANCH_ORDER = '子丑寅卯辰巳午未申酉戌亥'.split('');
+const STEM_ORDER = '甲乙丙丁戊己庚辛壬癸'.split('');
 const BRANCH_ZODIAC_MAP = {
 	子: '水瓶座',
 	丑: '摩羯座',
@@ -95,8 +134,10 @@ function normalizeKenQimenOptions(options){
 	const next = {
 		...(options || {}),
 	};
-	if(next.paiPanType === 1){
-		next.paiPanType = 3;
+	// 旧数据迁移(对齐独立 DunJiaMain):阴盘曾为「盘式」(school='阴盘'),现为「起局法」(qijuMethod='shuzi',报数定局)。
+	if(next.school === '阴盘'){
+		next.school = '转盘';
+		next.qijuMethod = 'shuzi';
 	}
 	return next;
 }
@@ -130,23 +171,25 @@ const QIMEN_OPTIONS = {
 	jieQiType: 1,
 	paiPanType: 3,
 	zhiShiType: 0,
-	yueJiaQiJuType: 1,
+	yueJiaQiJuType: 0,
 	yearGanZhiType: 2,
 	monthGanZhiType: 1,
-	dayGanZhiType: 1,
+	dayGanZhiType: 0,
 	qijuMethod: 'zhirun',
 	kongMode: 'day',
 	yimaMode: 'day',
 	shiftPalace: 0,
 	fengJu: false,
+	school: '转盘',
+	shuziReportNumber: '',
+	zhirunLeapDays: 9,
 };
 
 const SANSHI_QUICK_ACTIONS = [
 	{ key: 'overview', label: '概览', icon: 'sidePlanets', tab: 'overview' },
 	{ key: 'taiyi', label: '太乙', icon: 'quickPrimary', tab: 'taiyi' },
-	{ key: 'shensha', label: '神煞', icon: 'quickNote', tab: 'shensha' },
 	{ key: 'liureng', label: '六壬', icon: 'quickFirdaria', tab: 'liureng' },
-	{ key: 'bagong', label: '八宫', icon: 'sideHouses', tab: 'bagong' },
+	{ key: 'bagong', label: '遁甲', icon: 'sideHouses', tab: 'bagong' },
 	{ key: 'plot', label: '起盘', icon: 'quickTransit', action: 'plot' },
 	{ key: 'save', label: '保存', icon: 'quickReturn', action: 'save' },
 ];
@@ -165,6 +208,27 @@ const OUTER_RING_LAYOUT = [
 	{ branch: '卯', side: 'left', x0: 0, x1: 11.1, y0: 33.33, y1: 66.67 },
 	{ branch: '辰', side: 'left', x0: 0, x1: 11.1, y0: 11.1, y1: 33.33 },
 ];
+
+// 虚实红绿点逐宫定位:贴各地支宫格「朝盘心」一侧——上边内侧=下、下边内侧=上、左边内侧=右、右边内侧=左;
+// 每边的中宫(午/子/卯/酉)居中,两侧夹角宫朝该边中心收拢(与用户口径一致)。值为单元格内 CSS 绝对定位。
+const WEAK_SOLID_POS = {
+	// 上边(内侧=下):巳→右下、午→居中、未→左下
+	'巳': { bottom: 2, right: 3 },
+	'午': { bottom: 2, left: '50%', transform: 'translateX(-50%)' },
+	'未': { bottom: 2, left: 3 },
+	// 右边(内侧=左):申→左下、酉→居中、戌→左上
+	'申': { left: 2, bottom: 3 },
+	'酉': { left: 2, top: '50%', transform: 'translateY(-50%)' },
+	'戌': { left: 2, top: 3 },
+	// 下边(内侧=上):亥→左上、子→居中、丑→右上
+	'亥': { top: 2, left: 3 },
+	'子': { top: 2, left: '50%', transform: 'translateX(-50%)' },
+	'丑': { top: 2, right: 3 },
+	// 左边(内侧=右):辰→右下、卯→居中、寅→右上
+	'寅': { right: 2, top: 3 },
+	'卯': { right: 2, top: '50%', transform: 'translateY(-50%)' },
+	'辰': { right: 2, bottom: 3 },
+};
 
 const LIURENG_RING_LAYOUT = {
 	// 四正位：放在六壬环四边中央（合并后的主宫位）
@@ -238,7 +302,69 @@ const GUIRENG_OPTIONS = [
 	{ value: 0, label: '六壬法贵人' },
 	{ value: 1, label: '遁甲法贵人' },
 	{ value: 2, label: '星占法贵人' },
+	{ value: 3, label: '甲戊兼牛羊' },
+	{ value: 4, label: '干合阳阴贵' },
 ];
+
+// 大六壬流派(对齐独立 lrzhan/LiuRengMain 的「断卦设置」;默认值=现行行为,零回归)。
+// 换将三派/分昼夜三派/涉害取舍·起讫·始入(默认法)/年神排序/昼夜阳阴归属/土旺衰。
+const LR_YUEJIANG_OPTIONS = [
+	{ value: 'zhongqi', label: '中气过宫（默认）' },
+	{ value: 'jieqi', label: '节气换将' },
+	{ value: 'richan', label: '太阳过宫·日躔（含岁差）' },
+];
+const LR_FENZHOUYE_OPTIONS = [
+	{ value: 'chenhun', label: '晨昏分昼夜（默认）' },
+	{ value: 'maoyou', label: '卯酉分昼夜' },
+	{ value: 'yinshen', label: '寅申分昼夜' },
+];
+const LR_SEHAI_METHOD_OPTIONS = [
+	{ value: 'app', label: '仅下贼上(默认)' },
+	{ value: 'standard', label: '标准深浅两向' },
+	{ value: 'mengzhongji', label: '直取孟仲季' },
+];
+const LR_SEHAI_BOUNDARY_OPTIONS = [
+	{ value: 'app', label: '计起点不计本家(默认)' },
+	{ value: 'both', label: '两端皆计' },
+	{ value: 'neither', label: '皆不计' },
+];
+const LR_SHIRUKE_OPTIONS = [
+	{ value: 0, label: '并入重审(默认)' },
+	{ value: 1, label: '单列·九法变十法' },
+];
+const LR_YEAR_SHENSHA_OPTIONS = [
+	{ value: 'sanyuan', label: '四利三元序(默认)' },
+	{ value: 'suigui', label: '太岁排轮(太阴异)' },
+];
+const LR_YINYANG_SYSTEM_OPTIONS = [
+	{ value: 'danmu', label: '旦暮系(默认)' },
+	{ value: 'yinyang', label: '星历阳阴系' },
+];
+const LR_TUWANG_OPTIONS = [
+	{ value: 'siji', label: '四季月土旺(默认)' },
+	{ value: 'huotu', label: '火土同宫(土随火)' },
+];
+
+// 奇门封局(对齐独立 dunjia/DunJiaMain;默认未封局=零回归)。
+const QIMEN_FENGJU_OPTIONS = [
+	{ value: 0, label: '未封局' },
+	{ value: 1, label: '已封局' },
+];
+
+// 🔴 改值即强制重算的「计算型」option key 全集(三式合一各子盘的盘面计算输入)。
+// 这些 key 都已被 recalcSignature(performRecalcByNongli)消费(经 getQimenOptions / getKintaiyiPan / 六壬 castOverride),
+// 但 refreshAll 的轻量 lastKey 不含它们 → 必须在 onOptionChange 显式 refreshAll(force) 才会真重算重画。
+// after23NewDay/lateZiHourUseNextDay 已在上方单独处理(还要 prefetch),故不入本集;mode 仅影响兜底快照段名,不改盘,亦不入。
+const SANSHI_RECALC_OPTION_KEYS = new Set([
+	// 奇门(经 getQimenOptions + fetchQimenPan/calcDunJia)
+	'paiPanType', 'zhiShiType', 'yueJiaQiJuType', 'qijuMethod', 'kongMode', 'yimaMode', 'shiftPalace',
+	'school', 'shuziReportNumber', 'fengJu', 'zhirunLeapDays',
+	// 太乙(经 getKintaiyiPan + applyTaiyiSchool)
+	'taiyiStyle', 'taiyiAccum', 'taiyiSchool', 'gameTheory',
+	// 大六壬(经 guirengType + buildSanshiLiuRengCastOverride)
+	'guireng', 'yueJiangMethod', 'fenZhouYe', 'seHaiMethod', 'seHaiBoundary', 'shiRuKe',
+	'yearShenShaSort', 'yinyangSystem', 'tuWangShuai',
+]);
 
 // 用户语义(拍板,字面直觉版): after23NewDay=1「23点算第二天」=日柱进位次日(壬寅)；=0「24点算第二天」=日柱守今(辛丑)。
 const DAY_SWITCH_OPTIONS = [
@@ -593,6 +719,9 @@ function getQimenOptionsKey(options){
 		safe(options.yimaMode),
 		safe(options.shiftPalace),
 		options.fengJu ? 1 : 0,
+		safe(options.school),
+		safe(options.shuziReportNumber),
+		safe(options.zhirunLeapDays),
 	].join('|');
 }
 
@@ -657,11 +786,55 @@ function getOuterChartKey(chartWrap){
 	].join('|');
 }
 
-function buildLiuRengLayout(chartObj, guirengType){
+function computeSanshiFenZhouYe(fenZhouYe, chartObj){
+	if(fenZhouYe !== 'maoyou' && fenZhouYe !== 'yinshen'){
+		return undefined;
+	}
+	if(!chartObj || !chartObj.nongli || !chartObj.nongli.time){
+		return undefined;
+	}
+	const timezi = chartObj.nongli.time.substr(1);
+	const dayBranches = fenZhouYe === 'maoyou'
+		? ['卯', '辰', '巳', '午', '未', '申']
+		: ['寅', '卯', '辰', '巳', '午', '未'];
+	return dayBranches.indexOf(timezi) >= 0;
+}
+
+// 汇总 大六壬流派(换将/分昼夜/涉害取舍/昼夜阳阴归属)→ castOverride;全默认返回 null(零回归)。
+// 与独立 lrzhan/buildLiuRengCastOverride 同款语义(三式合一只支持「正时正将」起课法,不含 25 起课变体)。
+function buildSanshiLiuRengCastOverride(chartObj, opts){
+	opts = opts || {};
+	if(!chartObj || !chartObj.nongli){
+		return null;
+	}
+	const yueJiangMethod = opts.yueJiangMethod || 'zhongqi';
+	const fenZhouYe = opts.fenZhouYe || 'chenhun';
+	const isDiurnal = computeSanshiFenZhouYe(fenZhouYe, chartObj);
+	const seHaiOpts = {
+		method: opts.seHaiMethod || 'app',
+		boundary: opts.seHaiBoundary || 'app',
+		shiRuKe: !!opts.shiRuKe,
+	};
+	const seHaiDefault = seHaiOpts.method === 'app' && seHaiOpts.boundary === 'app' && !seHaiOpts.shiRuKe;
+	const yinyangSystem = opts.yinyangSystem === 'yinyang' ? 'yinyang' : 'danmu';
+	const yearShenShaSort = opts.yearShenShaSort || 'sanyuan'; // 年神排序(默认四利三元序);三式合一原 override 漏传→六壬子盘 AI 快照年神恒默认
+	const tuWangShuai = opts.tuWangShuai || 'siji'; // 三传旺衰(默认四季月土旺)
+	const allDefault = yueJiangMethod !== 'jieqi' && yueJiangMethod !== 'richan'
+		&& isDiurnal === undefined && seHaiDefault && yinyangSystem === 'danmu'
+		&& yearShenShaSort === 'sanyuan' && tuWangShuai === 'siji';
+	if(allDefault){
+		return null;
+	}
+	const solarYear = Number(opts.solarYear) || (chartObj.nongli && Number(chartObj.nongli.solarYear)) || undefined;
+	const yueEff = getYueJiangByMethod(chartObj, yueJiangMethod, solarYear);
+	return { yue: yueEff, isDiurnal, seHaiOpts, yinyangSystem, yearShenShaSort, tuWangShuai };
+}
+
+function buildLiuRengLayout(chartObj, guirengType, castOverride){
 	if(!chartObj || !chartObj.nongli || !chartObj.nongli.time){
 		return null;
 	}
-	const yue = getChartYue(chartObj);
+	const yue = (castOverride && castOverride.yue) || getChartYue(chartObj);
 	if(!yue){
 		return null;
 	}
@@ -682,7 +855,12 @@ function buildLiuRengLayout(chartObj, guirengType){
 	}
 
 	const houseTianJiang = LRConst.TianJiang.slice(0);
-	const guizi = LRConst.getGuiZi(chartObj, guirengType === undefined ? 2 : guirengType);
+	const guizi = LRConst.getGuiZi(
+		chartObj,
+		guirengType === undefined ? 2 : guirengType,
+		castOverride ? castOverride.isDiurnal : undefined,
+		castOverride ? castOverride.yinyangSystem : undefined
+	);
 	let houseidx = 0;
 	for(let i=0; i<12; i++){
 		const zi = LRConst.ZiList[yueIndexs[i]];
@@ -754,7 +932,7 @@ function buildKeData(layout, chartObj){
 	return result;
 }
 
-function buildSanChuan(layout, keRaw, chartObj){
+function buildSanChuan(layout, keRaw, chartObj, castOverride){
 	if(!layout || !keRaw || keRaw.length !== 4 || !chartObj || !chartObj.nongli){
 		return null;
 	}
@@ -764,6 +942,8 @@ function buildSanChuan(layout, keRaw, chartObj){
 			chartObj: chartObj,
 			nongli: chartObj.nongli,
 			ke: keRaw,
+			// 涉害取舍流派(默认 null=仅下贼上,已固定,零回归);非默认时携 seHaiOpts 影响涉害课取用。
+			seHaiOpts: castOverride ? castOverride.seHaiOpts : null,
 			liuRengChart: {
 				upZi: layout.upZi,
 				downZi: layout.downZi,
@@ -803,6 +983,17 @@ function lonToBranch(lon){
 	return BRANCH_ORDER[branchIdx];
 }
 
+// 赤经(RA)→地支:与 lonToBranch 同口径(RA 0°=白羊点,对齐黄经 0°),供「外圈赤道分宫」复用 obj.ra。
+function raToBranch(ra){
+	const nra = normalizeLon(ra);
+	if(nra === null){
+		return '';
+	}
+	const signIdx = Math.floor(nra / 30) % 12;
+	const branchIdx = (10 - signIdx + 12) % 12;
+	return BRANCH_ORDER[branchIdx];
+}
+
 function signToBranch(sign){
 	if(!sign){
 		return '';
@@ -814,9 +1005,16 @@ function signToBranch(sign){
 	}
 }
 
-function resolveObjBranch(obj){
+function resolveObjBranch(obj, coord){
 	if(!obj){
 		return '';
+	}
+	// 赤道模式:按赤经(obj.ra)分入地支;缺赤经则回退黄道避免空。默认(ecliptic/未传)逐字现状。
+	if(coord === 'equatorial'){
+		const ra = obj.ra;
+		if(ra !== undefined && ra !== null && !Number.isNaN(parseFloat(ra))){
+			return raToBranch(ra);
+		}
 	}
 	const bySign = signToBranch(obj.sign);
 	if(bySign){
@@ -833,7 +1031,84 @@ function parseHouseNum(houseId){
 	return m ? m[0] : '';
 }
 
-function buildOuterData(chartObj){
+// 单柱「虚支」:与后端七政四余 Moira(MoiraPropRuleEngine.computeWeakHouse)逐字一致——
+// 旬空二支按 60 甲子位次奇偶仅取其一(偶位取前支/奇位取后支),非整对旬空。
+// i = 干序 g + 10*旬序;index = 10 - 2*旬序,i 奇(即 g 奇)则 +1,取 BRANCH_ORDER[index]。
+function computeMoiraWeakZhi(ganzhi){
+	if(!ganzhi || ganzhi.length < 2){ return ''; }
+	const g = STEM_ORDER.indexOf(ganzhi.charAt(0));
+	const z = BRANCH_ORDER.indexOf(ganzhi.charAt(1));
+	if(g < 0 || z < 0){ return ''; }
+	const xun = ((((g - z) % 12) + 12) % 12) / 2; // 旬序 0..5(= 60甲子位次 i 的 i/10)
+	let index = 10 - 2 * xun;
+	if(g % 2 === 1){ index++; } // i 奇 ⇔ g 奇(i = g + 10*旬序)
+	return BRANCH_ORDER[(((index % 12) + 12) % 12)] || '';
+}
+
+// 三式外圈「虚实」红绿点 八字源,与七政四余 Moira 红绿点逐宫一致:
+//  实宫=年月日时【四柱地支】各自定实;虚宫=四柱各自 computeMoiraWeakZhi(每柱仅一支)推虚。
+// pan.ganzhi = 起课四柱(年/月/日/时干支)。返回 { 地支: {solid,weak,solidPillars,weakPillars} }。
+function buildSanshiWeakSolid(pan){
+	const map = {};
+	BRANCH_ORDER.forEach((b)=>{ map[b] = { solid: false, weak: false, solidPillars: [], weakPillars: [] }; });
+	const gz = (pan && pan.ganzhi) || {};
+	const pillars = [
+		{ label: '年', gz: gz.year || '' },
+		{ label: '月', gz: gz.month || '' },
+		{ label: '日', gz: gz.day || '' },
+		{ label: '时', gz: gz.time || '' },
+	];
+	// 实宫:四柱地支各自定实。
+	pillars.forEach((p)=>{
+		const zhi = (p.gz || '').charAt(1);
+		if(zhi && map[zhi]){
+			map[zhi].solid = true;
+			if(map[zhi].solidPillars.indexOf(p.label) < 0){
+				map[zhi].solidPillars.push(p.label);
+			}
+		}
+	});
+	// 虚宫:四柱各自取 Moira 虚支(每柱一支)推虚。
+	pillars.forEach((p)=>{
+		const wz = computeMoiraWeakZhi(p.gz);
+		if(wz && map[wz]){
+			map[wz].weak = true;
+			if(map[wz].weakPillars.indexOf(p.label) < 0){
+				map[wz].weakPillars.push(p.label);
+			}
+		}
+	});
+	return map;
+}
+
+// 三式「旬」统一口径(时家奇门;概览/盘底/快照单一来源,杜绝与后端 xunShou/fuTou(=六仪)及繁简键漂移):
+//  旬首=时柱所在旬之甲(该时辰旬首,如癸巳→甲申);旬仪=旬首所遁六仪(甲申→庚,显示甲申庚);
+//  本旬=日柱所在旬之甲(本日之旬);旬空=日柱旬空(日空);时空=时柱旬空。
+// 旬首(甲X)展开为「甲X丁Y癸Z」:旬首(第一日甲)+旬丁(第四日丁=丁马)+旬尾(第十日癸);
+// 丁在旬首后第 3 位、癸在第 9 位(地支同步推移)。例:甲子→甲子丁卯癸酉;甲辰→甲辰丁未癸丑。
+function expandXunPillars(head){
+	if(!head || head.length < 2){ return head || ''; }
+	const z = BRANCH_ORDER.indexOf(head.charAt(1));
+	if(z < 0){ return head; }
+	const ding = `丁${BRANCH_ORDER[(z + 3) % 12]}`; // 第四日(丁) + 地支
+	const gui = `癸${BRANCH_ORDER[(z + 9) % 12]}`; // 第十日(癸) + 地支
+	return `${head}${ding}${gui}`;
+}
+
+function computeSanshiXun(pan){
+	const gz = (pan && pan.ganzhi) || {};
+	const dayHead = gz.day ? getXunHead(gz.day) : '';
+	const timeHead = gz.time ? getXunHead(gz.time) : '';
+	const xunShou = timeHead || safe(pan && pan.xunShou, '—');
+	const xunYi = timeHead ? `${timeHead}${XUN_SHOU_TO_LIUYI[timeHead] || ''}` : safe(pan && pan.fuTou, '—');
+	// 本旬=日柱所在旬,展开旬首/旬丁/旬尾(甲X丁Y癸Z),与参考样张一致。
+	const benXun = dayHead ? expandXunPillars(dayHead) : safe(pan && pan.xunShou, '—');
+	const riKong = (dayHead && GUXU[dayHead]) || safe(pan && pan.xunkong && pan.xunkong.日空, '—');
+	const shiKong = (timeHead && GUXU[timeHead]) || safe(pan && pan.xunkong && (pan.xunkong.时空 || pan.xunkong.時空), '—');
+	return { xunShou, xunYi, benXun, riKong, shiKong };
+}
+
+function buildOuterData(chartObj, coord){
 	const housesByBranch = {};
 	const starsByBranch = {};
 	const starsByBranchFull = {};
@@ -852,7 +1127,7 @@ function buildOuterData(chartObj){
 	for(let i=0; i<objs.length; i++){
 		const obj = objs[i];
 		if(obj && obj.id === AstroConst.ASC){
-			ascBranch = resolveObjBranch(obj);
+			ascBranch = resolveObjBranch(obj, coord);
 			break;
 		}
 	}
@@ -867,7 +1142,9 @@ function buildOuterData(chartObj){
 		// 兜底：若ASC缺失则回退到按宫头经度映射
 		const houses = chartObj.houses || [];
 		houses.forEach((h)=>{
-			const b = signToBranch(h.sign) || lonToBranch(h.lon);
+			const b = (coord === 'equatorial' && h && h.ra !== undefined && h.ra !== null && !Number.isNaN(parseFloat(h.ra)))
+				? raToBranch(h.ra)
+				: (signToBranch(h.sign) || lonToBranch(h.lon));
 			if(!b){
 				return;
 			}
@@ -884,20 +1161,24 @@ function buildOuterData(chartObj){
 		if(!MAIN_STAR_IDS.has(obj.id)){
 			return;
 		}
-		const b = resolveObjBranch(obj);
+		const b = resolveObjBranch(obj, coord);
 		if(!b){
 			return;
 		}
-		const deg = splitDegree(obj.signlon || 0);
+		// 度数随坐标口径切换:赤道按赤经(ra)宫内度;黄道按 signlon(黄经宫内度)。
+		// 否则切赤道仅地支重映射、度数/悬浮纹丝不动。
+		const useEqua = coord === 'equatorial' && obj.ra !== undefined && obj.ra !== null && !Number.isNaN(parseFloat(obj.ra));
+		const inSegDeg = useEqua ? (normalizeLon(obj.ra) % 30) : (obj.signlon || 0);
+		const deg = splitDegree(inSegDeg);
 		const retro = obj.lonspeed < 0 ? 'R' : '';
 		const shortTxt = `${shortMainStarLabel(msg(obj.id))}${safe(deg[0], 0)}${retro}`;
 		const starName = safe(appendPlanetHouseInfo(msg(obj.id), obj, AI_EXPORT_PLANET_INFO), '未知星曜');
 		const minTxt = `${safe(deg[1], 0)}`.padStart(2, '0');
-		const fullTxt = `${starName}${safe(deg[0], 0)}°${minTxt}${retro}`;
+		const fullTxt = `${starName}${safe(deg[0], 0)}°${minTxt}${retro}${useEqua ? '（赤经）' : ''}`;
 		starsByBranchRaw[b].push({
 			shortTxt,
 			fullTxt,
-			deg: Number(safe(deg[0], 0)),
+			deg: Number(inSegDeg) || 0,
 			objId: obj.id,
 		});
 	});
@@ -954,6 +1235,91 @@ function buildLiuRengBranchMap(lrLayout){
 	return map;
 }
 
+// 单一真值源:把独立技法 builder 产出的整篇快照(段头形如 [X])解析成「段名 → 正文行数组」的 Map,
+// 供三式合一按需挑段并以 appendSection(【X】)重发。这样段内容 100% 来自独立 builder(零平行实现),
+// 三式合一只做「选段 + 改前缀」。段头识别与 parseSectionTitleLine 同口径:整行 [X] 才算段头。
+function parseSnapshotSections(text){
+	const map = {};
+	let current = null;
+	`${text || ''}`.split('\n').forEach((rawLine)=>{
+		const line = `${rawLine || ''}`;
+		const m = line.trim().match(/^\[(.+)\]$/);
+		if(m && m[1]){
+			current = m[1];
+			if(!map[current]){
+				map[current] = [];
+			}
+			return;
+		}
+		if(current){
+			map[current].push(line);
+		}
+	});
+	// 去掉每段尾部多余空行(appendSection 会自行补一行空行做段间隔)。
+	Object.keys(map).forEach((key)=>{
+		const arr = map[key];
+		while(arr.length && arr[arr.length - 1] === ''){
+			arr.pop();
+		}
+	});
+	return map;
+}
+
+// 把独立 builder 整篇里的指定段,以「前缀 + 段名」重发到三式合一快照(单一真值源:正文照搬)。
+// 仅在该段存在且有正文时输出(条件段天然豁免;空段不污染导出与导出设置勾选面)。
+function appendPickedSections(lines, sectionMap, titles, prefix){
+	(titles || []).forEach((title)=>{
+		const body = sectionMap[title];
+		if(!body || !body.length){
+			return;
+		}
+		appendSection(lines, `${prefix || ''}${title}`, body);
+	});
+}
+
+// 太乙:复用独立 buildTaiyiSnapshotText 的动态派生段(后端 pan.sections 产出);段名加「太乙」前缀。
+// 仅取这 7 段(主客定算/八门与宿曜/断法/七大兵法/博弈/命法/命宫行限);其余 sections(起盘/太乙诸神/风游/十二神)
+// 与三式合一既有「起盘信息」「太乙」段内容重叠或为基础信息,不重出(避免「太乙太乙诸神」叠词与冗余)。
+const SANSHI_TAIYI_SECTION_TITLES = [
+	'主客定算',
+	'八门与宿曜',
+	'断法',
+	'七大兵法',
+	'博弈',
+	'命法',
+	'命宫行限',
+];
+// 奇门:复用独立遁甲 buildDunJiaSnapshotText 的派生/法奇门段(段名加「奇门」前缀,避免与六壬「概览」等碰撞)。
+const SANSHI_QIMEN_EXTRA_SECTIONS = [
+	'九宫方盘',
+	'旺相休囚死·月令能量',
+	'六害总览',
+	'化解方案',
+	'八门化气大阵',
+	'用神分论',
+	'财富七要',
+	'事业七要',
+	'恋爱姻缘',
+	'孤辰寡宿',
+];
+// 六壬:复用独立大六壬 buildLiuRengSnapshotText 的断卦层段(三式合一缺这些 → 导出/挂载贫)。
+// 大格/小局/参考/概览 三式合一已自有(appendRefSection),此处不重出;旺衰/基础神煞等依赖后端 gods,
+// 三式合一未取(自然不产出,⊆ 语义豁免)。前缀留空:段名与三式合一既有段不碰。
+const SANSHI_LIURENG_DUANGUA_SECTIONS = [
+	'十二盘式',
+	'常用神煞',
+	'年月神煞',
+	'课体结构',
+	'三传旺衰',
+	'空亡真假',
+	'旬空落点',
+	'陷空',
+	'遁干特殊',
+	'年命上神',
+	'毕法（已命中）',
+	'占断向导',
+];
+
 export function buildSanShiUnitedSnapshotText(data){
 	const {
 		fields,
@@ -968,6 +1334,11 @@ export function buildSanShiUnitedSnapshotText(data){
 		lrLayout,
 		liurengRefBundle,
 		outerData,
+		// 六壬断卦层(复用独立 buildLiuRengSnapshotText)所需的原始入参;缺任一则跳过断卦层(零回归)。
+		guirengType,
+		liurengChartForLr,
+		lrCastOverride,
+		liurengRunYear,
 	} = data || {};
 	if(!dunjia || !keData || !sanChuan || !lrLayout){
 		return '';
@@ -997,21 +1368,33 @@ export function buildSanShiUnitedSnapshotText(data){
 		`月将：${yuejiang}`,
 		`年命：${nianming}`,
 	]);
+	// 旬:与盘面 renderBottom / 概览同源(computeSanshiXun):旬首=时柱旬首 / 旬仪=时柱旬首+六仪 /
+	// 本旬=日柱旬首 / 旬空=日空 / 时空=时柱旬空,避免旧 xunShou/fuTou(=六仪)/繁简键失配错值。
+	const _xun = computeSanshiXun(dunjia);
 	appendSection(lines, '概览', [
 		`局数：${safe(dunjia.juText, '—')}`,
-		`旬首：${safe(dunjia.xunShou, '—')}`,
-		`旬仪：${safe(dunjia.fuTou, '—')}`,
+		`旬首：${_xun.xunShou}`,
+		`旬仪：${_xun.xunYi}`,
 		`值符：${safe(dunjia.zhiFu, '—')}`,
 		`值使：${safe(dunjia.zhiShi, '—')}`,
-		`本旬：${safe(dunjia.xunShou, '—')}`,
-		`旬空：${safe(dunjia.xunkong && dunjia.xunkong.日空, '—')}`,
-		`时空：${safe(dunjia.xunkong && dunjia.xunkong.时空, '—')}`,
+		`本旬：${_xun.benXun}`,
+		`旬空：${_xun.riKong}`,
+		`时空：${_xun.shiKong}`,
 		`日马：${dunjia.yiMa && dunjia.yiMa.text ? dunjia.yiMa.text : '无'}`,
 		`阴阳遁：${safe(dunjia.yinYangDun, '—')}`,
 		`月将：${yuejiang}`,
 	]);
 	if(taiyi){
 		appendSection(lines, '太乙', buildTaiyiSnapshotLines(taiyi));
+		// 太乙动态派生段(主客定算/八门与宿曜/断法/七大兵法/博弈/命法/命宫行限):复用独立 buildTaiyiSnapshotText,
+		// 切其按 pan.sections 产出的段(单一真值源,同 formatSnapshotValue 口径),以「太乙」前缀重发(三式合一缺这些 → 导出/挂载贫)。
+		const taiyiSectionTitles = Array.isArray(taiyi.sections)
+			? SANSHI_TAIYI_SECTION_TITLES.filter((title)=>taiyi.sections.some((section)=>section && section.title === title))
+			: [];
+		if(taiyiSectionTitles.length){
+			const taiyiSectionMap = parseSnapshotSections(buildTaiyiSnapshotText(taiyi));
+			appendPickedSections(lines, taiyiSectionMap, taiyiSectionTitles, '太乙');
+		}
 		appendSection(lines, '太乙十六宫', (taiyi.palace16 || []).map((item)=>{
 			const txt = item.items && item.items.length ? item.items.join('、') : '—';
 			return `${item.palace}：${txt}`;
@@ -1069,6 +1452,30 @@ export function buildSanShiUnitedSnapshotText(data){
 	appendRefSection('六壬小局', xiaojuMainItems, 'xiaoju');
 	appendRefSection('六壬参考', xiaojuReferenceItems, 'xiaoju');
 	appendRefSection('六壬概览', refBundle.overview || [], 'overview');
+	// 六壬断卦层(十二盘式/常用神煞/年月神煞/课体结构/三传旺衰/空亡真假/旬空落点/陷空/遁干特殊/年命上神/毕法/占断向导):
+	// 复用独立 buildLiuRengSnapshotText(单一真值源),用三式合一同源入参重跑后切断卦段——独立页有、三式合一此前缺。
+	// 入参齐备才跑(零回归);params=null 跳过起盘信息行,zhangshengElem='' 不影响断卦层(其只依赖 refs.context)。
+	if(liureng && liurengChartForLr){
+		let liurengFull = '';
+		try{
+			liurengFull = buildLiuRengSnapshotText(
+				null,
+				liureng,
+				liurengRunYear || null,
+				liurengChartForLr,
+				guirengType,
+				'',
+				options && options.sex,
+				lrCastOverride || {}
+			);
+		}catch(e){
+			liurengFull = '';
+		}
+		if(liurengFull){
+			const liurengSectionMap = parseSnapshotSections(liurengFull);
+			appendPickedSections(lines, liurengSectionMap, SANSHI_LIURENG_DUANGUA_SECTIONS, '');
+		}
+	}
 	const qimenMap = {};
 	if(Array.isArray(dunjia.cells)){
 		dunjia.cells.forEach((cell)=>{
@@ -1128,6 +1535,11 @@ export function buildSanShiUnitedSnapshotText(data){
 		bagongLines.pop();
 	}
 	appendSection(lines, '八宫详解', bagongLines);
+	// 奇门派生/法奇门段(九宫方盘/旺相休囚死·月令能量/六害总览/化解方案/八门化气大阵/用神分论/财富七要/事业七要/
+	// 恋爱姻缘/孤辰寡宿):复用独立 buildDunJiaSnapshotText(单一真值源),切其对应段以「奇门」前缀重发
+	// (避免与六壬「概览」等碰撞)——独立遁甲页有、三式合一此前缺这 ~9 段。
+	const qimenSectionMap = parseSnapshotSections(buildDunJiaSnapshotText(dunjia));
+	appendPickedSections(lines, qimenSectionMap, SANSHI_QIMEN_EXTRA_SECTIONS, '奇门');
 	return lines.join('\n').trim();
 }
 
@@ -1461,9 +1873,14 @@ class SanShiUnitedMain extends Component{
 			plottedFields: null,
 			hasPlotted: false,
 			rightPanelTab: 'overview',
+			outerCoord: 'ecliptic', // 外圈分宫:ecliptic(黄道,默认零回归) | equatorial(赤道/赤经)
+			showWeakSolid: true, // 外圈是否叠七政四余式「虚实」红绿点(默认显示)
 			liurengRefTab: 'dage',
+			bagongSubTab: 'bagong', // 遁甲右栏内层子tab:八宫 / 用神 / 化解
+			taiyiSubTab: 'overview', // 太乙右栏内层子tab:概览 / 十六宫 / 八门 / 断法
 			bagongPalace: BAGONG_PALACE_ORDER[0],
 			liurengRefBundle: null,
+			liurengSnapshotInput: null, // 六壬断卦层快照入参(随 recalc 落 state,供存档/还原路径的 payload 复用)
 			options: {
 				mode: 'ming',
 				timeAlg: defaultTimeAlg,
@@ -1476,13 +1893,30 @@ class SanShiUnitedMain extends Component{
 				lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
 				paiPanType: 3,
 				zhiShiType: 0,
-				yueJiaQiJuType: 1,
+				yueJiaQiJuType: 0,
 				qijuMethod: 'zhirun',
 				kongMode: 'day',
 				yimaMode: 'day',
 				shiftPalace: 0,
+				// 奇门流派/起局补充(默认=现行行为,零回归):盘式转盘 / 报数空 / 未封局 / 置闰大于9天。
+				school: '转盘',
+				shuziReportNumber: '',
+				fengJu: false,
+				zhirunLeapDays: 9,
 				taiyiStyle: 3,
 				taiyiAccum: 0,
+				// 太乙博弈 + 流派(默认=关闭/全默认,字节不变零回归)。
+				gameTheory: 0,
+				taiyiSchool: { ...DEFAULT_TAIYI_SCHOOL },
+				// 大六壬流派(默认=现行固定月将/晨昏分昼夜/仅下贼上,零回归)。
+				yueJiangMethod: 'zhongqi',
+				fenZhouYe: 'chenhun',
+				seHaiMethod: 'app',
+				seHaiBoundary: 'app',
+				shiRuKe: false,
+				yearShenShaSort: 'sanyuan',
+				yinyangSystem: 'danmu',
+				tuWangShuai: 'siji',
 			},
 			leftBoardWidth: 0,
 			leftBoardHeight: 0,
@@ -1629,21 +2063,24 @@ class SanShiUnitedMain extends Component{
 		}
 	}
 
-	getCachedDunJia(fields, nongli, qimenOptions, year, isDiurnal){
+	getCachedDunJia(fields, nongli, qimenOptions, year, isDiurnal, displaySolarTime){
 		const key = [
 			getFieldKey(fields),
 			getNongliKey(nongli),
 			getQimenOptionsKey(qimenOptions),
 			`${year || ''}`,
 			`${safe(isDiurnal, '')}`,
+			`${safe(displaySolarTime, '')}`,
 		].join('|');
 		if(this.panCache.has(key)){
 			return this.panCache.get(key);
 		}
+		// ctx 与独立页 DunJiaMain.getContext 同构(含 displaySolarTime),否则本地年/月/日家盘与独立页分叉。
 		const pan = calcDunJia(fields, nongli, qimenOptions, {
 			year,
 			jieqiYearSeeds: this.jieqiYearSeeds,
 			isDiurnal,
+			displaySolarTime,
 		});
 		this.panCache.set(key, pan);
 		if(this.panCache.size > 48){
@@ -1656,7 +2093,19 @@ class SanShiUnitedMain extends Component{
 	}
 
 	async getKinqimenDunJia(fields, nongli, qimenOptions, year, isDiurnal, displaySolarTime){
-		const fallbackPan = this.getCachedDunJia(fields, nongli, qimenOptions, year, isDiurnal);
+		const fallbackPan = this.getCachedDunJia(fields, nongli, qimenOptions, year, isDiurnal, displaySolarTime);
+		// 🔴 路由与独立页 DunJiaMain.getResolvedPan 完全一致(否则结果分叉=用户报的「三式合一遁甲≠独立遁甲」):
+		//   本地 calcDunJia ← 年/月/日家(!isKinqimenMode,各家局法) 或 飞盘/混合/报数(后端不支持);
+		//   后端 fetchQimenPan ← 时家转盘等(isKinqimenMode,保「时家=转盘」原有行为零回归)。
+		// 本地 calcDunJia 返回的 pan 不带 source 字段(source:'kinqimen' 仅后端合并路径有),故本地分支不校验 source。
+		const o = qimenOptions || {};
+		const localOnly = !isKinqimenMode(o.paiPanType) || o.school === '飞盘' || o.school === '混合' || o.qijuMethod === 'shuzi';
+		if(localOnly){
+			if(!fallbackPan){
+				throw new Error('sanshi.qimen.kinqimen_unavailable');
+			}
+			return fallbackPan;
+		}
 		const backendPan = await fetchQimenPan(fields, nongli, qimenOptions, {
 			year,
 			jieqiYearSeeds: this.jieqiYearSeeds,
@@ -1675,15 +2124,20 @@ class SanShiUnitedMain extends Component{
 			style: options && options.taiyiStyle !== undefined ? options.taiyiStyle : 3,
 			tn: options && options.taiyiAccum !== undefined ? options.taiyiAccum : 0,
 			sex: options && options.sex === 0 ? '女' : '男',
-			timeBasis: normalizeTimeAlg(options && options.timeAlg) === 0 ? 'trueSolar' : 'direct',
+			// 对齐独立 TaiYiMain:太乙默认 timeBasis='direct'(独立太乙固定默认 direct、不随盘 timeAlg);盘真太阳时仅作用于奇门,不串改太乙(否则同输入太乙盘与独立分叉)。
+			timeBasis: 'direct',
 			after23NewDay: options && options.after23NewDay !== undefined ? options.after23NewDay : defaultAfter23NewDay(),
 			lateZiHourUseNextDay: options && options.lateZiHourUseNextDay !== undefined ? options.lateZiHourUseNextDay : defaultLateZiHourUseNextDay(),
-			gameTheory: 0,
+			// 博弈分析(去硬编码:对齐独立 TaiYiMain;默认 0=关闭,与原行为一致)。
+			gameTheory: options && options.gameTheory === 1 ? 1 : 0,
 		});
 		if(!pan || pan.source !== 'kintaiyi'){
 			throw new Error('sanshi.taiyi.kintaiyi_unavailable');
 		}
-		return pan;
+		// 太乙流派覆盖层(对齐独立 TaiYiMain.recalc):以 base pan 为底按所选流派开关覆盖受影响神煞 + 几何重算主客算;
+		// 默认全 default → applyTaiyiSchool 为空操作,字节不变(零回归)。
+		const ov = applyTaiyiSchool(pan, options && options.taiyiSchool);
+		return ov.pan || pan;
 	}
 
 	componentDidMount(){
@@ -1890,7 +2344,7 @@ class SanShiUnitedMain extends Component{
 				if(payload.options.sex === 0 || payload.options.sex === 1){
 					options.sex = payload.options.sex;
 				}
-				if(payload.options.guireng === 0 || payload.options.guireng === 1 || payload.options.guireng === 2){
+				if(payload.options.guireng >= 0 && payload.options.guireng <= 4){
 					options.guireng = payload.options.guireng;
 				}
 				if(payload.options.zodiacal === 0 || payload.options.zodiacal === 1){
@@ -1931,6 +2385,51 @@ class SanShiUnitedMain extends Component{
 				}
 				if(payload.options.taiyiAccum !== undefined){
 					options.taiyiAccum = payload.options.taiyiAccum;
+				}
+				// 奇门流派/起局补充
+				if(payload.options.school){
+					options.school = payload.options.school;
+				}
+				if(payload.options.shuziReportNumber !== undefined){
+					options.shuziReportNumber = payload.options.shuziReportNumber;
+				}
+				if(payload.options.fengJu !== undefined){
+					options.fengJu = !!payload.options.fengJu;
+				}
+				if(payload.options.zhirunLeapDays !== undefined){
+					options.zhirunLeapDays = payload.options.zhirunLeapDays;
+				}
+				// 太乙博弈 + 流派
+				if(payload.options.gameTheory === 0 || payload.options.gameTheory === 1){
+					options.gameTheory = payload.options.gameTheory;
+				}
+				if(payload.options.taiyiSchool && typeof payload.options.taiyiSchool === 'object'){
+					options.taiyiSchool = normalizeTaiyiSchool(payload.options.taiyiSchool);
+				}
+				// 大六壬流派
+				if(payload.options.yueJiangMethod){
+					options.yueJiangMethod = payload.options.yueJiangMethod;
+				}
+				if(payload.options.fenZhouYe){
+					options.fenZhouYe = payload.options.fenZhouYe;
+				}
+				if(payload.options.seHaiMethod){
+					options.seHaiMethod = payload.options.seHaiMethod;
+				}
+				if(payload.options.seHaiBoundary){
+					options.seHaiBoundary = payload.options.seHaiBoundary;
+				}
+				if(payload.options.shiRuKe !== undefined){
+					options.shiRuKe = !!payload.options.shiRuKe;
+				}
+				if(payload.options.yearShenShaSort){
+					options.yearShenShaSort = payload.options.yearShenShaSort;
+				}
+				if(payload.options.yinyangSystem){
+					options.yinyangSystem = payload.options.yinyangSystem;
+				}
+				if(payload.options.tuWangShuai){
+					options.tuWangShuai = payload.options.tuWangShuai;
 				}
 			}
 		const normalizedOptions = normalizeKenQimenOptions(options);
@@ -2129,10 +2628,7 @@ class SanShiUnitedMain extends Component{
 	}
 
 		onOptionChange(key, value, opts){
-			if(key === 'paiPanType' && value === 1){
-				message.warning('月家奇门暂未由 Ken 后端支持，已从排盘选项移除');
-				return;
-			}
+			// 年/月/日家(paiPanType 0/1/2)走本地 calcDunJia 各家局法(与独立遁甲同源),不依赖后端 → 全部放行,与独立页排盘选项一致。
 			// 用户拍板: 左栏改过 after23NewDay 后,全局事件不再覆盖。
 			if(key === 'after23NewDay' && !(opts && opts.fromGlobal)){
 				this._after23BoundaryUserOverrode = true;
@@ -2154,6 +2650,12 @@ class SanShiUnitedMain extends Component{
 				if((key === 'after23NewDay' || key === 'lateZiHourUseNextDay') && this.state.hasPlotted){
 					this.refreshAll(flds, true);
 				}
+			}
+			// 🔴 选项改了不重算根治:以下计算型控件都已进 recalcSignature(getQimenOptions/getKintaiyiPan/六壬 layout 消费),
+			// 但 refreshAll 的 lastKey 只含 field/sex/after23/timeAlg → 不强制重算则改值后盘面纹丝不动(用户核心诉求)。
+			// 凡能改变任一子盘(奇门/太乙/六壬)计算结果的 key,改值即 refreshAll(force) 真重算重画;默认值时盘与改前一致(零回归)。
+			if(this.state.hasPlotted && SANSHI_RECALC_OPTION_KEYS.has(key)){
+				this.refreshAll(this.getActiveFields(), true);
 			}
 		});
 	}
@@ -2342,8 +2844,36 @@ class SanShiUnitedMain extends Component{
 			return;
 		}
 		const divTime = `${flds.date.value.format('YYYY-MM-DD')} ${flds.time.value.format('HH:mm:ss')}`;
+		// 存档即写格式化快照(与导出/挂载同源 buildSanShiUnitedSnapshotText)。否则挂载该 case 走
+		// buildSanshiUnifiedFallbackSnapshot 兜底,产出[奇门遁甲]等不在 sanshiunited preset 的段名,
+		// 自定义过导出段的用户会被静默删。对齐 sixyao/mundane「存档带 snapshot」范式(extractCaseSnapshotText 直读 payload.snapshot)。
+		const chartWrap = this.props.chartObj || this.props.chart || null;
+		const astroChart = chartWrap && chartWrap.chart ? chartWrap.chart : null;
+		const outerData = this.outerDataCache && this.outerDataCache.data
+			? this.outerDataCache.data
+			: buildOuterData(astroChart, this.state.outerCoord);
+		const lrSnapInput = this.state.liurengSnapshotInput || {};
+		const snapshotText = buildSanShiUnitedSnapshotText({
+			fields: flds,
+			options: this.state.options || {},
+			nongli: this.state.nongli,
+			displaySolarTime: this.state.displaySolarTime,
+			liureng: this.state.liureng,
+			dunjia: this.state.dunjia,
+			taiyi: this.state.taiyi,
+			keData: this.state.keData,
+			sanChuan: this.state.sanChuan,
+			lrLayout: this.state.lrLayout,
+			liurengRefBundle: this.state.liurengRefBundle,
+			outerData,
+			guirengType: lrSnapInput.guirengType,
+			liurengChartForLr: lrSnapInput.chartForLr,
+			lrCastOverride: lrSnapInput.lrCastOverride,
+			liurengRunYear: lrSnapInput.runYearRef,
+		});
 			const payload = {
 				module: 'sanshiunited',
+				snapshot: snapshotText || '',
 				options: {
 					...(this.state.options || {}),
 				},
@@ -2457,6 +2987,11 @@ class SanShiUnitedMain extends Component{
 			kongMode: opt.kongMode,
 			yimaMode: opt.yimaMode,
 			shiftPalace: opt.shiftPalace,
+			// 奇门流派/起局补充(对齐独立 DunJiaMain):盘式(转盘/飞盘/混合) + 阴盘报数定局 + 封局 + 置闰天数。
+			school: opt.school !== undefined ? opt.school : '转盘',
+			shuziReportNumber: opt.shuziReportNumber !== undefined ? opt.shuziReportNumber : '',
+			fengJu: !!opt.fengJu,
+			zhirunLeapDays: opt.zhirunLeapDays !== undefined ? opt.zhirunLeapDays : 9,
 			// 三式合一统一按“交接时刻”计算，避免日级近似切换。
 			jieQiType: 1,
 			yearGanZhiType: 2,
@@ -2523,7 +3058,8 @@ class SanShiUnitedMain extends Component{
 		const astroChart = chartWrap && chartWrap.chart ? chartWrap.chart : null;
 		const outerData = this.outerDataCache && this.outerDataCache.data
 			? this.outerDataCache.data
-			: buildOuterData(astroChart);
+			: buildOuterData(astroChart, this.state.outerCoord);
+		const lrSnapInput = this.state.liurengSnapshotInput || {};
 		const snapshotPayload = {
 			fields,
 			options: this.state.options || {},
@@ -2537,6 +3073,10 @@ class SanShiUnitedMain extends Component{
 			lrLayout: this.state.lrLayout,
 			liurengRefBundle: this.state.liurengRefBundle,
 			outerData,
+			guirengType: lrSnapInput.guirengType,
+			liurengChartForLr: lrSnapInput.chartForLr,
+			lrCastOverride: lrSnapInput.lrCastOverride,
+			liurengRunYear: lrSnapInput.runYearRef,
 		};
 		const snapshotText = buildSanShiUnitedSnapshotText(snapshotPayload);
 		if(!snapshotText){
@@ -2619,20 +3159,41 @@ class SanShiUnitedMain extends Component{
 			return false;
 		}
 		const stateOptions = this.state.options || {};
-		const guirengType = overrideOptions && overrideOptions.guireng !== undefined ? overrideOptions.guireng : stateOptions.guireng;
+		// 合并 state + override 为单一真值源(签名/缓存键/各子盘计算同源,避免漂移)。
+		const mergedOptions = {
+			...stateOptions,
+			...(overrideOptions || {}),
+		};
+		const guirengType = mergedOptions.guireng;
 		const qimenOptions = this.getQimenOptions(overrideOptions);
 		const chartWrap = this.props.chartObj || this.props.chart || null;
 		const outerChartKey = getOuterChartKey(chartWrap);
+		// 大六壬流派覆盖(换将/分昼夜/涉害/昼夜阳阴);默认全 default → null(零回归,与原本固定月将一致)。
+		const lrCastOverride = chartWrap && chartWrap.chart ? buildSanshiLiuRengCastOverride({
+			...chartWrap.chart,
+			nongli: nongli,
+		}, mergedOptions) : null;
+		const lrCastKey = lrCastOverride ? [
+			safe(lrCastOverride.yue),
+			`${safe(lrCastOverride.isDiurnal, '')}`,
+			safe(lrCastOverride.yinyangSystem),
+			lrCastOverride.seHaiOpts ? `${safe(lrCastOverride.seHaiOpts.method)}-${safe(lrCastOverride.seHaiOpts.boundary)}-${lrCastOverride.seHaiOpts.shiRuKe ? 1 : 0}` : '',
+		].join('~') : '';
 		const recalcSignature = [
 			getFieldKey(flds),
 			getNongliKey(nongli),
 			getQimenOptionsKey(qimenOptions),
 			`${guirengType}`,
-			`${safe(overrideOptions && overrideOptions.taiyiStyle !== undefined ? overrideOptions.taiyiStyle : stateOptions.taiyiStyle)}`,
-			`${safe(overrideOptions && overrideOptions.taiyiAccum !== undefined ? overrideOptions.taiyiAccum : stateOptions.taiyiAccum)}`,
-			`${safe(overrideOptions && overrideOptions.after23NewDay !== undefined ? overrideOptions.after23NewDay : stateOptions.after23NewDay)}`,
-			`${safe(overrideOptions && overrideOptions.lateZiHourUseNextDay !== undefined ? overrideOptions.lateZiHourUseNextDay : stateOptions.lateZiHourUseNextDay)}`,
-			`${safe(normalizeTimeAlg(overrideOptions && overrideOptions.timeAlg !== undefined ? overrideOptions.timeAlg : stateOptions.timeAlg))}`,
+			`${safe(mergedOptions.taiyiStyle)}`,
+			`${safe(mergedOptions.taiyiAccum)}`,
+			`${safe(mergedOptions.gameTheory)}`,
+			mergedOptions.taiyiSchool ? JSON.stringify(normalizeTaiyiSchool(mergedOptions.taiyiSchool)) : '',
+			lrCastKey,
+			`${safe(mergedOptions.yearShenShaSort)}`,
+			`${safe(mergedOptions.tuWangShuai)}`,
+			`${safe(mergedOptions.after23NewDay)}`,
+			`${safe(mergedOptions.lateZiHourUseNextDay)}`,
+			`${safe(normalizeTimeAlg(mergedOptions.timeAlg))}`,
 			safe(flds && flds.zodiacal && flds.zodiacal.value),
 			safe(flds && flds.hsys && flds.hsys.value),
 			`${safe(extractIsDiurnalFromChartWrap(this.props.chartObj || this.props.chart || null), '')}`,
@@ -2643,7 +3204,20 @@ class SanShiUnitedMain extends Component{
 		}
 		const year = parseInt(flds.date.value.format('YYYY'), 10);
 		const isDiurnal = extractIsDiurnalFromChartWrap(chartWrap);
-		const dunjia = await this.getKinqimenDunJia(
+		// 奇门(getKinqimenDunJia)与太乙(getKintaiyiPan)两后端取盘相互独立(太乙仅吃 flds/nongli/mergedOptions,
+		// 不依赖奇门结果),原为串行 await(网络往返叠加)。改并行:先各自起 promise,再 Promise.all 等齐;
+		// 太乙命中本地缓存则不发请求(promise=已解析的缓存值),仅缓存未命中才真并发。结果/快照 byte-perfect 不变。
+		const taiyiCacheKey = [
+			getFieldKey(flds),
+			getNongliKey(nongli),
+			`${safe(mergedOptions.taiyiStyle)}`,
+			`${safe(mergedOptions.taiyiAccum)}`,
+			`${safe(mergedOptions.sex)}`,
+			`${safe(mergedOptions.gameTheory)}`,
+			mergedOptions.taiyiSchool ? JSON.stringify(normalizeTaiyiSchool(mergedOptions.taiyiSchool)) : '',
+		].join('|');
+		const taiyiCached = this.taiyiCache.get(taiyiCacheKey);
+		const dunjiaPromise = this.getKinqimenDunJia(
 			flds,
 			nongli,
 			qimenOptions,
@@ -2651,6 +3225,21 @@ class SanShiUnitedMain extends Component{
 			isDiurnal,
 			displaySolarTime || this.state.displaySolarTime
 		);
+		const taiyiPromise = taiyiCached
+			? Promise.resolve(taiyiCached)
+			: this.getKintaiyiPan(flds, nongli, mergedOptions);
+		const [dunjia, taiyiResolved] = await Promise.all([dunjiaPromise, taiyiPromise]);
+		// 太乙缓存未命中 → 落缓存(LRU 上限 48);命中则 taiyiResolved===缓存值,无需重写。
+		const taiyi = taiyiResolved;
+		if(!taiyiCached){
+			this.taiyiCache.set(taiyiCacheKey, taiyi);
+			if(this.taiyiCache.size > 48){
+				const firstKey = this.taiyiCache.keys().next().value;
+				if(firstKey){
+					this.taiyiCache.delete(firstKey);
+				}
+			}
+		}
 		const astroChart = chartWrap && chartWrap.chart ? chartWrap.chart : null;
 		const lrNongli = buildLrNongli(nongli, dunjia);
 		const nianMing = safe(lrNongli && lrNongli.runyear, '')
@@ -2664,12 +3253,13 @@ class SanShiUnitedMain extends Component{
 			safe(lrNongli.dayGanZi),
 			safe(lrNongli.time),
 			`${guirengType}`,
+			lrCastKey,
 		].join('|');
 		let lrBundle = this.lrBundleCache[lrCacheKey];
 		if(!lrBundle){
-			const lrLayout = buildLiuRengLayout(chartForLr, guirengType);
+			const lrLayout = buildLiuRengLayout(chartForLr, guirengType, lrCastOverride);
 			const keData = buildKeData(lrLayout, chartForLr);
-			const sanChuan = buildSanChuan(lrLayout, keData.raw, chartForLr);
+			const sanChuan = buildSanChuan(lrLayout, keData.raw, chartForLr, lrCastOverride);
 			lrBundle = {
 				lrLayout,
 				keData,
@@ -2698,39 +3288,28 @@ class SanShiUnitedMain extends Component{
 			},
 		};
 		let liurengRefBundle = null;
+		const runYearRef = lrNongli && lrNongli.runyear ? { year: lrNongli.runyear } : null;
 		try{
-			const runYearRef = lrNongli && lrNongli.runyear ? { year: lrNongli.runyear } : null;
-			liurengRefBundle = buildLiuRengReferenceBundle(liureng, chartForLr, guirengType, runYearRef);
+			liurengRefBundle = buildLiuRengReferenceBundle(liureng, chartForLr, guirengType, runYearRef, lrCastOverride);
 		}catch(e){
 			liurengRefBundle = null;
 		}
-		const mergedOptions = {
-			...stateOptions,
-			...(overrideOptions || {}),
+		// 六壬断卦层快照入参(供 buildSanShiUnitedSnapshotText 复用独立 buildLiuRengSnapshotText);
+		// 随快照各路径(recalc/存档/还原)同源传递,故落 state 让 state 派生的两处 payload 也带得上。
+		const liurengSnapshotInput = {
+			guirengType,
+			chartForLr,
+			lrCastOverride,
+			runYearRef,
 		};
-		const taiyiCacheKey = [
-			getFieldKey(flds),
-			getNongliKey(nongli),
-			`${safe(mergedOptions.taiyiStyle)}`,
-			`${safe(mergedOptions.taiyiAccum)}`,
-			`${safe(mergedOptions.sex)}`,
-		].join('|');
-		let taiyi = this.taiyiCache.get(taiyiCacheKey);
-		if(!taiyi){
-			taiyi = await this.getKintaiyiPan(flds, nongli, mergedOptions);
-			this.taiyiCache.set(taiyiCacheKey, taiyi);
-			if(this.taiyiCache.size > 48){
-				const firstKey = this.taiyiCache.keys().next().value;
-				if(firstKey){
-					this.taiyiCache.delete(firstKey);
-				}
-			}
-		}
+		// 太乙 taiyi 已在 dunjia 前并行取得并落缓存(见上方 Promise.all)。
 		let outerData = this.outerDataCache.data;
-		if(this.outerDataCache.chartKey !== outerChartKey){
-			outerData = buildOuterData(astroChart);
+		const outerCoordKey = this.state.outerCoord || 'ecliptic';
+		if(this.outerDataCache.chartKey !== outerChartKey || this.outerDataCache.coord !== outerCoordKey){
+			outerData = buildOuterData(astroChart, this.state.outerCoord);
 			this.outerDataCache = {
 				chartKey: outerChartKey,
+				coord: outerCoordKey,
 				data: outerData,
 			};
 		}
@@ -2747,6 +3326,10 @@ class SanShiUnitedMain extends Component{
 			sanChuan: lrBundle.sanChuan,
 			lrLayout: lrBundle.lrLayout,
 			outerData,
+			guirengType: liurengSnapshotInput.guirengType,
+			liurengChartForLr: liurengSnapshotInput.chartForLr,
+			lrCastOverride: liurengSnapshotInput.lrCastOverride,
+			liurengRunYear: liurengSnapshotInput.runYearRef,
 		};
 		const snapshotMeta = {
 			date: flds && flds.date ? flds.date.value.format('YYYY-MM-DD') : '',
@@ -2762,6 +3345,7 @@ class SanShiUnitedMain extends Component{
 			dunjia,
 			taiyi,
 			liurengRefBundle,
+			liurengSnapshotInput,
 			lrLayout: lrBundle.lrLayout,
 			keData: lrBundle.keData,
 			sanChuan: lrBundle.sanChuan,
@@ -3106,6 +3690,8 @@ class SanShiUnitedMain extends Component{
 		const branchFont = clamp(Math.round(17 * scale), 9, 32);
 		const starFont = clamp(Math.round(16 * scale), 9, 30);
 		const showMeaning = isMeaningEnabled(this.props.showAstroMeaning);
+		// 七政四余式「虚实」红绿点(八字源:四柱地支定实/四柱旬空推虚);仅 showWeakSolid 开启时算,默认显示。
+		const weakSolidMap = this.state.showWeakSolid ? buildSanshiWeakSolid(this.state.dunjia) : null;
 		return OUTER_RING_LAYOUT.map((item)=>{
 			const houses = outerData.housesByBranch[item.branch] || [];
 			const stars = outerData.starsByBranch[item.branch] || [];
@@ -3171,6 +3757,20 @@ class SanShiUnitedMain extends Component{
 						showMeaning,
 						branchMeaning
 					)}
+						{(()=>{
+							// 虚实红绿点:贴该地支宫格「朝盘心」一侧逐宫定位(WEAK_SOLID_POS);红=虚/绿=实,色同七政四余。
+							const ws = weakSolidMap && weakSolidMap[item.branch];
+							if(!ws || (!ws.weak && !ws.solid)){ return null; }
+							const dotR = clamp(Math.round(4.5 * scale), 4, 8);
+							const dots = [];
+							if(ws.solid){ dots.push({ k: 'solid', c: 'var(--moira-green, #008000)', t: `实${ws.solidPillars.join('')}` }); }
+							if(ws.weak){ dots.push({ k: 'weak', c: 'var(--moira-red, #ff0000)', t: `虚${ws.weakPillars.join('')}` }); }
+							return (
+								<span className={styles.outerWeakSolid} style={WEAK_SOLID_POS[item.branch] || { top: 2, right: 3 }} title={dots.map((d)=>d.t).join(' ')}>
+									{dots.map((d)=>(<i key={d.k} className={styles.outerWeakSolidDot} style={{ width: dotR, height: dotR, background: d.c }} />))}
+								</span>
+							);
+						})()}
 						{starsMeta.length ? (
 							<div
 								className={styles.outerStars}
@@ -3598,10 +4198,12 @@ class SanShiUnitedMain extends Component{
 		const astroChart = chartWrap && chartWrap.chart ? chartWrap.chart : null;
 		const outerChartKey = getOuterChartKey(chartWrap);
 		let outerData = this.outerDataCache.data;
-		if(this.outerDataCache.chartKey !== outerChartKey){
-			outerData = buildOuterData(astroChart);
+		const outerCoordKey = this.state.outerCoord || 'ecliptic';
+		if(this.outerDataCache.chartKey !== outerChartKey || this.outerDataCache.coord !== outerCoordKey){
+			outerData = buildOuterData(astroChart, this.state.outerCoord);
 			this.outerDataCache = {
 				chartKey: outerChartKey,
+				coord: outerCoordKey,
 				data: outerData,
 			};
 		}
@@ -3630,10 +4232,9 @@ class SanShiUnitedMain extends Component{
 
 	renderBottom(boardSize){
 		const pan = this.state.dunjia;
-		const xun = safe(pan && pan.xunShou, '—');
-		const futo = safe(pan && pan.fuTou, '—');
-		const kong = safe(pan && pan.xunkong && pan.xunkong.日空, '—');
-		const shikong = safe(pan && pan.xunkong && pan.xunkong.时空, '—');
+		// 旬字段统一走 computeSanshiXun(与概览/快照单一来源):本旬=日柱旬 / 旬仪=时柱旬首+六仪 /
+		// 旬空=日空 / 时空=时柱旬空。避免 normalizeKinqimenData 把 xunShou/fuTou 覆盖成六仪、及繁简键失配。
+		const { benXun: xun, xunYi: futo, riKong: kong, shiKong: shikong } = computeSanshiXun(pan);
 		const dunType = safe(pan && pan.yinYangDun, '—');
 		const dunJu = pan && pan.juShu !== undefined && pan.juShu !== null ? `${pan.juShu}局` : '—';
 		return (
@@ -3753,7 +4354,166 @@ class SanShiUnitedMain extends Component{
 								))}
 							</Select>
 						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>外圈</span>
+							<Select size="small" value={this.state.outerCoord} onChange={(v)=>this.setState({ outerCoord: v })}>
+								<Option value="ecliptic">黄道</Option>
+								<Option value="equatorial">赤道</Option>
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>虚实</span>
+							<Select size="small" value={this.state.showWeakSolid ? 1 : 0} onChange={(v)=>this.setState({ showWeakSolid: v === 1 })}>
+								<Option value={1}>显示</Option>
+								<Option value={0}>隐藏</Option>
+							</Select>
+						</label>
 					</div>
+
+					{/* 奇门遁甲流派/起局补充(对齐独立·默认零回归):盘式 + 阴盘报数 + 封局 + 置闰天数 */}
+					<div className="horosa-sanshi-field-title" style={{ marginTop: 10 }}>
+						<XQIcon name="qimen" />
+						<span>奇门流派</span>
+					</div>
+					<div className="horosa-sanshi-select-grid">
+						<label className="horosa-sanshi-select-field">
+							<span>盘式</span>
+							<Select size="small" value={opt.school || '转盘'} onChange={(v)=>this.onOptionChange('school', v)}>
+								{SCHOOL_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>起局</span>
+							<Select size="small" value={opt.qijuMethod} disabled={opt.paiPanType !== 3} onChange={(v)=>this.onOptionChange('qijuMethod', v)}>
+								{QIJU_METHOD_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						{opt.qijuMethod === 'shuzi' ? (
+							<label className="horosa-sanshi-select-field" style={{ gridColumn: '1 / -1' }}>
+								<span>报数</span>
+								<input
+									type="text"
+									inputMode="numeric"
+									value={opt.shuziReportNumber || ''}
+									onChange={(e)=>this.onOptionChange('shuziReportNumber', e.target.value)}
+									placeholder="阴盘起局:输入报数(各位求和÷9定局,余0作9)"
+									style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--horosa-border, rgba(255,255,255,0.18))', background: 'transparent', color: 'var(--horosa-text, inherit)' }}
+								/>
+							</label>
+						) : null}
+						<label className="horosa-sanshi-select-field">
+							<span>空亡</span>
+							<Select size="small" value={opt.kongMode} onChange={(v)=>this.onOptionChange('kongMode', v)}>
+								{KONG_MODE_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>驿马</span>
+							<Select size="small" value={opt.yimaMode} onChange={(v)=>this.onOptionChange('yimaMode', v)}>
+								{MA_MODE_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>移星</span>
+							<Select size="small" value={opt.shiftPalace} onChange={(v)=>this.onOptionChange('shiftPalace', v)}>
+								{YIXING_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>封局</span>
+							<Select size="small" value={opt.fengJu ? 1 : 0} onChange={(v)=>this.onOptionChange('fengJu', v === 1)}>
+								{QIMEN_FENGJU_OPTIONS.map((item)=><Option key={`fengju_${item.value}`} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						{opt.qijuMethod === 'zhirun' ? (
+							<label className="horosa-sanshi-select-field">
+								<span>置闰天数</span>
+								<Select size="small" value={opt.zhirunLeapDays || 9} onChange={(v)=>this.onOptionChange('zhirunLeapDays', v)} dropdownMatchSelectWidth={false}>
+									{ZHIRUN_LEAP_OPTIONS.map((item)=><Option key={`zhirun_${item.value}`} value={item.value}>{item.label}</Option>)}
+								</Select>
+							</label>
+						) : null}
+					</div>
+
+					{/* 太乙流派(对齐独立·默认全 default=从盘字节不变):博弈 + 计神/文昌/客算间辰/三基/游神五开关 */}
+					<div className="horosa-sanshi-field-title" style={{ marginTop: 10 }}>
+						<XQIcon name="taiyi" />
+						<span>太乙流派</span>
+					</div>
+					<div className="horosa-sanshi-select-grid">
+						<label className="horosa-sanshi-select-field">
+							<span>博弈</span>
+							<Select size="small" value={opt.gameTheory === 1 ? 1 : 0} onChange={(v)=>this.onOptionChange('gameTheory', v)}>
+								<Option value={0}>关闭</Option>
+								<Option value={1}>开启</Option>
+							</Select>
+						</label>
+						{[['jishen', '计神方向'], ['wenchang', '文昌重留'], ['keJianChen', '客算间辰'], ['sanji', '三基起宫'], ['youshen', '游神方向']].map(([k, label])=>(
+							<label className="horosa-sanshi-select-field" key={`ty-school-${k}`}>
+								<span>{label}</span>
+								<Select size="small" dropdownMatchSelectWidth={false} value={(opt.taiyiSchool || {})[k] || 'default'} onChange={(v)=>this.onOptionChange('taiyiSchool', { ...normalizeTaiyiSchool(opt.taiyiSchool), [k]: v })}>
+									{TAIYI_SCHOOL_OPTIONS[k].map((it)=><Option key={it.value} value={it.value}>{it.label}</Option>)}
+								</Select>
+							</label>
+						))}
+					</div>
+
+					{/* 大六壬流派(对齐独立·默认零回归):换将/分昼夜/涉害取舍·起讫·始入/年神排序/昼夜阳阴/土旺衰 */}
+					<div className="horosa-sanshi-field-title" style={{ marginTop: 10 }}>
+						<XQIcon name="liureng" />
+						<span>六壬流派</span>
+					</div>
+					<div className="horosa-sanshi-select-grid">
+						<label className="horosa-sanshi-select-field">
+							<span>换将</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.yueJiangMethod || 'zhongqi'} onChange={(v)=>this.onOptionChange('yueJiangMethod', v)}>
+								{LR_YUEJIANG_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>分昼夜</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.fenZhouYe || 'chenhun'} onChange={(v)=>this.onOptionChange('fenZhouYe', v)}>
+								{LR_FENZHOUYE_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>涉害取舍</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.seHaiMethod || 'app'} onChange={(v)=>this.onOptionChange('seHaiMethod', v)}>
+								{LR_SEHAI_METHOD_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>涉害起讫</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.seHaiBoundary || 'app'} onChange={(v)=>this.onOptionChange('seHaiBoundary', v)}>
+								{LR_SEHAI_BOUNDARY_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>始入课</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.shiRuKe ? 1 : 0} onChange={(v)=>this.onOptionChange('shiRuKe', v === 1)}>
+								{LR_SHIRUKE_OPTIONS.map((item)=><Option key={`shiruke_${item.value}`} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>年神排序</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.yearShenShaSort || 'sanyuan'} onChange={(v)=>this.onOptionChange('yearShenShaSort', v)}>
+								{LR_YEAR_SHENSHA_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>昼夜阳阴</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.yinyangSystem || 'danmu'} onChange={(v)=>this.onOptionChange('yinyangSystem', v)}>
+								{LR_YINYANG_SYSTEM_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+						<label className="horosa-sanshi-select-field">
+							<span>土旺衰</span>
+							<Select size="small" dropdownMatchSelectWidth={false} value={opt.tuWangShuai || 'siji'} onChange={(v)=>this.onOptionChange('tuWangShuai', v)}>
+								{LR_TUWANG_OPTIONS.map((item)=><Option key={item.value} value={item.value}>{item.label}</Option>)}
+							</Select>
+						</label>
+					</div>
+
 					<div className="horosa-sanshi-action-row">
 						<Button type="primary" onClick={this.clickPlot} loading={this.state.loading} disabled={this.state.loading}>起盘</Button>
 						<Button onClick={this.clickSave}>保存</Button>
@@ -3763,10 +4523,188 @@ class SanShiUnitedMain extends Component{
 		);
 	}
 
+		// 遁甲「用神」子tab(静态显示,跳过求测事项/报数/悬浮等交互):用神定位 + 解孤辰寡宿 + 用神取用速查表。
+		// 与独立遁甲页同源(computeYongShen / computeGuGua),仅去掉交互层。
+		renderSanshiYongShenStatic(pan){
+			const soft = 'var(--horosa-text-soft, #595959)';
+			const muted = 'var(--horosa-muted, #8c8c8c)';
+			const hazardTag = (it)=>{
+				if(!it || !it.palaceNum){ return <Tag color='default' style={{ marginRight: 0 }}>未现</Tag>; }
+				return it.hazards && it.hazards.length ? <Tag color='red' style={{ marginRight: 0 }}>{it.hazards.join('/')}</Tag> : <Tag color='green' style={{ marginRight: 0 }}>平稳</Tag>;
+			};
+			const locLine = (label, it, extra)=>(
+				<div key={`ssu_ys_loc_${label}`} style={{ lineHeight: '24px' }}>
+					<span style={{ fontWeight: 600 }}>{label}</span>
+					{it && it.symbol ? <span style={{ color: soft }}>（{it.symbol}）</span> : null}
+					<span style={{ color: soft }}>：{it && it.palaceNum ? `${it.palaceName}${it.palaceNum}宫·${it.direction}` : '局中未现'}</span>
+					{' '}{hazardTag(it)}
+					{extra ? <span style={{ color: muted }}> {extra}</span> : null}
+				</div>
+			);
+			if(!pan){
+				return <Card size='small'><div style={{ color: muted }}>请先起盘后查看用神分论。</div></Card>;
+			}
+			const ys = computeYongShen(pan, { faceToFace: true });
+			const guGua = computeGuGua(pan);
+			if(!ys){
+				return <Card size='small'><div style={{ color: muted }}>当前盘暂无用神数据。</div></Card>;
+			}
+			const yongShenCard = (
+				<Card size='small' style={{ marginBottom: 8, borderRadius: 8 }}>
+					<div style={{ fontWeight: 600, marginBottom: 6 }}>用神定位</div>
+					<div style={{ color: soft, lineHeight: '22px', marginBottom: 6 }}>{ys.yongShenText}</div>
+					{locLine('日干·内心/实质', ys.dayGan)}
+					{locLine('时干·外在/表象', ys.timeGan)}
+					{ys.ganHe ? locLine('干合·配偶/理想型', ys.ganHe) : null}
+					{locLine('值符·话语权', ys.zhiFu)}
+					{locLine('值使·用武之地', ys.zhiShi)}
+					<div style={{ color: muted, marginTop: 4 }}>六亲：{ys.liuQin.map((r)=>`${r.rel.split('·')[1]}(${r.symbol}${r.palaceNum ? r.palaceName + r.palaceNum + '宫' : '未现'})`).join('　')}</div>
+				</Card>
+			);
+			const guGuaCard = guGua.length ? (
+				<Card size='small' style={{ marginBottom: 8, borderRadius: 8 }}>
+					<div style={{ fontWeight: 600, marginBottom: 6 }}>解孤辰寡宿</div>
+					<div style={{ color: soft, lineHeight: '24px' }}>
+						{guGua.map((g, i)=>(<div key={`ssu_gg_${i}`}>{g.name}（{g.zhi}）：{g.jie}</div>))}
+					</div>
+				</Card>
+			) : null;
+			const yongShenRefCard = (
+				<Card size='small' style={{ borderRadius: 8 }}>
+					<div style={{ fontWeight: 600, color: soft, marginBottom: 4 }}>基本用神</div>
+					{QIMEN_YONGSHEN_BASIC.map((r, i)=>(
+						<div key={`ssu_ysb_${i}`} style={{ lineHeight: '22px' }}><span style={{ fontWeight: 600 }}>{r[0]}</span><span style={{ color: muted }}>：{r[1]}</span></div>
+					))}
+					<div style={{ fontWeight: 600, color: soft, margin: '8px 0 4px' }}>分类取用</div>
+					<table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, lineHeight: '18px' }}>
+						<thead><tr style={{ color: muted }}><th style={{ textAlign: 'left', padding: '2px 4px' }}>所测</th><th style={{ textAlign: 'left', padding: '2px 4px' }}>主用神</th><th style={{ textAlign: 'left', padding: '2px 4px' }}>辅看</th></tr></thead>
+						<tbody>
+							{QIMEN_YONGSHEN_LOOKUP.map((r, i)=>(
+								<tr key={`ssu_ysl_${i}`} style={{ borderTop: '1px solid var(--horosa-border, #f0f0f0)' }}>
+									<td style={{ padding: '2px 4px', fontWeight: 600, whiteSpace: 'nowrap' }}>{r[0]}</td>
+									<td style={{ padding: '2px 4px' }}>{r[1]}</td>
+									<td style={{ padding: '2px 4px', color: muted }}>{r[2]}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+					<div style={{ fontWeight: 600, color: soft, margin: '8px 0 4px' }}>取用生克(断成败)</div>
+					{QIMEN_YONGSHEN_SHENGKE.map((r, i)=>(
+						<div key={`ssu_yss_${i}`} style={{ lineHeight: '22px' }}><span style={{ fontWeight: 600 }}>{r[0]}</span><span style={{ color: muted }}>：{r[1]}</span></div>
+					))}
+					<div style={{ color: muted, fontSize: 12, marginTop: 6 }}>断成败核心:看用神之间(日干vs时干、日干vs用事门)生克——生我合我者成、克我冲我者败,再叠旺衰格局。</div>
+				</Card>
+			);
+			return <div>{yongShenCard}{guGuaCard}{yongShenRefCard}</div>;
+		}
+
+		// 遁甲「化解」子tab(静态显示,跳过求测事项/悬浮等交互):六害总览 + 逐宫化解 + 解局三法 + 八门化气大阵 + 干支形象 + 换局移星。
+		// 与独立遁甲页同源(computeDangers / buildJieHua / computeProtect)。
+		renderSanshiJieHuaStatic(pan){
+			if(!pan){
+				return <Card size='small'><div style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>请先起盘后查看化解。</div></Card>;
+			}
+			const DANGER_DOT = { 击刑: '#cf1322', 入墓: '#8b5e3c', 庚: '#d4380d', 白虎: '#a8071a', 门迫: '#fa8c16', 空亡: '#2f54eb' };
+			const soft = 'var(--horosa-text-soft, #595959)';
+			const muted = 'var(--horosa-muted, #8c8c8c)';
+			const border = 'var(--horosa-border, #f0f0f0)';
+			const dangers = computeDangers(pan);
+			const jieHua = buildJieHua(pan);
+			const protect = computeProtect(pan, { topic: 'shexin' });
+			const badge = (ch, color, size)=>(
+				<span style={{ flex: '0 0 auto', width: size || 22, height: size || 22, borderRadius: '50%', background: `${color}1a`, color, fontWeight: 700, fontSize: 13, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{ch}</span>
+			);
+			return (
+				<div>
+					<Card size='small' style={{ marginBottom: 10, borderRadius: 8 }}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+							<span style={{ fontWeight: 600 }}>六害总览</span>
+							<Tag color={dangers.length ? 'volcano' : 'green'} style={{ marginRight: 0 }}>{dangers.length ? `${dangers.length} 处` : '无六害'}</Tag>
+						</div>
+						<div style={{ color: muted, fontSize: 12, marginBottom: 8 }}>危害递减：刑＞墓＞庚＞虎＞迫＞空；天干＞一切，先解击刑天干。</div>
+						{dangers.length ? dangers.map((d, i)=>(
+							<div key={`ssu_hz_${i}`} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '6px 0', borderTop: i ? `1px solid ${border}` : 'none' }}>
+								{badge(d.oneChar, DANGER_DOT[d.type])}
+								<div style={{ flex: 1, minWidth: 0 }}>
+									<div style={{ lineHeight: '20px' }}><span style={{ color: DANGER_DOT[d.type], fontWeight: 600 }}>{d.type}</span><span style={{ color: soft }}> · {d.palaceName}{d.palaceNum}宫 · {d.direction} · {d.symbol}</span></div>
+									<div style={{ color: muted, fontSize: 12, lineHeight: '18px' }}>{DANGER_BRIEF[d.type] || d.note}</div>
+								</div>
+							</div>
+						)) : <div style={{ color: soft }}>本局四纲八宫未现六害，吉。</div>}
+					</Card>
+					{jieHua.map((c, i)=>{
+						const worst = (c.dangers[0] && c.dangers[0].type) || '';
+						const col = DANGER_DOT[worst] || '#d9d9d9';
+						return (
+							<Card size='small' style={{ marginBottom: 8, borderRadius: 8, borderLeft: `3px solid ${col}` }} key={`ssu_jh_${i}`}>
+								<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+									<span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' }}>
+										{c.dangers.map((d, k)=>(<span key={`ssu_db_${k}`} style={{ display: 'inline-flex' }}>{badge(d.oneChar, DANGER_DOT[d.type])}</span>))}
+										<span style={{ fontWeight: 600, color: col }}>{c.palaceName}{c.palaceNum}宫<span style={{ color: muted, fontWeight: 400, fontSize: 12 }}> · {c.direction} · {c.deg}</span></span>
+									</span>
+									<Tag style={{ marginRight: 0, flex: '0 0 auto' }}>天盘干「{c.tianGan}」</Tag>
+								</div>
+								<div style={{ color: soft, lineHeight: '22px' }}>
+									{c.mie.length ? (
+										<div style={{ marginBottom: 4 }}><span style={{ color: muted }}>① 灭象（先移走）</span>
+											{c.mie.map((m, k)=>(<div key={`ssu_mie_${k}`} style={{ paddingLeft: 20 }}>· {m}</div>))}
+										</div>
+									) : null}
+									{c.placements.length ? (
+										<div style={{ marginBottom: 4 }}><span style={{ color: muted }}>② 布阵（再放上）</span>
+											{c.placements.map((p, k)=>(<div key={`ssu_pl_${k}`} style={{ paddingLeft: 20 }}><span style={{ color: '#2e7d32', fontWeight: 600 }}>{p.where}</span>　{p.text}</div>))}
+										</div>
+									) : null}
+									<div><span style={{ color: muted }}>③ 时机　</span>本宫 {c.benZhi}日 / {c.ben}　｜　对宫 {c.duiZhi}日 / {c.dui}</div>
+									{c.notes.map((n, k)=>(<div key={`ssu_nt_${k}`} style={{ color: muted, fontSize: 12, marginTop: 2 }}>※ {n}</div>))}
+								</div>
+							</Card>
+						);
+					})}
+					<Card size='small' style={{ marginBottom: 8, borderRadius: 8 }}>
+						<div style={{ fontWeight: 600, marginBottom: 6 }}>解局三法（逆天程度递增）</div>
+						<div style={{ color: soft, lineHeight: '22px' }}>
+							{SAN_FA_TEXT.map((f, i)=>(<div key={`ssu_sf_${i}`}><span style={{ fontWeight: 600 }}>{f.name}</span><span style={{ color: muted }}>（{f.scope}）</span>　{f.desc}</div>))}
+						</div>
+					</Card>
+					<Card size='small' style={{ marginBottom: 8, borderRadius: 8 }}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+							<span style={{ fontWeight: 600 }}>八门化气大阵 · 必护天干</span>
+							<Tag color='geekblue' style={{ marginRight: 0 }}>{protect.filter((r)=>r.palaceNum && !r.ok).length} 处需护</Tag>
+						</div>
+						<div style={{ color: muted, fontSize: 12, marginBottom: 6 }}>先离刑墓庚（主），再离虎迫空（次）；天干往高处放、地支往低处放。下列天干勿落六害宫、勿受克。</div>
+						{protect.map((r, i)=>(
+							<div key={`ssu_pr_${i}`} style={{ lineHeight: '22px', padding: '3px 0', borderTop: i ? `1px solid ${border}` : 'none' }}>
+								<span style={{ fontWeight: 600 }}>{r.label}{r.gan ? `「${r.gan}」` : ''}</span>
+								<span style={{ color: soft }}>：{r.palaceNum ? `${r.palaceName}${r.palaceNum}宫·${r.direction}` : '局中未现'}</span>
+								{r.hazards.length ? <Tag color='red' style={{ marginLeft: 6 }}>{r.hazards.join('/')}</Tag> : (r.palaceNum ? <Tag color='green' style={{ marginLeft: 6 }}>平稳</Tag> : null)}
+								<div style={{ color: muted, fontSize: 12, paddingLeft: 2 }}>{r.advice}</div>
+							</div>
+						))}
+						<div style={{ color: muted, fontSize: 12, marginTop: 8, paddingTop: 6, borderTop: `1px solid ${border}` }}>
+							<div style={{ marginBottom: 2 }}>※「生年干」指<strong>局中所有相关人</strong>（本人 / 家人 / 牵涉者）的出生年天干，都不能落刑墓——此处仅按本盘年干示例，其余请按各人属相或八字年干自行加护。</div>
+							{BU_ZHEN_TIPS.map((t, i)=>(<div key={`ssu_bz_${i}`}>· {t}</div>))}
+						</div>
+					</Card>
+					<Card size='small' style={{ marginBottom: 8, borderRadius: 8 }}>
+						<div style={{ fontWeight: 600, marginBottom: 6 }}>干支形象表（造象参考）</div>
+						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 12, rowGap: 2, color: soft, lineHeight: '22px', fontSize: 13 }}>
+							{Object.keys(GAN_XIANG).map((g)=>(<span key={`ssu_gx_${g}`}><span style={{ fontWeight: 600 }}>{g}</span>　{GAN_XIANG[g].color}·{GAN_XIANG[g].material}（{GAN_XIANG[g].branch}{ZHI_ZODIAC[GAN_XIANG[g].branch]}）</span>))}
+						</div>
+					</Card>
+					<Card size='small' style={{ borderRadius: 8 }}>
+						<div style={{ fontWeight: 600, marginBottom: 6 }}>换局 / 移星</div>
+						<div style={{ color: soft, lineHeight: '22px' }}>局太差、改不动时可整盘换局＝顺转宫位（移即催）。转两三个重点宫为宜，勿全转。</div>
+					</Card>
+				</div>
+			);
+		}
+
 		renderRight(){
 			const fields = this.getActiveFields();
 			const pan = this.state.dunjia;
 			const opt = this.state.options || {};
+		const ovXun = computeSanshiXun(pan);
 		const rightPanelTab = this.state.rightPanelTab === 'status' ? 'overview' : this.state.rightPanelTab;
 		const refBundle = this.state.liurengRefBundle || {};
 		const refContext = refBundle.context || {};
@@ -3940,64 +4878,112 @@ class SanShiUnitedMain extends Component{
 						<Card bordered={false} bodyStyle={{ padding: '10px 12px' }}>
 							<div style={{ lineHeight: '26px' }}>
 								<div>局数：{pan ? pan.juText : '—'}</div>
-								<div>旬首：{pan ? pan.xunShou : '—'}</div>
-								<div>旬仪：{pan ? pan.fuTou : '—'}</div>
+								<div>旬首：{pan ? ovXun.xunShou : '—'}</div>
+								<div>旬仪：{pan ? ovXun.xunYi : '—'}</div>
 								<div>值符：{pan ? pan.zhiFu : '—'}</div>
 								<div>值使：{pan ? pan.zhiShi : '—'}</div>
-								<div>本旬：{pan ? pan.xunShou : '—'}</div>
-								<div>旬空：{pan && pan.xunkong ? pan.xunkong.日空 : '—'}</div>
-								<div>时空：{pan && pan.xunkong ? pan.xunkong.时空 : '—'}</div>
+								<div>本旬：{pan ? ovXun.benXun : '—'}</div>
+								<div>旬空：{pan ? ovXun.riKong : '—'}</div>
+								<div>时空：{pan ? ovXun.shiKong : '—'}</div>
 								<div>{pan && pan.yiMa ? pan.yiMa.text : '日马：无'}</div>
 								<div>阴阳遁：{pan ? pan.yinYangDun : '—'}</div>
 								<div>时间算法：{getTimeAlgLabel(opt.timeAlg)}</div>
 								<div>换日：{opt.after23NewDay === 1 ? '23点算第二天' : '24点算第二天'}</div>
 								<div>月将：{this.state.lrLayout ? this.state.lrLayout.yue : '—'}</div>
 							</div>
+							{pan && pan.shenSha && pan.shenSha.allItems && pan.shenSha.allItems.length ? (
+								<>
+									<Divider style={{ margin: '10px 0 8px' }} />
+									<div style={{ fontWeight: 600, marginBottom: 6, color: 'var(--horosa-text, #262626)' }}>神煞</div>
+									<div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', columnGap: 10, rowGap: 6, lineHeight: '22px' }}>
+										{pan.shenSha.allItems.map((item)=>(<div key={`ss_item_${item.name}`} style={{ fontSize: 12 }}><span style={{ color: 'var(--horosa-text, #262626)' }}>{item.name}</span><span style={{ color: 'var(--horosa-muted, #8c8c8c)', marginLeft: 2 }}>{item.value}</span></div>))}
+									</div>
+								</>
+							) : null}
 						</Card>
 					</TabPane>
 					<TabPane tab="太乙" key="taiyi">
 						<Card bordered={false} bodyStyle={{ padding: '10px 12px' }}>
 							<div style={{ lineHeight: '24px' }}>
-								{this.state.taiyi ? (
-									<>
-										<div>盘式：{this.state.taiyi.options ? this.state.taiyi.options.styleLabel : '—'}</div>
-										<div>积年法：{this.state.taiyi.options ? this.state.taiyi.options.accumLabel : '—'}</div>
-										<div>局式：{this.state.taiyi.kook ? this.state.taiyi.kook.text : '—'}</div>
-										<div>积数：{this.state.taiyi.accNum}</div>
-										<div>太乙：{this.state.taiyi.taiyiPalace}宫（数{this.state.taiyi.taiyiNum}）</div>
-										<div>文昌：{this.state.taiyi.skyeyes} 始击：{this.state.taiyi.sf}</div>
-										<div>太岁：{this.state.taiyi.taishui} 合神：{this.state.taiyi.hegod} 计神：{this.state.taiyi.jigod}</div>
-										<div>定目：{this.state.taiyi.se || '—'}</div>
-										<div>主算：{this.state.taiyi.homeCal} 客算：{this.state.taiyi.awayCal} 定算：{this.state.taiyi.setCal}</div>
-										<Divider style={{ margin: '8px 0' }} />
-										<div>君基：{this.state.taiyi.kingbase} 臣基：{this.state.taiyi.officerbase} 民基：{this.state.taiyi.pplbase}</div>
-										<div>四神：{this.state.taiyi.fgd} 天乙：{this.state.taiyi.skyyi} 地乙：{this.state.taiyi.earthyi}</div>
-										<div>直符：{this.state.taiyi.zhifu} 飞符：{this.state.taiyi.flyfu}</div>
-										<div>五福：{this.state.taiyi.wufuPalace} 帝符：{this.state.taiyi.kingfu} 太尊：{this.state.taiyi.taijun}</div>
-										<div>飞鸟：{this.state.taiyi.flybird} 三风：{this.state.taiyi.threewindPalace} 五风：{this.state.taiyi.fivewindPalace} 八风：{this.state.taiyi.eightwindPalace}</div>
-										<div>大游：{this.state.taiyi.bigyoPalace} 小游：{this.state.taiyi.smyoPalace}</div>
-										<Divider style={{ margin: '8px 0' }} />
-										<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 8, rowGap: 4 }}>
-											{this.state.taiyi.palace16 && this.state.taiyi.palace16.map((item)=>(
-												<div key={`ty_p16_${item.palace}`}>
-													<span style={{ color: 'var(--horosa-text, #262626)' }}>{item.palace}-</span>
-													<span style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>{item.items && item.items.length ? item.items.join('、') : '—'}</span>
-												</div>
-											))}
-										</div>
-									</>
-								) : (
+								{this.state.taiyi ? (()=>{
+									// 太乙数理/格局/胜负/分野/诸神之算 纯派生(据 kintaiyi pan,零碰后端 golden;与独立 TaiYiMain 同款 compute*)。
+									const tpan = this.state.taiyi;
+									const shuli = computeTaiyiShuli(tpan);
+									const geju = computeGeju(tpan);
+									const victory = computeVictory(tpan, geju);
+									const fenye = computeFenye(tpan);
+									const shenSuan = computeShenSuan(tpan);
+									const taisuiAlias = computeTaisuiAlias(tpan);
+									const doorJx = activeDoorJixiong(tpan);
+									const ehui = computeEhui(tpan);
+									const limitYun = computeLimitYun(tpan);
+									const sanyuan = computeSanyuan(tpan);
+									const calTags = (tags)=>(tags || []).map((t, i)=>{
+										const tone = shuliTone(t);
+										const color = tone === 'bad' ? 'var(--horosa-danger, #c0563a)' : tone === 'good' ? 'var(--horosa-accent, #d7ad69)' : 'var(--horosa-muted, #8c8c8c)';
+										return <span key={i} style={{ display: 'inline-block', fontSize: 11, lineHeight: 1.5, padding: '0 5px', marginLeft: 4, borderRadius: 7, border: `1px solid ${color}`, color }}>{t}</span>;
+									});
+									return (
+									<Tabs
+										activeKey={this.state.taiyiSubTab}
+										onChange={(key)=>this.setState({ taiyiSubTab: key })}
+										destroyInactiveTabPane
+										animated={false}
+										className="horosa-sanshi-liureng-tabs"
+									>
+										<TabPane tab="概览" key="overview">
+											<div style={{ lineHeight: '24px', paddingRight: 4 }}>
+												<div>盘式：{tpan.options ? tpan.options.styleLabel : '—'}</div>
+												<div>积年法：{tpan.options ? tpan.options.accumLabel : '—'}</div>
+												<div>流派：{tpan._schoolNote ? (<span style={{ color: 'var(--horosa-astro-blue, #7fa8d8)' }} title="左栏「太乙流派」非默认;被覆盖神煞与主客算据古法重算">{tpan._schoolNote}</span>) : '默认(从盘)'}</div>
+												<div>博弈：{tpan.options ? tpan.options.gameTheoryLabel : '—'}</div>
+												<div>局式：{tpan.kook ? tpan.kook.text : '—'}</div>
+												<div>积数：{tpan.accNum}{sanyuan ? `（${sanyuan}）` : ''}</div>
+												<div>太乙：{tpan.taiyiPalace}宫（数{tpan.taiyiNum}）</div>
+												<div>文昌：{tpan.skyeyes} 始击：{tpan.sf}</div>
+												<div>太岁：{tpan.taishui}{taisuiAlias ? `（${taisuiAlias}）` : ''} 合神：{tpan.hegod} 计神：{tpan.jigod}</div>
+												<div>定目：{tpan.se || '—'}</div>
+												<div>主算：{tpan.homeCal}{calTags(shuli && shuli.home)} 客算：{tpan.awayCal}{calTags(shuli && shuli.away)} 定算：{tpan.setCal}{calTags(shuli && shuli.set)}</div>
+												<Divider style={{ margin: '8px 0' }} />
+												<div>君基：{this.state.taiyi.kingbase} 臣基：{this.state.taiyi.officerbase} 民基：{this.state.taiyi.pplbase}</div>
+												<div>四神：{this.state.taiyi.fgd} 天乙：{this.state.taiyi.skyyi} 地乙：{this.state.taiyi.earthyi}</div>
+												<div>直符：{this.state.taiyi.zhifu} 飞符：{this.state.taiyi.flyfu}</div>
+												<div>五福：{this.state.taiyi.wufuPalace} 帝符：{this.state.taiyi.kingfu} 太尊：{this.state.taiyi.taijun}</div>
+												<div>飞鸟：{this.state.taiyi.flybird} 三风：{this.state.taiyi.threewindPalace} 五风：{this.state.taiyi.fivewindPalace} 八风：{this.state.taiyi.eightwindPalace}</div>
+												<div>大游：{this.state.taiyi.bigyoPalace} 小游：{this.state.taiyi.smyoPalace}</div>
+											</div>
+										</TabPane>
+										<TabPane tab="十六宫" key="palace16">
+											<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 8, rowGap: 4, paddingRight: 4 }}>
+												{this.state.taiyi.palace16 && this.state.taiyi.palace16.map((item)=>(
+													<div key={`ty_p16_${item.palace}`}>
+														<span style={{ color: 'var(--horosa-text, #262626)' }}>{item.palace}-</span>
+														<span style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>{item.items && item.items.length ? item.items.join('、') : '—'}</span>
+													</div>
+												))}
+											</div>
+										</TabPane>
+										<TabPane tab="八门" key="bamen">
+											<div style={{ lineHeight: '24px', paddingRight: 4 }}>
+												<div>值使门：{doorJx ? `${doorJx.door}门·${doorJx.jixiong}` : '—'}</div>
+												<div>厄会：{ehui.length ? (<span style={{ color: 'var(--horosa-danger, #c0563a)' }}>{ehui.join('、')}</span>) : '无'}</div>
+											</div>
+										</TabPane>
+										<TabPane tab="断法" key="duanfa">
+											<div style={{ lineHeight: '24px', paddingRight: 4 }}>
+												<div>胜负：{victory ? (<span style={{ fontWeight: 640, color: victory.side === '主胜' ? 'var(--horosa-accent, #d7ad69)' : victory.side === '客胜' ? 'var(--horosa-danger, #c0563a)' : 'var(--horosa-muted, #8c8c8c)' }} title={(victory.reasons || []).join('\n')}>{victory.side}</span>) : '—'}</div>
+												<div>格局：{geju.length ? geju.map((g, i)=>(<span key={i} title={g.text} style={{ display: 'inline-block', marginRight: 5, marginBottom: 2, padding: '0 6px', borderRadius: 7, fontSize: 11, lineHeight: 1.6, border: '1px solid var(--horosa-danger, #c0563a)', color: 'var(--horosa-danger, #c0563a)' }}>{g.name}</span>)) : '无显著掩迫囚格对'}</div>
+												<div>数理：主算{calTags(shuli && shuli.home)} 客算{calTags(shuli && shuli.away)} 定算{calTags(shuli && shuli.set)}</div>
+												<div>分野：{fenye && fenye.taiyi ? `太乙临${fenye.taiyi.gong}${fenye.taiyi.gua}·${fenye.taiyi.zhou}(${fenye.taiyi.men}·${fenye.taiyi.qi})·${fenye.taiyi.omen}${fenye.shiji ? `；始击临${fenye.shiji.gong}${fenye.shiji.gua}·${fenye.shiji.zhou}` : ''}` : '—'}</div>
+												<div>诸神之算：{shenSuan ? Object.keys(shenSuan).map((k, i)=>(shenSuan[k] ? (<span key={i} title={(shenSuan[k].tags || []).join('、')} style={{ marginRight: 8 }}>{k}<strong style={{ color: 'var(--horosa-accent, #d7ad69)' }}>{shenSuan[k].value}</strong></span>) : null)) : '—'}</div>
+												<div>限运：{limitYun ? `大限太乙临${limitYun.daxian.at}(${limitYun.daxian.span})·小限文昌临${limitYun.xiaoxian.at}(${limitYun.xiaoxian.span})` : '—'}</div>
+											</div>
+										</TabPane>
+									</Tabs>
+									);
+								})() : (
 									<div>暂无太乙数据</div>
 								)}
-							</div>
-						</Card>
-					</TabPane>
-					<TabPane tab="神煞" key="shensha">
-						<Card bordered={false} bodyStyle={{ padding: '10px 12px' }}>
-							<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 14, rowGap: 6, lineHeight: '24px' }}>
-								{pan && pan.shenSha && pan.shenSha.allItems && pan.shenSha.allItems.length
-									? pan.shenSha.allItems.map((item)=>(<div key={`ss_item_${item.name}`}><span style={{ color: 'var(--horosa-text, #262626)' }}>{item.name}-</span><span style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>{item.value}</span></div>))
-									: <div>暂无神煞</div>}
 							</div>
 						</Card>
 					</TabPane>
@@ -4055,6 +5041,28 @@ class SanShiUnitedMain extends Component{
 										)}
 									</div>
 								</TabPane>
+								<TabPane tab="毕法" key="bifa">
+									<div style={{ paddingRight: 4 }}>
+										<div style={{ fontWeight: 600, margin: '2px 0 6px' }}>已命中</div>
+										{(()=>{ const hits = matchBiFa(refContext); return hits.length ? hits.map((item)=>(
+											<Card key={`ssu_bf_hit_${item.no}`} size='small' style={{ marginBottom: 8 }}>
+												<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+													<span style={{ fontWeight: 600 }}>{`${item.no}. ${item.name}`}</span>
+													<Tag color='volcano'>毕法</Tag>
+												</div>
+												<div style={{ color: 'var(--horosa-text-soft, #595959)', lineHeight: '22px' }}>{item.explain}</div>
+												{item.evidence && item.evidence.length ? (<div style={{ color: 'var(--horosa-muted, #8c8c8c)', fontSize: 12, marginTop: 4 }}>依据：{item.evidence.join('；')}</div>) : null}
+											</Card>
+										)) : (<Card size='small'><div style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>本盘暂未机械命中可判定之毕法（仅高置信条目自动命中）。</div></Card>); })()}
+										<div style={{ fontWeight: 600, margin: '12px 0 6px' }}>{`全部毕法（${BIFA_LIST.length} 条）`}</div>
+										{BIFA_LIST.map((item)=>(
+											<div key={`ssu_bf_${item.no}`} style={{ padding: '6px 0', borderBottom: '1px solid var(--horosa-border, rgba(255,255,255,0.06))' }}>
+												<div style={{ fontWeight: 600 }}>{`${item.no}. ${item.name}`}</div>
+												<div style={{ color: 'var(--horosa-text-soft, #595959)', lineHeight: '20px', fontSize: 13 }}>{item.explain}</div>
+											</div>
+										))}
+									</div>
+								</TabPane>
 								<TabPane tab="参考" key="reference">
 									<div style={{ paddingRight: 4 }}>
 										{xiaojuReferenceItems.length ? xiaojuReferenceItems.map((item)=>(
@@ -4097,11 +5105,42 @@ class SanShiUnitedMain extends Component{
 										)}
 									</div>
 								</TabPane>
+								<TabPane tab="七政" key="qizheng">
+									<div style={{ paddingRight: 4 }}>
+										{(()=>{ const cw = this.props.chartObj || this.props.chart; const ac = cw && cw.chart ? cw.chart : cw; const qz = buildQiZhengItems(ac); return qz && qz.length ? (
+											<Card size='small'>
+												<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))', gap: 8 }}>
+													{qz.map((item)=>{
+														const wxColor = QIZHENG_WUXING_COLOR[item.wx] || 'var(--horosa-text, #d8d2c7)';
+														const pColor = QIZHENG_PLANET_COLOR[item.name] || 'var(--horosa-text, #d8d2c7)';
+														return (
+															<div key={`ssu_qz_${item.key}`} style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, padding: '9px 4px 7px', borderRadius: 10, background: item.isYue ? 'linear-gradient(180deg, rgba(212,160,23,0.18), rgba(212,160,23,0.04))' : 'var(--horosa-panel-soft, rgba(255,255,255,0.035))', border: item.isYue ? '1px solid var(--horosa-accent, #d4a017)' : '1px solid var(--horosa-border, rgba(255,255,255,0.08))' }}>
+																{item.isYue ? (<span style={{ position: 'absolute', top: -7, right: -5, fontSize: 10, lineHeight: '15px', padding: '0 5px', borderRadius: 7, background: 'var(--horosa-accent, #d4a017)', color: '#1a1206', fontWeight: 700, whiteSpace: 'nowrap' }}>月将</span>) : null}
+																<span style={{ fontSize: 12, fontWeight: 700, color: pColor, letterSpacing: 1 }}>{item.name}{item.retro ? <span style={{ color: '#e2574c', marginInlineStart: 2, fontWeight: 800 }}>℞</span> : null}</span>
+																<span style={{ fontSize: 21, fontWeight: 800, color: wxColor, lineHeight: '26px' }}>{item.branch || '—'}</span>
+																<span style={{ fontSize: 11, color: 'var(--horosa-muted, #8c8c8c)' }}>{item.wx || ''}{item.deg != null ? ` ${item.deg.toFixed(0)}°` : ''}</span>
+															</div>
+														);
+													})}
+												</div>
+												<div style={{ color: 'var(--horosa-muted, #8c8c8c)', fontSize: 12, marginTop: 10, lineHeight: '18px' }}>七政所临之宫，色按五行。<span style={{ color: '#e2574c', fontWeight: 700 }}>℞</span> 为逆行；<span style={{ color: 'var(--horosa-accent, #d4a017)', fontWeight: 700 }}>月将</span>即太阳过宫之神。</div>
+											</Card>
+										) : (<Card size='small'><div style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>当前盘暂无七政数据（需含日月五星之星历）。</div></Card>); })()}
+									</div>
+								</TabPane>
 							</Tabs>
 						</Card>
 					</TabPane>
-					<TabPane tab="八宫" key="bagong">
+					<TabPane tab="遁甲" key="bagong">
 						<Card bordered={false} bodyStyle={{ padding: '10px 12px' }}>
+							<Tabs
+								activeKey={this.state.bagongSubTab}
+								onChange={(key)=>this.setState({ bagongSubTab: key })}
+								destroyInactiveTabPane
+								animated={false}
+								className="horosa-sanshi-liureng-tabs"
+							>
+								<TabPane tab="八宫" key="bagong">
 							<div style={{ paddingRight: 4 }}>
 								<div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
 									{BAGONG_PALACE_ORDER.map((num)=>(
@@ -4183,7 +5222,22 @@ class SanShiUnitedMain extends Component{
 									<Card size='small'><div style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>请先起盘后查看八宫信息。</div></Card>
 								)}
 							</div>
+								</TabPane>
+								<TabPane tab="用神" key="yongshen">
+									<div style={{ paddingRight: 4 }}>
+										{this.renderSanshiYongShenStatic(pan)}
+									</div>
+								</TabPane>
+								<TabPane tab="化解" key="jiehua">
+									<div style={{ paddingRight: 4 }}>
+										{this.renderSanshiJieHuaStatic(pan)}
+									</div>
+								</TabPane>
+							</Tabs>
 						</Card>
+					</TabPane>
+					<TabPane tab="紫微四化" key="ziweisihua">
+						<SanShiZiWeiSihua fields={this.getActiveFields()} />
 					</TabPane>
 				</Tabs>
 			</div>

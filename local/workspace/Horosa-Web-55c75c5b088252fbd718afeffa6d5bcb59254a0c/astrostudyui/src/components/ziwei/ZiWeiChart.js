@@ -4,7 +4,6 @@ import {randomStr, setupFloatingTooltip} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import { chartDrawGuardEnabled } from '../../utils/perfFlags';
 import ZWChart from './ZWChart';
-import DateTime from '../comp/DateTime';
 
 class ZiWeiChart extends Component{
 	constructor(props) {
@@ -66,30 +65,29 @@ class ZiWeiChart extends Component{
 			return false;
 		}
 
-		if(svgdom.clientWidth > 0 && svgdom.clientHeight > 0){
-			this.sizeRetryCount = 0;
-			return true;
-		}
-
+		// 紫微盘占满中间栏:按 chart-stage 实际宽高把 viewport+svg 撑满(非正方,竖向拉高填满,不超出边界)。
+		// 用 JS 显式定尺寸(覆写 CSS)——flex 主轴上 width:100% 会塌成 svg 固有 300,故不靠纯 CSS。
 		const viewport = svgdom.parentElement;
-		const panel = viewport ? viewport.parentElement : null;
+		const panel = viewport ? viewport.parentElement : null; // .horosa-chart-stage
 		const source = panel || viewport;
 		if(source === undefined || source === null || typeof source.getBoundingClientRect !== 'function'){
-			return false;
+			return svgdom.clientWidth > 0 && svgdom.clientHeight > 0;
 		}
 
 		const rect = source.getBoundingClientRect();
-		const size = Math.floor(Math.min(rect.width, rect.height) - 12);
-		if(size <= 0){
-			return false;
+		const pad = 14; // 留出 stage 内边距,避免压边/触发滚动(不超出上下边界)
+		const w = Math.floor(rect.width - pad);
+		const h = Math.floor(rect.height - pad);
+		if(w <= 0 || h <= 0){
+			return svgdom.clientWidth > 0 && svgdom.clientHeight > 0;
 		}
 
 		if(viewport){
-			viewport.style.width = size + 'px';
-			viewport.style.height = size + 'px';
+			viewport.style.width = w + 'px';
+			viewport.style.height = h + 'px';
 		}
-		svgdom.style.width = size + 'px';
-		svgdom.style.height = size + 'px';
+		svgdom.style.width = w + 'px';
+		svgdom.style.height = h + 'px';
 		this.sizeRetryCount = 0;
 		return true;
 	}
@@ -114,25 +112,16 @@ class ZiWeiChart extends Component{
 		this.zwchart.onCenterInfoClick = this.props.onCenterInfoClick;
 		this.zwchart.chart = chartobj;
 		this.zwchart.kinastroBorrowed = !!chartobj.kinastroBorrowed;
-		if(this.props.dirIndex !== undefined && this.props.dirIndex !== null){
-			this.zwchart.dirHouseIndex = this.props.dirIndex;
-		}else{
-			let now = new DateTime();
-			let y = now.format('YYYY');
-			let year = parseInt(y);
-			let birth = parseInt(chartobj.birth.substr(0,4));
-			let age = year - birth;
-			for(let i = 0; i<12; i++){
-				let house = chartobj.houses[i];
-				if(house.direction[0]<= age && age<=house.direction[1]){
-					this.zwchart.dirHouseIndex = i;
-					break;
-				}
-			}
-		}
+		// dirIndex 现由 ZiWeiMain 的 luckSel 单一真值源派生：无大限选中=null=不显「运X」(经典 natal 盘)。
+		this.zwchart.dirHouseIndex = (this.props.dirIndex !== undefined && this.props.dirIndex !== null)
+			? this.props.dirIndex : null;
 
 		this.zwchart.luckMingIndex = (this.props.luckMingIndex !== undefined && this.props.luckMingIndex !== null)
 			? this.props.luckMingIndex : null;
+		// 运限四化滑窗层 + 自化开关 + 长生左侧标签层（需求3/5）：随 luckSel 派生，draw 时各宫消费。
+		this.zwchart.luckSihuaLayers = this.props.luckSihuaLayers || null;
+		this.zwchart.luckShowZihua = this.props.luckShowZihua !== false; // 默认 true（无运限=本命四化+自化）
+		this.zwchart.luckLabelLayers = this.props.luckLabelLayers || null;
 
 		// 重绘签名守卫(流畅度):cDU 无条件 scheduleDrawChart,父组件无关 setState(tips/输入区)
 		// 也会穿透到这里整树重建(ZWChart.draw 内 svg.html('') 全清空)。签名取「draw 实际消费的
@@ -148,6 +137,8 @@ class ZiWeiChart extends Component{
 				rules: this.props.rules,
 				dirHouseIndex: this.zwchart.dirHouseIndex,
 				luckMingIndex: this.zwchart.luckMingIndex,
+				luckKey: this.props.luckKey, // 运限选择稳定签名（派生数组每次新引用，故用此 key 比较，见 ZiWeiMain.buildLuckRender）
+				appearance: (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.getAttribute('data-horosa-appearance') : '', // 主题指纹：切明暗必重绘(盘底烘焙色随之更新)
 				kinastroBorrowed: this.zwchart.kinastroBorrowed,
 				onCenterInfoClick: this.props.onCenterInfoClick,
 				w: svgdom ? svgdom.clientWidth : 0,
@@ -160,6 +151,8 @@ class ZiWeiChart extends Component{
 				&& last.rules === sig.rules
 				&& last.dirHouseIndex === sig.dirHouseIndex
 				&& last.luckMingIndex === sig.luckMingIndex
+				&& last.luckKey === sig.luckKey
+				&& last.appearance === sig.appearance
 				&& last.kinastroBorrowed === sig.kinastroBorrowed
 				&& last.onCenterInfoClick === sig.onCenterInfoClick
 				&& last.w === sig.w
@@ -203,6 +196,12 @@ class ZiWeiChart extends Component{
 				this.resizeObserver.observe(svgdom.parentElement);
 			}
 		}
+		// 主题(明暗)切换只改 <html data-horosa-appearance>；盘底等烘焙色不重绘则停在旧主题(切明暗紫微盘不变·很丑)。
+		// 挂 observer 主动重绘(重绘签名已含 appearance，故确实重画)。仿 AstroChart 同款修法。
+		if(typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.documentElement){
+			this._appearanceObserver = new MutationObserver(()=>{ this.scheduleDrawChart(); });
+			this._appearanceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-horosa-appearance'] });
+		}
 		this.scheduleDrawChart();
 	}
 
@@ -220,6 +219,10 @@ class ZiWeiChart extends Component{
 			this.resizeObserver.disconnect();
 			this.resizeObserver = null;
 		}
+		if(this._appearanceObserver){
+			this._appearanceObserver.disconnect();
+			this._appearanceObserver = null;
+		}
 		d3.select('#' + this.state.tooltipId).remove();
 	}
 
@@ -227,7 +230,7 @@ class ZiWeiChart extends Component{
 		let chartstyle = {
 			width: this.props.width ? this.props.width : '100%',
 			height: this.props.height ? this.props.height : '100%',
-			backgroundColor: AstroConst.AstroColor.ChartBackgroud,
+			backgroundColor: 'var(--horosa-ziwei-chart-bg, #f6f1e7)', // 盘底随主题(原 ChartBackgroud=0 恒黑不跟明暗)
 		};
 
 		if(this.props.style){

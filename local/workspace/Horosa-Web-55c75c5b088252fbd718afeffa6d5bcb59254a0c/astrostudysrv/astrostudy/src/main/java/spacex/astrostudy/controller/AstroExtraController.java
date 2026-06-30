@@ -19,7 +19,8 @@ public class AstroExtraController {
 		"simpleAsp", "predictive", "tradition", "zodiacal", "fixedStarOrb", "startDate",
 		"endDate", "startTime", "endTime", "includeTransits", "planets", "natalPoints",
 		"aspects", "targetDate", "targetTime", "datetime", "orb", "startYear", "endYear", "count",
-		"harmonic", "inner", "outer", "relative", "altitude", "body", "p1", "p2", "aspect", "eclipseKind"
+		"harmonic", "inner", "outer", "relative", "altitude", "body", "p1", "p2", "aspect", "eclipseKind",
+		"minorVariant", "relocLat", "relocLon", "termsVariant", "voidClassical"
 	};
 
 	private Map<String, Object> getBaseParams(){
@@ -70,6 +71,16 @@ public class AstroExtraController {
 		return params;
 	}
 
+	private Map<String, Object> getBarbaultParams(){
+		Map<String, Object> params = new HashMap<String, Object>();
+		params.put("startYear", TransData.getValueAsInt("startYear", 1900));
+		params.put("endYear", TransData.getValueAsInt("endYear", 2050));
+		if(TransData.containsParam("stepMonths")) { params.put("stepMonths", TransData.get("stepMonths")); }
+		if(TransData.containsParam("planets")) { params.put("planets", TransData.get("planets")); }
+		if(TransData.containsParam("center")) { params.put("center", TransData.get("center")); }
+		return params;
+	}
+
 	private Map<String, Object> getRelativeParams(){
 		Map<String, Object> params = new HashMap<String, Object>();
 		if(!TransData.containsParam("inner")) {
@@ -95,6 +106,12 @@ public class AstroExtraController {
 	@RequestMapping("/analysis")
 	public void analysis(){
 		TransData.set(AstroHelper.getAstroExtraAnalysis(getBaseParams()));
+	}
+
+	@ResponseBody
+	@RequestMapping("/prenatal_syzygy")
+	public void prenatalSyzygy(){
+		TransData.set(AstroHelper.getAstroExtraPrenatalSyzygy(getBaseParams()));
 	}
 
 	@ResponseBody
@@ -134,6 +151,12 @@ public class AstroExtraController {
 	}
 
 	@ResponseBody
+	@RequestMapping("/relocation")
+	public void relocation(){
+		TransData.set(AstroHelper.getAstroExtraRelocation(getBaseParams()));
+	}
+
+	@ResponseBody
 	@RequestMapping("/greatconj")
 	public void greatconj(){
 		TransData.set(AstroHelper.getAstroExtraGreatConj(getGreatConjParams()));
@@ -143,6 +166,12 @@ public class AstroExtraController {
 	@RequestMapping("/planetcycles")
 	public void planetcycles(){
 		TransData.set(AstroHelper.getAstroExtraPlanetCycles(getPlanetCyclesParams()));
+	}
+
+	@ResponseBody
+	@RequestMapping("/barbault")
+	public void barbault(){
+		TransData.set(AstroHelper.getAstroExtraBarbault(getBarbaultParams()));
 	}
 
 	@ResponseBody

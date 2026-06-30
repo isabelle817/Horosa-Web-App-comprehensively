@@ -268,7 +268,10 @@ export async function requestAIAnalysisChatStream(values, handlers = {}){
 	const hardTimer = setTimeout(()=>{ hardTimedOut = true; try{ reader.cancel(); }catch(_){} }, MAX_STREAM_MS);
 	const clearHard = ()=>{ try{ clearTimeout(hardTimer); }catch(_){} };
 	const parser = createSseParser((event)=>{
-		if(event && event.type === 'delta'){ armWatchdog(); } // 仅内容 token 续命空闲看门狗(心跳/usage 不算)
+		// 内容 token(delta)与思维链 token(reasoning)都算「真有产出」→ 续命空闲看门狗(心跳/usage 不算)。
+		// ⚠️ reasoning 必须续命:推理模型(o系/R1/deepseek-r1)可先纯思考 >90s 再出正文,
+		//    若只认 delta,长思考期看门狗会在 STALL_MS 误杀流(报「长时间无新内容」),正是思考档要支持的场景。
+		if(event && (event.type === 'delta' || event.type === 'reasoning')){ armWatchdog(); }
 		if(handlers.onEvent){
 			handlers.onEvent(event);
 		}

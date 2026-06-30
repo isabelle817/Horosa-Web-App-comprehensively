@@ -96,6 +96,7 @@ const VALID_DIRECTION_SUB_TABS = new Set([
 	'returntimeline',
 	'distributions',
 	'agepoint',
+	'prenatalsyzygy',
 ]);
 
 export function normalizePrimaryDirectionSubTabKey(key){

@@ -365,8 +365,11 @@ class HuangJiMain extends Component{
 			objectGua: opt.objectGua,
 			direction: opt.direction,
 		};
+		// 自更新路径(起心易 / 心易选项实时重算)加序号守卫:连点/快速改选项时,只让最后一次结果落地,避免乱序覆盖。
+		// updateState=false 的调用来自 fetchPan(由其自身 reqSeq 统筹),不参与本守卫。
+		const seq = updateState ? (this.xinyiSeq = (this.xinyiSeq || 0) + 1) : null;
 		const xinyi = await postWangJi('xinyi', payload);
-		if(updateState && !this.unmounted){
+		if(updateState && !this.unmounted && seq === this.xinyiSeq){
 			this.setState({ xinyi }, ()=>{
 				const pan = this.state.pan;
 				saveModuleAISnapshotLazy('huangji', ()=>buildSnapshotText(pan, xinyi));
@@ -431,7 +434,14 @@ class HuangJiMain extends Component{
 			...this.state.xinyiOptions,
 			[key]: value,
 		};
-		this.setState({ xinyiOptions });
+		this.setState({ xinyiOptions }, ()=>{
+			// 心易选项(起卦法/卦数/物象/方位/笔画)改完即重算右栏「心易」,与历史年/经典等主盘选项的实时重算一致——
+			// 此前只写 state 不重算,切起卦法/改卦数后右栏纹丝不动(需手点「起心易」才生效)= 死选项。
+			// 仅在已有盘(fields 有效)时自动重算;「起心易」按钮保留,作显式触发无妨。fetchXinyi 内有序号守卫防乱序。
+			if(this.state.pan){
+				Promise.resolve(this.fetchXinyi(this.props.fields)).catch(()=>{});
+			}
+		});
 	}
 
 	renderInputPanel(){
@@ -576,6 +586,12 @@ class HuangJiMain extends Component{
 			value: gz[idx] || raw[label] || '—',
 		}));
 		const wangxiang = pan.wangxiang && pan.wangxiang[1] ? pan.wangxiang[1] : {};
+		// 會/運/世 引擎回传的是「累积索引」(如 運=192/世=2302);中央盘按 caption(一会三十运/一运十二世)
+		// 显示「本会第几运 / 本运第几世」,与右栏「元会运世」section(_cycle_position)同口径。會 本就 ≤12。
+		const cyclePos = (v, len)=>{ const n = parseInt(v, 10); return Number.isFinite(n) ? ((n - 1 + len * len) % len) + 1 : v; };
+		const huiPos = cyclePos(raw['會'], 12);
+		const yunPos = cyclePos(raw['運'], 30);
+		const shiPos = cyclePos(raw['世'], 12);
 		const macro = [
 			this.renderHexCard('正卦', '正卦'),
 			this.renderHexCard('運卦', '运卦', '運卦動爻'),
@@ -614,9 +630,9 @@ class HuangJiMain extends Component{
 					</div>
 				</div>
 				<div className="horosa-huangji-cycle-row">
-					<div><span>会</span><strong>{raw['會']}</strong><small>一元十二会</small></div>
-					<div><span>运</span><strong>{raw['運']}</strong><small>一会三十运</small></div>
-					<div><span>世</span><strong>{raw['世']}</strong><small>一运十二世</small></div>
+					<div><span>会</span><strong>{huiPos}</strong><small>一元十二会</small></div>
+					<div><span>运</span><strong>{yunPos}</strong><small>一会三十运</small></div>
+					<div><span>世</span><strong>{shiPos}</strong><small>一运十二世</small></div>
 				</div>
 				<div className="horosa-huangji-gua-section">
 					<div className="horosa-huangji-section-title">天道卦</div>
@@ -720,7 +736,7 @@ class HuangJiMain extends Component{
 
 	renderRightPanel(){
 		const pan = this.state.pan;
-		const activeKey = ['overview', 'gua', 'xinyi', 'history'].indexOf(this.state.rightPanelTab) >= 0 ? this.state.rightPanelTab : 'overview';
+		const activeKey = ['overview', 'gua', 'xinyi', 'classics', 'history'].indexOf(this.state.rightPanelTab) >= 0 ? this.state.rightPanelTab : 'overview';
 		return (
 			<Tabs activeKey={activeKey} onChange={this.setRightPanelTab} defaultActiveKey="overview" tabPosition="top" className="horosa-huangji-tabs">
 				<TabPane tab="概览" key="overview">
@@ -736,6 +752,9 @@ class HuangJiMain extends Component{
 				<TabPane tab="心易" key="xinyi">
 					<div className="horosa-huangji-section-list">{this.renderXinyi()}</div>
 				</TabPane>
+				<TabPane tab="经典" key="classics">
+					<div className="horosa-huangji-section-list">{this.renderClassics()}</div>
+				</TabPane>
 				<TabPane tab="年表" key="history">
 					<div className="horosa-huangji-section-list">{this.renderHistory()}</div>
 				</TabPane>
@@ -749,6 +768,7 @@ class HuangJiMain extends Component{
 			{ label: '概览', icon: 'quickComposite', active: this.state.rightPanelTab === 'overview', onClick: ()=>this.setRightPanelTab('overview') },
 			{ label: '卦象', icon: 'quickTransit', active: this.state.rightPanelTab === 'gua', onClick: ()=>this.setRightPanelTab('gua') },
 			{ label: '心易', icon: 'quickFirdaria', active: this.state.rightPanelTab === 'xinyi', onClick: ()=>this.setRightPanelTab('xinyi') },
+			{ label: '经典', icon: 'quickNote', active: this.state.rightPanelTab === 'classics', onClick: ()=>this.setRightPanelTab('classics') },
 			{ label: '年表', icon: 'quickNote', active: this.state.rightPanelTab === 'history', onClick: ()=>this.setRightPanelTab('history') },
 			{ label: '保存', icon: 'quickReturn', onClick: this.clickSaveCase },
 		];

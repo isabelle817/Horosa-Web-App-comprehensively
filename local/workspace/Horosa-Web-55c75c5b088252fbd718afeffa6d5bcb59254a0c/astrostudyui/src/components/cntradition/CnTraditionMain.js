@@ -2,6 +2,7 @@ import { Component } from 'react';
 import { XQTabs as Tabs } from '../xq-ui';
 import { randomStr } from '../../utils/helper';
 import GuaSymDesc from '../gua/GuaSymDesc';
+import TechniqueErrorBoundary from '../common/TechniqueErrorBoundary';
 import CuanGong12 from '../commtools/CuanGong12';
 import BaziPithy from '../commtools/BaziPithy';
 
@@ -101,15 +102,15 @@ class CnTraditionMain extends Component{
 					style={{ height: height }}
 				>
 					<TabPane tab="八卦类象" key="guasym">
-						<GuaSymDesc />
+						<TechniqueErrorBoundary label="八卦类象"><GuaSymDesc /></TechniqueErrorBoundary>
 					</TabPane>
 
 					<TabPane tab="十二串宫" key="cuangong12">
-						<CuanGong12 />
+						<TechniqueErrorBoundary label="十二串宫"><CuanGong12 /></TechniqueErrorBoundary>
 					</TabPane>
 
 					<TabPane tab="八字规则" key="pithy">
-						<BaziPithy />
+						<TechniqueErrorBoundary label="八字规则"><BaziPithy /></TechniqueErrorBoundary>
 					</TabPane>
 
 				</Tabs>

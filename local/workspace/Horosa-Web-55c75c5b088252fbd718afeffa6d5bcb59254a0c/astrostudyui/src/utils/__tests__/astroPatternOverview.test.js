@@ -95,35 +95,86 @@ describe('astroPatternOverview', () => {
 		expect(data2.jupiter.strong).toBe(false);
 	});
 
-	test('联结纯粹(有情无情)：全{8,12}→有情·玄；混杂→无情；互换标', () => {
-		// A=Sun 主12 落8th；B=Mars 主8 落12th → 全{8,12} 有情·玄 + 互换。
+	test('有情/无情 四象①：全世俗(主宰宫→落宫皆世俗) → 有情·世俗纯粹', () => {
+		// A=Sun 主10 落5th；B=Mars 主11 落7th → 全世俗 case① → 有情·世俗纯粹。
+		const objs = [
+			O('Sun', 10, 'Aries', 5, [10]), O('Mars', 200, 'Libra', 7, [11]),
+			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 3), O('Venus', 100, 'Cancer', 4),
+			O('Jupiter', 130, 'Leo', 9), O('Saturn', 160, 'Virgo', 1),
+		];
+		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Mars' } }], abnormal: [] };
+		const c = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals })).connections.mutual[0];
+		expect(c.purity.label).toBe('有情·世俗纯粹');
+	});
+
+	test('有情/无情 四象②：全玄(8/12 主宰→8/12 落) → 有情·玄纯粹 + 互换(拉康式)', () => {
+		// A=Sun 主12 落8th；B=Mars 主8 落12th → 全{8,12} case② → 有情·玄纯粹 + 互换。
 		const objs = [
 			O('Sun', 10, 'Aries', 8, [12]), O('Mars', 200, 'Libra', 12, [8]),
 			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 3), O('Venus', 100, 'Cancer', 4),
 			O('Jupiter', 130, 'Leo', 5), O('Saturn', 160, 'Virgo', 6),
 		];
 		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Mars' } }], abnormal: [] };
-		const data = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals }));
-		const c = data.connections.mutual[0];
-		expect(c.purity.pure).toBe(true);
+		const c = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals })).connections.mutual[0];
+		expect(c.purity.label).toBe('有情·玄纯粹');
 		expect(c.purity.realm).toBe('玄');
 		expect(c.purity.swap).toBe(true);
 	});
 
-	test('反世俗={6,8,12}：含6宫的全反世俗联结→有情·玄(用户订正6/8/12皆凶宫)', () => {
-		// A=Sun 主6 落8th；B=Mars 主8 落6th → 全 {6,8} ∈ {6,8,12} → 有情·玄。
+	test('有情/无情 四象③：世俗主宰落玄宫、非互换、全程无玄主宰→世俗 → 有情·玄谋世俗', () => {
+		// A=Sun 主10(世俗) 落8th(玄)=case③；B=Mars 主5 落3th 全世俗。非互换、无 case④ → 有情·玄谋世俗(用玄手段谋世俗)。
 		const objs = [
-			O('Sun', 10, 'Aries', 8, [6]), O('Mars', 200, 'Libra', 6, [8]),
-			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 3), O('Venus', 100, 'Cancer', 4),
-			O('Jupiter', 130, 'Leo', 5), O('Saturn', 160, 'Virgo', 7),
+			O('Sun', 10, 'Aries', 8, [10]), O('Mars', 200, 'Libra', 3, [5]),
+			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 9), O('Venus', 100, 'Cancer', 4),
+			O('Jupiter', 130, 'Leo', 11), O('Saturn', 160, 'Virgo', 7),
 		];
 		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Mars' } }], abnormal: [] };
-		const data = buildPatternOverview(chartWith(objs, { isDiurnal: false }), wrap(chartWith(objs, { isDiurnal: false }), { mutuals }));
-		expect(data.connections.mutual[0].purity.pure).toBe(true);
-		expect(data.connections.mutual[0].purity.realm).toBe('玄');
+		const c = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals })).connections.mutual[0];
+		expect(c.purity.label).toBe('有情·玄谋世俗');
+		expect(c.purity.pure).toBe(true);
 	});
 
-	test('先验权力：8·12 联结 + 夜生 = 八杀朝天大贵；昼生不成', () => {
+	test('互换覆盖·拉康式:8-12 互换、即便一方兼主世俗宫(火3R) 仍判 有情·玄纯粹(不被 cross-link 错杀)', () => {
+		// 日(12R)落8th、火(8R+3R)落12th → 互换;双方落宫皆玄(8,12)。火兼主3th(世俗)不影响 → 有情·玄纯粹。
+		const objs = [
+			O('Sun', 10, 'Aries', 8, [12]), O('Mars', 200, 'Libra', 12, [8, 3]),
+			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 9), O('Venus', 100, 'Cancer', 4),
+			O('Jupiter', 130, 'Leo', 11), O('Saturn', 160, 'Virgo', 5),
+		];
+		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Mars' } }], abnormal: [] };
+		const c = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals })).connections.mutual[0];
+		expect(c.purity.label).toBe('有情·玄纯粹');
+		expect(c.purity.swap).toBe(true);
+	});
+
+	test('互换覆盖·施密特式:12-5 混合互换(玄+世俗) 仍判有情(文档1006「极其有情」),非无情', () => {
+		// 日(12R)落5th、土(5R+6R)落12th → 互换;落宫玄(12)+世俗(5)混合 → 有情·玄谋世俗(覆盖原本会判的 case④无情)。
+		const objs = [
+			O('Sun', 10, 'Aries', 5, [12]), O('Saturn', 160, 'Virgo', 12, [5, 6]),
+			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 9), O('Venus', 100, 'Cancer', 4),
+			O('Jupiter', 130, 'Leo', 11), O('Mars', 200, 'Libra', 3, [8]),
+		];
+		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Saturn' } }], abnormal: [] };
+		const c = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals })).connections.mutual[0];
+		expect(c.purity.pure).toBe(true);
+		expect(c.purity.label).toBe('有情·玄谋世俗');
+		expect(c.purity.swap).toBe(true);
+	});
+
+	test('有情/无情 四象④：非世俗主宰(8R)落世俗宫(10th) → 无情(无情优先;文书企划式)', () => {
+		// A=Sun 主8(玄) 落10th(世俗)=case④ → 无情。
+		const objs = [
+			O('Sun', 10, 'Aries', 10, [8]), O('Mars', 200, 'Libra', 3, [5]),
+			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 9), O('Venus', 100, 'Cancer', 4),
+			O('Jupiter', 130, 'Leo', 11), O('Saturn', 160, 'Virgo', 7),
+		];
+		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Mars' } }], abnormal: [] };
+		const c = buildPatternOverview(chartWith(objs), wrap(chartWith(objs), { mutuals })).connections.mutual[0];
+		expect(c.purity.label).toBe('无情');
+		expect(c.purity.pure).toBe(false);
+	});
+
+	test('先验权力：双方分立(一方落8th、另一方落12th)+ 夜生 = 八杀朝天大贵；昼生不成', () => {
 		const objs = [
 			O('Sun', 10, 'Aries', 8, [12]), O('Mars', 200, 'Libra', 12, [8]),
 			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 3), O('Venus', 100, 'Cancer', 4),
@@ -135,8 +186,19 @@ describe('astroPatternOverview', () => {
 		expect(night.apriori.links[0].which).toBe('8·12');
 		expect(night.apriori.eightKill).toBe(true);
 		const day = buildPatternOverview(chartWith(objs, { isDiurnal: true }), wrap(chartWith(objs, { isDiurnal: true }), { mutuals }));
-		expect(day.apriori.has).toBe(true);
 		expect(day.apriori.eightKill).toBe(false);
+	});
+
+	test('先验权力·不合池误判:单星兼主8&12、对方不沾8/1/12 → 不成先验权力(分立判定根治)', () => {
+		// A=Sun 主{8,12} 落3th；B=Mars 主5 落7th；余星皆不落/主 1·8·12。旧实现合池见{8,12}即误判;新实现要求分立成对→不成。
+		const objs = [
+			O('Sun', 10, 'Aries', 3, [8, 12]), O('Mars', 200, 'Libra', 7, [5]),
+			O('Moon', 40, 'Taurus', 2), O('Mercury', 70, 'Gemini', 9), O('Venus', 100, 'Cancer', 4),
+			O('Jupiter', 130, 'Leo', 11), O('Saturn', 160, 'Virgo', 10),
+		];
+		const mutuals = { normal: [{ planetA: { id: 'Sun' }, planetB: { id: 'Mars' } }], abnormal: [] };
+		const data = buildPatternOverview(chartWith(objs, { isDiurnal: false }), wrap(chartWith(objs, { isDiurnal: false }), { mutuals }));
+		expect(data.apriori.has).toBe(false);
 	});
 
 	test('toOverviewRows 产出行且不抛', () => {

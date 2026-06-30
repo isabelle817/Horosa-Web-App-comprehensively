@@ -33,3 +33,53 @@ def test_default_su28_is_equatorial_real_stars():
     # decl 跨南北两半天(真实距星位置),不是被压平到某一条线上。
     decls = [float(s.decl) for s in stars]
     assert max(decls) > 5 and min(decls) < -5
+
+
+def test_planetarium_pure_astronomy_independent_of_chart():
+    """天文馆=纯天文,与星盘/七政四余绝对独立(用户铁律)。无论图表传入何种黄道模式/宿度制/岁差,
+    天文馆都强制纯天文参数(zodiacal=0/doubingSu28=0/无岁差),二十八宿恒为真实距星(decl 跨南北、ra≠lon),
+    绝不随图表宿度制落到黄道线上。"""
+    from websrv.webplanetariumsrv import _force_pure_astronomy, _plain_obj
+    # 模拟图表把恒星黄道+回归今制宿度制带进来
+    polluted = dict(CASE, zodiacal=1, doubingSu28=2, siderealAyanamsa='Lahiri', guolaoZhengSidereal=1, termsVariant=2)
+    forced = _force_pure_astronomy(dict(polluted))
+    assert forced['zodiacal'] == 0
+    assert forced['doubingSu28'] == 0
+    assert forced['siderealAyanamsa'] == ''
+    assert forced['guolaoZhengSidereal'] == 0
+    # 据强制后的参数起盘,二十八宿是真实距星(decl 跨南北两半天,非压在黄道/赤道一条线上)
+    pc = perchart.PerChart(forced)
+    stars = [s for s in pc.getFixedStarSu28() if getattr(s, 'type', '') == const.OBJ_FIXED_STAR]
+    assert len(stars) == 28
+    decls = [float(s.decl) for s in stars]
+    assert max(decls) > 5 and min(decls) < -5  # 真实距星跨南北,非一条线
+    real_ra = sum(1 for s in stars if _ang_gap(s.ra, s.lon) > 0.5)
+    assert real_ra >= 20  # ra 是真赤经(非黄经),证明非黄道置宿
+
+
+def test_planetarium_moira_su28_not_on_equator():
+    """回归守护(R6):回归今制/回归开禧/恒星制郑式 三制的 su28 在盘层是黄道点(decl=0,沿黄道置宿),
+    天文馆序列化须把它们重算成真实赤道坐标——否则二十八宿全落赤道线(decl≈0)。
+    默认宿度制即回归今制,访问七政后全局 doubingSu28=2 带入天文馆即触发,曾被用户当场指出。
+    钉死:天文馆 _fix_moira_su28_equatorial 后 decl 不再全 0、且跨开(不在一条线上)。"""
+    from websrv.webplanetariumsrv import _plain_obj, _fix_moira_su28_equatorial
+    from astrostudy.perchart import (
+        SU28_MODE_MOIRA_CURRENT, SU28_MODE_MOIRA_KAIXI, SU28_MODE_ZHENG_SIDEREAL,
+    )
+    for mode in (SU28_MODE_MOIRA_CURRENT, SU28_MODE_MOIRA_KAIXI, SU28_MODE_ZHENG_SIDEREAL):
+        pc = perchart.PerChart(dict(CASE, doubingSu28=mode))
+        raw = [_plain_obj(s) for s in pc.getFixedStarSu28()
+               if getattr(s, 'type', '') == const.OBJ_FIXED_STAR]
+        # 盘层(修复前):三制黄道置宿 → decl 普遍为 0(若此断言失败说明盘层口径变了,需复核)。
+        assert sum(1 for s in raw if abs(s['decl']) < 0.01) >= 20, \
+            f"mode {mode}: expected ecliptic-placed su28 (decl~0) at chart level"
+        # 天文馆修复后:decl 不得全 0,且南北跨开(真实天球散布,绝不全落赤道线)。
+        fixed = _fix_moira_su28_equatorial([dict(s) for s in raw], mode, pc.dateTime.jd)
+        decls = [s['decl'] for s in fixed]
+        nonzero = sum(1 for d in decls if abs(d) > 0.5)
+        assert nonzero == len(decls), \
+            f"mode {mode}: {len(decls)-nonzero} su28 still on equator (decl~0) after planetarium fix"
+        assert max(decls) > 5, f"mode {mode}: su28 decl never reaches north ({max(decls):.1f})"
+        # ra 也须被重算成真赤经(不再等于黄经 lon)。
+        real_ra = sum(1 for s in fixed if _ang_gap(s['ra'], s['lon']) > 0.5)
+        assert real_ra >= 20, f"mode {mode}: only {real_ra}/28 have ra!=lon after fix"

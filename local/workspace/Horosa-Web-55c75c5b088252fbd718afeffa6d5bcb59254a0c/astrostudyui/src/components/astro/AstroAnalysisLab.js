@@ -38,15 +38,20 @@ class AstroAnalysisLab extends Component{
 		this._mounted = false;
 	}
 
+	buildRequestKey(){
+		// requestKey 含 voidClassical(星盘组件开关,经 props 传入):切换古典义要重新请求(否则被相等去重挡住),componentDidUpdate 据此自动重算。
+		return chartRequestKey(this.props.value, `analysis|vc:${this.props.voidClassical ? 1 : 0}`);
+	}
+
 	componentDidUpdate(prevProps){
-		const key = chartRequestKey(this.props.value, 'analysis');
+		const key = this.buildRequestKey();
 		if(key && key !== this.state.requestKey && !this.state.loading){
 			this.load();
 		}
 	}
 
 	ensureLoaded(){
-		const key = chartRequestKey(this.props.value, 'analysis');
+		const key = this.buildRequestKey();
 		if(key && key !== this.state.requestKey && !this.state.loading){
 			setTimeout(this.load, 0);
 		}
@@ -56,13 +61,14 @@ class AstroAnalysisLab extends Component{
 		if(!this.props.value){
 			return;
 		}
-		const key = chartRequestKey(this.props.value, 'analysis');
+		const key = this.buildRequestKey();
 		this.setState({loading: true});
 		try{
 			const data = await request(`${Constants.ServerRoot}/astroextra/analysis`, {
 				body: JSON.stringify({
 					...chartParams(this.props.value),
 					fixedStarOrb: 1,
+					voidClassical: !!this.props.voidClassical,
 				}),
 				silent: true,
 				timeoutMs: 30000,
@@ -277,28 +283,39 @@ class AstroAnalysisLab extends Component{
 		);
 	}
 
-	// WI-10/11 相位动态:入相/出相 · 左右旋(右旋 dexter/左旋 sinister) · 传光 · 聚光 · 不合意 · 交点弯曲。
+	// WI-10/11 相位动态 + G10 连接学说后四式:入相/出相 · 左右旋 · 传光 · 聚光 · 不合意 · 交点弯曲
+	// · 空亡 · 阻止 · 挫败 · 收回。入相/出相明细已在「相位」tab 完整呈现,此处只保留派生格局,避免重复。
 	renderAspectDynamics(ad){
 		const a = ad || {};
 		const translation = a.translation || [];
 		const collection = a.collection || [];
 		const aversion = a.aversion || [];
 		const bending = a.bending || [];
-		// 入相/出相相位明细已在「相位」tab 完整呈现,此处只保留派生格局(传光/聚光/不合意/弯曲),避免重复。
-		const has = translation.length || collection.length || aversion.length || bending.length;
+		const voidList = a.void || [];
+		const prohibition = a.prohibition || [];
+		const frustration = a.frustration || [];
+		const refranation = a.refranation || [];
+		const has = translation.length || collection.length || aversion.length || bending.length
+			|| voidList.length || prohibition.length || frustration.length || refranation.length;
 		const sub = (title, items, fn) => (items.length ? (
 			<div style={{marginBottom: 6}}>
 				<strong>{title}</strong>
 				{items.map((d, i)=> <div key={`${title}-${i}`}>{fn(d)}</div>)}
 			</div>
 		) : null);
+		const muted = (txt) => (txt ? <span style={{opacity: 0.65, fontSize: 11, marginLeft: 4}}>{txt}</span> : null);
 		return (
 			<div style={cardStyle}>
 				<div className="horosa-info-card-title">相位动态 Aspect Dynamics</div>
-				{!has ? <div>未检出传光/聚光/不合意/弯曲。</div> : (
+				{/* 空亡古典义(30°内)开关已移至星盘组件(显示与样式 → 经典尊贵区);此处读 props.voidClassical 自动重算。 */}
+				{!has ? <div>未检出传光/聚光/不合意/弯曲/空亡/阻止/挫败/收回。</div> : (
 					<div>
 						{sub('传光 Translation', translation, (d)=> <span>{astroSymbol(d.mover)} 自 {astroSymbol(d.from)} 传光予 {astroSymbol(d.to)}</span>)}
 						{sub('聚光 Collection', collection, (d)=> <span>{astroSymbol(d.collector)} 聚 {astroSymbol(d.p1)} {astroSymbol(d.p2)} 之光</span>)}
+						{sub('空亡 Void', voidList, (d)=> <span>{astroSymbol(d.planet)} 离座前不再成精确相位{muted(`${d.mode === 'classical' ? '古典义' : '本座义'}·窗口 ${fmtNum(d.window, 1)}°`)}</span>)}
+						{sub('阻止 Prohibition', prohibition, (d)=> <span>{astroSymbol(d.blocker)} 抢先入相 {astroSymbol(d.to)}，截断 {astroSymbol(d.between)}{muted(`剩 ${fmtNum(d.rBlocker, 1)}° < ${fmtNum(d.rOriginal, 1)}°`)}</span>)}
+						{sub('挫败 Frustration', frustration, (d)=> <span>{astroSymbol(d.frustrated)} 入相 {astroSymbol(d.via)}，然 {astroSymbol(d.via)} 先成 {astroSymbol(d.to)} 而移情{muted(`剩 ${fmtNum(d.rDefect, 1)}° < ${fmtNum(d.rOriginal, 1)}°`)}</span>)}
+						{sub('收回 Refranation', refranation, (d)=> <span>{astroSymbol(d.planet)} 入相 {astroSymbol(d.to)} 中途留停而撤离{muted(`剩 ${fmtNum(d.r, 1)}°`)}</span>)}
 						{sub('不合意 Aversion', aversion, (d)=> <span>{astroSymbol(d.a)} 与 {astroSymbol(d.b)} 不合意（无相）</span>)}
 						{sub('交点弯曲 Bending', bending, (d)=> <span>{astroSymbol(d.planet)} 落{d.at}</span>)}
 					</div>
@@ -402,8 +419,11 @@ class AstroAnalysisLab extends Component{
 	renderPatternOverview(){
 		const chartObj = this.props.value;
 		if(!chartObj || !chartObj.chart){ return null; }
+		// 「仅按本垣擢升计算互容接纳」与信息 tab 同步:先验权力等取自联结,口径须一致。
+		let onlyRulExalt = false;
+		try{ const s = JSON.parse((typeof window !== 'undefined' && window.localStorage && window.localStorage.getItem(Constants.GlobalSetupKey)) || '{}'); onlyRulExalt = !!(s && (s.showOnlyRulExaltReception === 1 || s.showOnlyRulExaltReception === true)); }catch(e){ onlyRulExalt = false; }
 		let data;
-		try{ data = buildPatternOverview(chartObj.chart, chartObj); }catch(e){ return null; }
+		try{ data = buildPatternOverview(chartObj.chart, chartObj, { onlyRulExalt }); }catch(e){ return null; }
 		if(!data || data.empty){ return null; }
 		const g = (id) => <span style={{display: 'inline-block', minWidth: '1.3em', textAlign: 'center'}}>{astroSymbol(id)}</span>;
 		const muted = (txt) => (txt ? <span style={{opacity: 0.7, marginLeft: 4}}>{txt}</span> : null);

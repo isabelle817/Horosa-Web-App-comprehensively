@@ -347,6 +347,23 @@
   font-weight: 500;
 }
 
+// 虚实红绿点:绝对定位于地支宫格朝盘心一侧(具体位置由 WEAK_SOLID_POS 行内给出),横排;描边+投影明暗两态皆可辨。
+.outerWeakSolid {
+  position: absolute;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 2px;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.outerWeakSolidDot {
+  display: inline-block;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--horosa-surface-raised, rgba(255, 255, 255, 0.55)), 0 1px 1.5px rgba(0, 0, 0, 0.28);
+}
+
 .outerStars {
   position: absolute;
   color: var(--horosa-muted);

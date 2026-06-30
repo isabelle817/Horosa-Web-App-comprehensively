@@ -4,20 +4,24 @@ import { XQIcon } from '../xq-icons';
 import { randomStr } from '../../utils/helper';
 import AstroGermany from '../germany/AstroGermany';
 import HellenAstroMain from '../hellenastro/HellenAstroMain';
+import Dwadasamsa12Main from '../hellenastro/Dwadasamsa12Main';
 import LocAstroMain from '../loc/LocAstroMain';
 import OtherBuMain from '../otherbu/OtherBuMain';
 import AstroHarmonicLab from './AstroHarmonicLab';
 import AstroDraconicLab from './AstroDraconicLab';
+import AstroRelocationLab from './AstroRelocationLab';
 import HoraryMain from '../horary/HoraryMain';
 import ElectionMain from '../election/ElectionMain';
 import MundaneMain from '../mundane/MundaneMain';
 
 const TabPane = Tabs.TabPane;
-const AUX_TABS = ['germanytech', 'hellenastro', 'locastro', 'harmonic', 'draconic', 'otherbu', 'horary', 'election', 'mundane'];
+const AUX_TABS = ['germanytech', 'hellenastro', 'dwadasamsa', 'locastro', 'relocation', 'harmonic', 'draconic', 'otherbu', 'horary', 'election', 'mundane'];
 const AUX_QUICK_ACTIONS = [
 	{ key: 'germanytech', label: '量化盘', icon: 'quickPrimary' },
 	{ key: 'hellenastro', label: '十三分盘', icon: 'astro' },
+	{ key: 'dwadasamsa', label: '十二分盘', icon: 'astro' },
 	{ key: 'locastro', label: '占星地图', icon: 'locastro' },
+	{ key: 'relocation', label: '重置盘', icon: 'locastro' },
 	{ key: 'harmonic', label: '调波盘', icon: 'quickTransit' },
 	{ key: 'draconic', label: '龙盘', icon: 'astro' },
 	{ key: 'otherbu', label: '骰子', icon: 'quickAi' },
@@ -43,7 +47,13 @@ class AuxChartMain extends Component{
 				hellenastro:{
 					fun: null
 				},
+				dwadasamsa:{
+					fun: null
+				},
 				locastro:{
+					fun: null
+				},
+				relocation:{
 					fun: null
 				},
 				harmonic:{
@@ -191,6 +201,23 @@ class AuxChartMain extends Component{
 							/>
 						</TabPane>
 
+						<TabPane tab="十二分盘" key="dwadasamsa">
+							<Dwadasamsa12Main
+								onChange={this.props.onChange}
+								fields={this.props.fields}
+								fieldsAry={this.props.fieldsAry}
+								height={childHeight}
+								chartStyle={this.props.chartStyle}
+								chartDisplay={this.props.chartDisplay}
+								planetDisplay={this.props.planetDisplay}
+								lotsDisplay={this.props.lotsDisplay}
+								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
+								showAstroMeaning={this.props.showAstroMeaning}
+								hook={this.state.hook.dwadasamsa}
+								dispatch={this.props.dispatch}
+							/>
+						</TabPane>
+
 						<TabPane tab="占星地图" key="locastro">
 							<LocAstroMain
 								value={this.props.chart}
@@ -206,10 +233,26 @@ class AuxChartMain extends Component{
 							/>
 						</TabPane>
 
+						<TabPane tab="重置盘" key="relocation">
+							<AstroRelocationLab
+								value={this.props.chart}
+								fields={this.props.fields}
+								height={childHeight}
+								chartStyle={this.props.chartStyle}
+								chartDisplay={this.props.chartDisplay}
+								planetDisplay={this.props.planetDisplay}
+								lotsDisplay={this.props.lotsDisplay}
+								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
+								showAstroMeaning={this.props.showAstroMeaning}
+								dispatch={this.props.dispatch}
+							/>
+						</TabPane>
+
 						<TabPane tab="调波盘" key="harmonic">
 							<AstroHarmonicLab
 								value={this.props.chart}
 								height={childHeight}
+								chartStyle={this.props.chartStyle}
 								chartDisplay={this.props.chartDisplay}
 								planetDisplay={this.props.planetDisplay}
 								lotsDisplay={this.props.lotsDisplay}
@@ -221,6 +264,7 @@ class AuxChartMain extends Component{
 							<AstroDraconicLab
 								value={this.props.chart}
 								height={childHeight}
+								chartStyle={this.props.chartStyle}
 								chartDisplay={this.props.chartDisplay}
 								planetDisplay={this.props.planetDisplay}
 								lotsDisplay={this.props.lotsDisplay}

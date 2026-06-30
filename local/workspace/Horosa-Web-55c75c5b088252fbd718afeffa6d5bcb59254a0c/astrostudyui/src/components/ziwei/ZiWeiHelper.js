@@ -259,3 +259,61 @@ export function collectFourPalaceStars(chart, mingIdx){
 export function getTripleIndices(mingIdx){
 	return getSanheIndices(mingIdx);
 }
+
+// ===== 运限渲染纯函数（需求3/5；与大限「运X」同口径，可测） =====
+// 某宫(houseIndex)在某运限层(命宫=layerMingIndex)下的角色字：与 ZWChart 大限 dirname 同算法
+// (delta=层命宫-本宫; 角色=ZWHouses[(delta%12+12)%12])，取宫名首字（命/兄/夫/子/财/疾/迁/友/官/田/福/父）。
+export function luckRoleChar(layerMingIndex, houseIndex){
+	if(layerMingIndex === undefined || layerMingIndex === null || houseIndex === undefined || houseIndex === null){
+		return '';
+	}
+	const idx = (((layerMingIndex - houseIndex) % 12) + 12) % 12;
+	const name = ZWConst.ZWHouses[idx] || '';
+	let ch = name.charAt(0);
+	if(ch === '交'){ ch = '友'; } // 交友宫简写「友」(与大限运X同口径，避免与「子/财」等单字混淆)
+	return ch;
+}
+
+// 有序活跃运限层（浅→深）：本命恒在；大限/流年小限/流月/流日/流时 选中才在。
+// 每层 {key, gan, mingIndex, prefix}（本命 prefix=null/mingIndex=null）。供四化滑窗 + 标签 + 快照同源。
+export function buildLuckLayers(sel, yearGan){
+	const layers = [{ key: 'benming', gan: yearGan || '', mingIndex: null, prefix: null }];
+	if(!sel){
+		return layers;
+	}
+	if(sel.daxian) layers.push({ key: 'daxian', gan: sel.daxian.gan, mingIndex: sel.daxian.mingIndex, prefix: ZWConst.ZWPeriodPrefix.daxian });
+	if(sel.liunian) layers.push({ key: 'liunian', gan: sel.liunian.gan, mingIndex: sel.liunian.mingIndex, prefix: ZWConst.ZWPeriodPrefix.liunian });
+	if(sel.liuyue) layers.push({ key: 'liuyue', gan: sel.liuyue.gan, mingIndex: sel.liuyue.mingIndex, prefix: ZWConst.ZWPeriodPrefix.liuyue });
+	if(sel.liuri) layers.push({ key: 'liuri', gan: sel.liuri.gan, mingIndex: sel.liuri.mingIndex, prefix: ZWConst.ZWPeriodPrefix.liuri });
+	if(sel.liushi) layers.push({ key: 'liushi', gan: sel.liushi.gan, mingIndex: sel.liushi.mingIndex, prefix: ZWConst.ZWPeriodPrefix.liushi });
+	return layers;
+}
+
+// 四化滑窗：取活跃层末 3 层；仅当只剩本命(=未选任何运限)时显示自化（腾位给运限层）。
+// 无→[本命]+自化; 大限→[本命,大限]; 流年→[本命,大限,流年]; 流月→[大限,流年,流月]; 流日→[流年,流月,流日]; 流时→[流月,流日,流时]。
+export function luckSihuaWindow(sel, yearGan){
+	const layers = buildLuckLayers(sel, yearGan);
+	return { layers: layers.slice(-3), showZihua: layers.length === 1 };
+}
+
+// 长生左侧运限标签层：仅 流年小限/流月/流日/流时（大限「运X」已在宫顶，本命不画）。
+export function luckLabelLayers(sel){
+	const out = [];
+	if(!sel){
+		return out;
+	}
+	if(sel.liunian) out.push({ key: 'liunian', prefix: ZWConst.ZWPeriodPrefix.liunian, mingIndex: sel.liunian.mingIndex });
+	if(sel.liuyue) out.push({ key: 'liuyue', prefix: ZWConst.ZWPeriodPrefix.liuyue, mingIndex: sel.liuyue.mingIndex });
+	if(sel.liuri) out.push({ key: 'liuri', prefix: ZWConst.ZWPeriodPrefix.liuri, mingIndex: sel.liuri.mingIndex });
+	if(sel.liushi) out.push({ key: 'liushi', prefix: ZWConst.ZWPeriodPrefix.liushi, mingIndex: sel.liushi.mingIndex });
+	return out;
+}
+
+// 最深选中层的命宫 index（驱动盘面金框高亮）；无选中 → null。
+export function luckDeepestMingIndex(sel){
+	if(!sel){
+		return null;
+	}
+	const d = sel.liushi || sel.liuri || sel.liuyue || sel.liunian || sel.daxian || null;
+	return d && (d.mingIndex !== undefined && d.mingIndex !== null) ? d.mingIndex : null;
+}

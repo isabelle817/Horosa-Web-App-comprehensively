@@ -9,6 +9,12 @@ import GuaZhanInput from './GuaZhanInput';
 import GuaZhanChart from './GuaZhanChart';
 import GuaDesc from './GuaDesc';
 import { getGua64, Gua64, Gua8, randYao, ZiList, HourZi, SixGods, getXunEmpty, LiuQi } from '../gua/GuaConst';
+import { yarrowYao } from '../gua/LiuYaoConst';
+import { analyzeLiuyao } from '../gua/liuyaoFacade';
+import { normalizeLiuyaoSettings, applyPreset, setOption, LIUYAO_SCHOOL_OPTIONS, LIUYAO_PRESETS } from '../gua/liuyaoSchools';
+import { YONGSHEN_CATEGORIES } from '../gua/liuyaoYongShen';
+import { SHENSHA_META, DEFAULT_SHENSHA_SET } from '../gua/liuyaoShenSha';
+import { LiuYaoZhuangTable, LiuYaoYongShenView, LiuYaoDongBianView, LiuYaoRelatedCards, LiuYaoShenShaView, LiuYaoReference, LiuYaoXunKong } from './LiuYaoBoard';
 import DateTime from '../comp/DateTime';
 import { saveModuleAISnapshot, saveModuleAISnapshotLazy, loadModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { getStore } from '../../utils/storageutil';
@@ -72,6 +78,66 @@ export function buildTimeGua(nongli){
 		for(let i = 0; i < yao.length; i++){ yao[i].name = Gua64[guaidx].yaoname[i]; }
 	}
 	return { yao, currentGua: guaidx, nongli };
+}
+
+// 六爻断卦结构段(流派/用神/旺衰/飞伏/卦身/动变/神煞/六神),供 AI 挂载/导出/储存复用(单一真值源=analyzeLiuyao)。
+// st 缺 liuyaoSettings 时用默认设置(默认全显,零回归既有行只追加)。
+export function liuyaoStructLines(st){
+	try{
+		const nowGua = st && st.currentGua !== null && st.currentGua !== undefined && Gua64[st.currentGua] ? Gua64[st.currentGua] : null;
+		const yao = st && st.yao ? st.yao : [];
+		if(!nowGua || !(yao && yao.length === 6 && yao.every((y)=>y && (y.value === 0 || y.value === 1)))){ return []; }
+		const nongli = (st && st.nongli) || {};
+		const yearGz = lineText(nongli.yearJieqi || nongli.yearGanZi || nongli.year);
+		const monthGz = lineText(nongli.monthGanZi);
+		const dayGz = lineText(nongli.dayGanZi);
+		const ctx = {
+			dayGan: dayGz.length >= 2 ? dayGz[0] : null, dayZhi: dayGz.length >= 2 ? dayGz[1] : null,
+			monthGan: monthGz.length >= 2 ? monthGz[0] : null, monthZhi: monthGz.length >= 2 ? monthGz[1] : null,
+			yearGan: yearGz.length >= 2 ? yearGz[0] : null, yearZhi: yearGz.length >= 2 ? yearGz[1] : null,
+		};
+		const moving = [];
+		yao.forEach((y, i)=>{ if(y.change){ moving.push(i + 1); } });
+		const settings = normalizeLiuyaoSettings(st && st.liuyaoSettings);
+		const a = analyzeLiuyao(nowGua, moving, ctx, settings);
+		if(!a){ return []; }
+		const lines = [];
+		const presetLabel = (LIUYAO_PRESETS[settings.school] && LIUYAO_PRESETS[settings.school].label) || (settings.school === 'custom' ? '自定义' : settings.school);
+		lines.push('');
+		lines.push('[断卦结构]');
+		lines.push(`流派：${presetLabel}`);
+		if(a.palaceType){ lines.push(`卦序：${a.palaceType.palace}宫·${a.palaceType.type}(世${a.palaceType.shi}应${a.palaceType.ying})`); }
+		if(a.guaXing && a.guaXing.ben){ lines.push(`卦象：${a.guaXing.ben}${a.guaXing.bian ? '→' + a.guaXing.bian + '(卦变)' : ''}`); }
+		if(a.heHui && a.heHui.length){ lines.push(`成局：${a.heHui.map((h)=>`${h.type}${h.zhis}${h.wuxing}${h.hasMoving ? '(有动)' : ''}`).join('、')}`); }
+		if(a.yongShen){
+			const ys = a.yongShen;
+			const loc = (l)=>{ if(!l || !l.candidates || !l.candidates.length){ return '不上卦'; } return l.candidates.map((c)=>`${c.pos}爻`).join('/'); };
+			lines.push(`占测：${ys.label}　用神：${ys.yong}(${loc(ys.located.yong)})`);
+			if(ys.roles){ lines.push(`原神：${ys.roles.yuan}(${loc(ys.located.yuan)})　忌神：${ys.roles.ji}(${loc(ys.located.ji)})　仇神：${ys.roles.chou}(${loc(ys.located.chou)})`); }
+		}
+		if(a.guaShen){ lines.push(`卦身：${a.guaShen.body}${a.guaShen.onChart ? '(上卦)' : '(不上卦)'}`); }
+		// 逐爻结构(初→上)
+		lines.push('逐爻(初→上)：六神│伏神│本爻│世应│旺衰│状态│神煞');
+		a.yaos.forEach((y, i)=>{
+			const liu = a.liuShen && a.liuShen[i] ? a.liuShen[i].liushen : '';
+			const fu = (a.fushenAll && a.fushenAll[i]) || y.fushen;
+			const fuTxt = fu && fu.liuqin ? `伏${fu.liuqin}${fu.zhi}${fu.wuxing}` : '';
+			const sha = a.shenSha && a.shenSha.perYao && a.shenSha.perYao[i] ? (a.shenSha.perYao[i].shensha || []).join(',') : '';
+			const stat = [y.yuePo ? '月破' : '', y.xunKong ? (y.voidKind || '旬空') : '', y.ruMu ? '入墓' : '', y.changsheng === '长生' || y.changsheng === '帝旺' || y.changsheng === '绝' ? y.changsheng : ''].filter(Boolean).join(',');
+			lines.push(`第${y.pos}爻：${liu ? liu + ' ' : ''}${y.zhi}${y.wuxing}${y.liuqin}${y.shiYing ? '(' + y.shiYing + ')' : ''} ${y.wangShuai}${stat ? ' ' + stat : ''}${fuTxt ? ' ' + fuTxt : ''}${sha ? ' 神煞:' + sha : ''}`);
+		});
+		// 动变
+		if(a.dongBian && a.dongBian.movingCount > 0){
+			lines.push(`变卦：${a.dongBian.bianGua ? a.dongBian.bianGua.name : ''}${a.dongBian.guaFuYin ? '(卦伏吟)' : ''}${a.dongBian.guaFanYin ? '(卦反吟)' : ''}`);
+			a.dongBian.moves.forEach((m)=>{
+				const tags = [m.jinShen ? '进神' : '', m.tuiShen ? '退神' : '', m.fanYin ? '反吟' : '', m.fuYin ? '伏吟' : '', m.huiTou.sheng ? '回头生' : '', m.huiTou.ke ? '回头克' : '', m.huiTou.chong ? '回头冲' : '', m.huiTou.he ? '回头合' : '', m.huaKong ? '化空' : '', m.huaPo ? '化破' : '', m.huaMu ? '化墓' : '', m.huaJue ? '化绝' : ''].filter(Boolean).join('·');
+				lines.push(`第${m.pos}爻动：${m.ben.liuqin}${m.ben.zhi}${m.ben.wuxing} → ${m.bian.liuqin}${m.bian.zhi}${m.bian.wuxing}${tags ? ' ' + tags : ''}`);
+			});
+		}
+		return lines;
+	}catch(e){
+		return [];
+	}
 }
 
 export function buildGuaSnapshotText(fields, st){
@@ -193,6 +259,10 @@ export function buildGuaSnapshotText(fields, st){
 		if(huGua){ pushGuaYao('互卦', huGua); }
 	}
 
+	// 断卦结构(流派/用神/旺衰/飞伏/卦身/动变/神煞/六神)——追加于既有段之后,既有行字节不变(零回归)。
+	const structLines = liuyaoStructLines(st);
+	if(structLines && structLines.length){ structLines.forEach((l)=>lines.push(l)); }
+
 	lines.push('');
 	lines.push('[卦辞与断语]');
 	['guaOrg', 'guaMiddle', 'guaRes'].forEach((key)=>{
@@ -250,6 +320,7 @@ class GuaZhanMain extends Component{
 		this.numberChanged = this.numberChanged.bind(this);
 		this.clickCustGua = this.clickCustGua.bind(this);
 		this.clickNumGua = this.clickNumGua.bind(this);
+		this.clickYarrowGua = this.clickYarrowGua.bind(this);
 		this.genFields = this.genFields.bind(this);
 		this.dongyaoChanged = this.dongyaoChanged.bind(this);
 		this.getDongYaos = this.getDongYaos.bind(this);
@@ -263,6 +334,9 @@ class GuaZhanMain extends Component{
 		this.restoreFromCurrentCase = this.restoreFromCurrentCase.bind(this);
 		this.setRightPanelTab = this.setRightPanelTab.bind(this);
 		this.navigateFeature = this.navigateFeature.bind(this);
+		this.getLiuyaoAnalysis = this.getLiuyaoAnalysis.bind(this);
+		this.changeLiuyaoPreset = this.changeLiuyaoPreset.bind(this);
+		this.changeLiuyaoOption = this.changeLiuyaoOption.bind(this);
 		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		this.state = {
@@ -281,7 +355,9 @@ class GuaZhanMain extends Component{
 			number: null,
 			guaDesc: null,
 			rightPanelTab: 'overview',
+			liuyaoSettings: normalizeLiuyaoSettings(null),
 		};
+		this._liuyaoCache = { key: null, analysis: null };
 
 		this.unmounted = false;
 		this.lastRestoredCaseId = null;
@@ -376,6 +452,7 @@ class GuaZhanMain extends Component{
 			upGuaIdx: rawState.upGuaIdx !== undefined ? rawState.upGuaIdx : null,
 			downGuaIdx: rawState.downGuaIdx !== undefined ? rawState.downGuaIdx : null,
 			number: rawState.number !== undefined ? rawState.number : null,
+			liuyaoSettings: normalizeLiuyaoSettings(rawState.liuyaoSettings),
 		};
 		this.lastRestoredCaseId = caseVersion;
 		this.setState(nextState, ()=>{
@@ -389,6 +466,40 @@ class GuaZhanMain extends Component{
 		this.setState({
 			rightPanelTab: key,
 		});
+	}
+
+	// 断卦分析(单一真值源):currentGua + 动爻 + nongli干支 + 流派设置 → analyzeLiuyao。按 key 记忆,避免每帧重算。
+	getLiuyaoAnalysis(){
+		const st = this.state;
+		const nowGua = st.currentGua !== null && st.currentGua !== undefined && Gua64[st.currentGua] ? Gua64[st.currentGua] : null;
+		const yao = st.yao || [];
+		const ok = nowGua && yao.length === 6 && yao.every((y)=>y && (y.value === 0 || y.value === 1));
+		if(!ok){ return null; }
+		const nongli = st.nongli || {};
+		const yearGz = `${nongli.yearJieqi || nongli.yearGanZi || nongli.year || ''}`.trim();
+		const monthGz = `${nongli.monthGanZi || ''}`.trim();
+		const dayGz = `${nongli.dayGanZi || ''}`.trim();
+		const moving = [];
+		yao.forEach((y, i)=>{ if(y.change){ moving.push(i + 1); } });
+		const settings = normalizeLiuyaoSettings(st.liuyaoSettings);
+		const key = [st.currentGua, moving.join('-'), dayGz, monthGz, yearGz, JSON.stringify(settings)].join('|');
+		if(this._liuyaoCache.key === key){ return this._liuyaoCache.analysis; }
+		const ctx = {
+			dayGan: dayGz.length >= 2 ? dayGz[0] : null, dayZhi: dayGz.length >= 2 ? dayGz[1] : null,
+			monthGan: monthGz.length >= 2 ? monthGz[0] : null, monthZhi: monthGz.length >= 2 ? monthGz[1] : null,
+			yearGan: yearGz.length >= 2 ? yearGz[0] : null, yearZhi: yearGz.length >= 2 ? yearGz[1] : null,
+		};
+		const analysis = analyzeLiuyao(nowGua, moving, ctx, settings);
+		this._liuyaoCache = { key, analysis };
+		return analysis;
+	}
+
+	changeLiuyaoPreset(presetKey){
+		this.setState({ liuyaoSettings: applyPreset(presetKey) });
+	}
+
+	changeLiuyaoOption(optKey, value){
+		this.setState((prev)=>({ liuyaoSettings: setOption(prev.liuyaoSettings, optKey, value) }));
 	}
 
 	navigateFeature(tabKey, subTab){
@@ -672,6 +783,22 @@ class GuaZhanMain extends Component{
 			}, ()=>{
 				this.requestGuaDesc();
 			});							
+		});
+	}
+
+	// 大衍蓍草起卦(WP-I):每爻按蓍草概率(老阳3/少阳5/少阴7/老阴1)生成,老阳老阴为动爻;余流程同自定义起卦。
+	clickYarrowGua(){
+		let yao = this.emptyYao();
+		for(let i = 0; i < 6; i++){
+			const yy = yarrowYao();
+			yao[i].value = yy.value;
+			yao[i].change = yy.change;
+		}
+		let guaidx = this.getCurrentGua(yao);
+		this.setupYao(yao, guaidx);
+		let flds = this.genFields();
+		this.requestNongli(flds, ()=>{
+			this.setState({ yao: yao, currentGua: guaidx }, ()=>{ this.requestGuaDesc(); });
 		});
 	}
 
@@ -1170,7 +1297,8 @@ class GuaZhanMain extends Component{
 			|| prevState.currentGua !== this.state.currentGua
 			|| prevState.yao !== this.state.yao
 			|| prevState.nongli !== this.state.nongli
-			|| prevState.guaDesc !== this.state.guaDesc){
+			|| prevState.guaDesc !== this.state.guaDesc
+			|| prevState.liuyaoSettings !== this.state.liuyaoSettings){
 			const fields = this.props.fields;
 		const state = this.state;
 		saveModuleAISnapshotLazy('guazhan', ()=>buildGuaSnapshotText(fields, state));
@@ -1221,6 +1349,7 @@ class GuaZhanMain extends Component{
 			upGuaIdx: this.state.upGuaIdx,
 			downGuaIdx: this.state.downGuaIdx,
 			number: this.state.number,
+			liuyaoSettings: normalizeLiuyaoSettings(this.state.liuyaoSettings),
 		};
 		const payload = {
 			module: 'guazhan',
@@ -1299,6 +1428,7 @@ class GuaZhanMain extends Component{
 					<div className="horosa-guazhan-action-grid">
 						<Button onClick={()=>{this.clickTimeGua()}}>时间起卦</Button>
 						<Button onClick={this.genGua}>{this.state.btnGenGua}</Button>
+						<Button onClick={this.clickYarrowGua}>蓍草起卦</Button>
 						{this.state.btnName.map((name, idx)=>(
 							<Button key={idx} disabled={this.state.btnDisabled[idx]} onClick={()=>{this.genYao(idx);}}>{name}</Button>
 						))}
@@ -1311,7 +1441,7 @@ class GuaZhanMain extends Component{
 						<InputNumber value={this.state.number} onChange={this.numberChanged} min={0} />
 						<Button onClick={this.clickNumGua}>数字起卦</Button>
 					</div>
-					<Select onChange={this.numGuaDongYaoChanged} value={this.state.numGuaDongYao}>
+					<Select dropdownMatchSelectWidth={false} onChange={this.numGuaDongYaoChanged} value={this.state.numGuaDongYao}>
 						<Option value={-3}>数字直接决定动爻</Option>
 						<Option value={-2}>附加一个随机数决定动爻</Option>
 						<Option value={-1}>附加时辰决定动爻</Option>
@@ -1329,18 +1459,18 @@ class GuaZhanMain extends Component{
 					<div className="horosa-guazhan-select-grid">
 						<label className="horosa-guazhan-select-field">
 							<span>上卦</span>
-							<Select allowClear={true} value={this.state.upGuaIdx} onChange={this.upGuaIdxChanged}>
+							<Select dropdownMatchSelectWidth={false} allowClear={true} value={this.state.upGuaIdx} onChange={this.upGuaIdxChanged}>
 								{upopts}
 							</Select>
 						</label>
 						<label className="horosa-guazhan-select-field">
 							<span>下卦</span>
-							<Select allowClear={true} value={this.state.downGuaIdx} onChange={this.downGuaIdxChanged}>
+							<Select dropdownMatchSelectWidth={false} allowClear={true} value={this.state.downGuaIdx} onChange={this.downGuaIdxChanged}>
 								{downopts}
 							</Select>
 						</label>
 					</div>
-					<Select onChange={this.custGuaDongYaoChanged} value={this.state.custGuaDongYao}>
+					<Select dropdownMatchSelectWidth={false} onChange={this.custGuaDongYaoChanged} value={this.state.custGuaDongYao}>
 						<Option value={-3}>先天卦数直接决定动爻</Option>
 						<Option value={-2}>附加一个随机数决定动爻</Option>
 						<Option value={-1}>附加时辰决定动爻</Option>
@@ -1354,9 +1484,93 @@ class GuaZhanMain extends Component{
 					<Button onClick={this.clickCustGua}>自定义起卦</Button>
 				</div>
 
+				{this.renderLiuyaoSettings()}
+
 				<div className="horosa-guazhan-action-row">
 					<Button onClick={this.clickSaveCase}>保存</Button>
 				</div>
+			</div>
+		);
+	}
+
+	renderLiuyaoSettings(){
+		const s = normalizeLiuyaoSettings(this.state.liuyaoSettings);
+		const schoolVal = s.school;
+		const schoolOpts = LIUYAO_SCHOOL_OPTIONS.slice();
+		if(schoolVal === 'custom'){ schoolOpts.push({ value: 'custom', label: '自定义' }); }
+		return (
+			<div className="horosa-guazhan-input-section">
+				<div className="horosa-guazhan-field-title"><XQIcon name="settings" />断卦设置(流派)</div>
+				<div className="horosa-guazhan-select-grid">
+					<label className="horosa-guazhan-select-field">
+						<span>流派</span>
+						<Select dropdownMatchSelectWidth={false} value={schoolVal} onChange={(v)=>this.changeLiuyaoPreset(v === 'custom' ? s.school : v)}>
+							{schoolOpts.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+						</Select>
+					</label>
+					<label className="horosa-guazhan-select-field">
+						<span>占测事项</span>
+						<Select dropdownMatchSelectWidth={false} value={s.askType} onChange={(v)=>this.changeLiuyaoOption('askType', v)} showSearch optionFilterProp="children">
+							{YONGSHEN_CATEGORIES.map((c)=>(<Option key={c.key} value={c.key}>{c.label}</Option>))}
+						</Select>
+					</label>
+				</div>
+				<div className="horosa-guazhan-yao-checks" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', margin: '6px 0' }}>
+					<Checkbox checked={s.guashen} onChange={(e)=>this.changeLiuyaoOption('guashen', e.target.checked)}>卦身</Checkbox>
+					<Checkbox checked={s.sixGods} onChange={(e)=>this.changeLiuyaoOption('sixGods', e.target.checked)}>六神</Checkbox>
+					<Checkbox checked={!!(s.shensha && s.shensha.on)} onChange={(e)=>this.changeLiuyaoOption('shensha', { on: e.target.checked })}>神煞</Checkbox>
+				</div>
+				<div className="horosa-guazhan-select-grid">
+					<label className="horosa-guazhan-select-field">
+						<span>土长生</span>
+						<Select dropdownMatchSelectWidth={false} value={s.tuChangsheng} onChange={(v)=>this.changeLiuyaoOption('tuChangsheng', v)}>
+							<Option value="water">水土同宫</Option>
+							<Option value="fire">火土同宫</Option>
+							<Option value="off">不标长生</Option>
+						</Select>
+					</label>
+					<label className="horosa-guazhan-select-field">
+						<span>变爻范围</span>
+						<Select dropdownMatchSelectWidth={false} value={s.bianyaoScope} onChange={(v)=>this.changeLiuyaoOption('bianyaoScope', v)}>
+							<Option value="traditional">传统(回头本位)</Option>
+							<Option value="blind">盲派(作用他爻)</Option>
+						</Select>
+					</label>
+					<label className="horosa-guazhan-select-field">
+						<span>飞伏</span>
+						<Select dropdownMatchSelectWidth={false} value={s.fushen} onChange={(v)=>this.changeLiuyaoOption('fushen', v)}>
+							<Option value="missing">仅缺用神取</Option>
+							<Option value="all">逐爻全标</Option>
+						</Select>
+					</label>
+					<label className="horosa-guazhan-select-field">
+						<span>月破</span>
+						<Select dropdownMatchSelectWidth={false} value={s.yuepoMode} onChange={(v)=>this.changeLiuyaoOption('yuepoMode', v)}>
+							<Option value="inMonth">当月有效</Option>
+							<Option value="always">不论出月</Option>
+						</Select>
+					</label>
+				</div>
+				{s.shensha && s.shensha.on ? (
+					<div style={{ margin: '4px 0' }}>
+						<Checkbox.Group
+							value={s.shensha.set}
+							options={SHENSHA_META.map((m)=>({ label: m.name, value: m.name }))}
+							onChange={(vals)=>this.changeLiuyaoOption('shensha', { set: vals })}
+							className="horosa-guazhan-yao-checks"
+						/>
+						<label className="horosa-guazhan-select-field" style={{ marginTop: 4 }}>
+							<span>神煞起例</span>
+							<Select dropdownMatchSelectWidth={false} value={s.shensha.base} onChange={(v)=>this.changeLiuyaoOption('shensha', { base: v })}>
+								<Option value="day">以日干支起</Option>
+								<Option value="year">以年干支起</Option>
+							</Select>
+						</label>
+					</div>
+				) : null}
+				{LIUYAO_PRESETS[schoolVal] && LIUYAO_PRESETS[schoolVal].note ? (
+					<div style={{ fontSize: 12, color: 'var(--xq-text-secondary, #718096)', marginTop: 2 }}>{LIUYAO_PRESETS[schoolVal].note}</div>
+				) : null}
 			</div>
 		);
 	}
@@ -1391,12 +1605,43 @@ class GuaZhanMain extends Component{
 
 	renderRightPanel(height, guadesc){
 		const infoHeight = Math.max(420, height - 170);
-		const activeKey = ['overview', 'gua'].indexOf(this.state.rightPanelTab) >= 0 ? this.state.rightPanelTab : 'overview';
+		const allowed = ['overview', 'zhuang', 'ref', 'gua'];
+		const activeKey = allowed.indexOf(this.state.rightPanelTab) >= 0 ? this.state.rightPanelTab : 'overview';
+		const analysis = this.getLiuyaoAnalysis();
+		const movingSet = new Set();
+		(this.state.yao || []).forEach((y, i)=>{ if(y && y.change){ movingSet.add(i + 1); } });
+		const scrollStyle = { maxHeight: infoHeight, overflowY: 'auto', paddingRight: 4 };
+		const muted = { color: 'var(--horosa-astro-muted, #928b82)', fontSize: 13 };
 		return (
 			<Tabs activeKey={activeKey} onChange={this.setRightPanelTab} defaultActiveKey="overview" tabPosition="top" className="horosa-guazhan-tabs">
 				<TabPane tab="概览" key="overview">
-					<div className="horosa-guazhan-info-card">
+					<div className="horosa-guazhan-info-card" style={scrollStyle}>
+						{analysis ? <LiuYaoXunKong analysis={analysis} /> : null}
 						{this.renderInfoRows()}
+						{analysis ? (
+							<div style={{ marginTop: 12 }}>
+								<div style={{ fontSize: 12, fontWeight: 600, color: 'var(--horosa-astro-label, #d6c7b0)', margin: '4px 0 6px' }}>用神 · 原忌仇</div>
+								<LiuYaoYongShenView analysis={analysis} />
+								<div style={{ fontSize: 12, fontWeight: 600, color: 'var(--horosa-astro-label, #d6c7b0)', margin: '12px 0 6px' }}>动变</div>
+								<LiuYaoDongBianView analysis={analysis} />
+								{analysis.shenSha ? (
+									<div>
+										<div style={{ fontSize: 12, fontWeight: 600, color: 'var(--horosa-astro-label, #d6c7b0)', margin: '12px 0 6px' }}>神煞</div>
+										<LiuYaoShenShaView analysis={analysis} />
+									</div>
+								) : null}
+							</div>
+						) : null}
+					</div>
+				</TabPane>
+				<TabPane tab="装卦" key="zhuang">
+					<div className="horosa-guazhan-info-card" style={scrollStyle}>
+						{analysis ? (<div><LiuYaoZhuangTable analysis={analysis} movingSet={movingSet} hideXunKong /><LiuYaoRelatedCards analysis={analysis} /></div>) : <div style={muted}>请先起卦。</div>}
+					</div>
+				</TabPane>
+				<TabPane tab="参考" key="ref">
+					<div className="horosa-guazhan-info-card" style={scrollStyle}>
+						<LiuYaoReference analysis={analysis} />
 					</div>
 				</TabPane>
 				<TabPane tab="卦辞" key="gua">
@@ -1450,6 +1695,11 @@ class GuaZhanMain extends Component{
 		let chartObj = this.props.value;
 		let chart = chartObj ? chartObj.chart : {};
 
+		// 中栏 d3 的六神随「六神」开关:关则剥离 god → 中盘不画六神(令中盘也随设置变)
+		const _liuSet = normalizeLiuyaoSettings(this.state.liuyaoSettings);
+		let chartYao = this.fillYaoGods(this.state.yao);
+		if(!_liuSet.sixGods && Array.isArray(chartYao)){ chartYao = chartYao.map((y)=>({ ...y, god: null })); }
+
 		let opts = this.genGua64OptDom();
 
 		let upopts = this.genGua8Doms();
@@ -1468,13 +1718,14 @@ class GuaZhanMain extends Component{
 							{this.renderInputPanel(opts, upopts, downopts, dyvalues)}
 						</div>
 						<div className="horosa-chart-stage horosa-chart-stage-redesign horosa-guazhan-chart-panel xq-chart-renderer xq-chart-renderer-liuyao">
+							{/* 流派/卦序/用神/卦身 已并入中栏盘内标题(GZChart.drawTitle),移除左侧冗余浮层 */}
 							<div className="horosa-guazhan-board-host">
-						<GuaZhanChart 
+						<GuaZhanChart
 							value={chart} 
 									height={Math.max(560, height - 22)}
 							fields={this.props.fields}  
 							nongli={this.state.nongli}
-							yao={yao}
+							yao={chartYao} analysis={this.getLiuyaoAnalysis()}
 							chartDisplay={this.props.chartDisplay}
 							planetDisplay={this.props.planetDisplay}
 						/>

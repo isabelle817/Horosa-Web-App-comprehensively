@@ -11,11 +11,14 @@ import ZWRuleMain from '../ruleziwei/ZWRuleMain';
 import ZWLuckPanel, {
 	buildDaxianItems,
 	buildLiunianItems,
+	buildXiaoxianItems,
 	buildLiuyueItems,
 	buildLiuriItems,
 	buildLiushiItems,
 	houseName as luckHouseName,
 	houseIdxByBranch as luckHouseIdxByBranch,
+	emptyLuckSel,
+	luckSelectDaxian,
 } from './ZWLuckPanel';
 import ZWPatternPanel from './ZWPatternPanel';
 import TipsBoard from '../comp/TipsBoard';
@@ -26,6 +29,9 @@ import DateTime from '../comp/DateTime';
 import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { ziweirulesCached } from '../../services/rules';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
+import { calcZiwei, deriveSanPan } from './ZiweiCalc';
+import { detectPatterns } from './ziweiPatterns';
+import { ZWEngineOptions, ziweiNeedsLocalEngine } from './ziweiOptions';
 
 const TabPane = Tabs.TabPane;
 
@@ -125,7 +131,7 @@ function getLifeHouse(chart, houses){
 	return houses.find((house)=>`${house.name || ''}`.includes('命')) || null;
 }
 
-const ZW_PERIOD_LEVEL_LABEL = { daxian: '大限', liunian: '流年', liuyue: '流月', liuri: '流日', liushi: '流时' };
+const ZW_PERIOD_LEVEL_LABEL = { daxian: '大限', liunian: '流年小限', liuyue: '流月', liuri: '流日', liushi: '流时' };
 
 // 单层运限 → 文本块（四化落宫 + 流曜 + 三方四正星情, 复用 ZiWeiHelper.getLayerSihua/getFlowStars/collectFourPalaceStars,
 // 与盘面交互卡同口径）。
@@ -223,7 +229,15 @@ function buildZiweiPeriodLines(chart, period){
 		const ctx = findDaxianForYear(chart, daxianItems, year);
 		if(ctx && ctx.liunian){
 			inRangeYears.push(year);
-			pushSeg(formatLuckLayerLines(chart, ctx.liunian, ZW_PERIOD_LEVEL_LABEL.liunian, `${ctx.liunian.year}年`));
+			{
+				const seg = formatLuckLayerLines(chart, ctx.liunian, ZW_PERIOD_LEVEL_LABEL.liunian, `${ctx.liunian.year}年`);
+				// 小限并入「流年小限」段(需求6B)：同年小限按虚岁对齐，作附带信息列在 head 之后。
+				const xx = buildXiaoxianItems(chart, ctx.daxian).find((x)=> x.age === ctx.liunian.age);
+				if(xx){
+					seg.splice(1, 0, `小限：${xx.ganzi}（${xx.age}虚岁），命宫【${luckHouseName(chart, xx.mingIndex, true)}】`);
+				}
+				pushSeg(seg);
+			}
 		}else{
 			pushSeg([`流年：${year}年（超出大限范围，未列流年）`]);
 		}
@@ -320,8 +334,21 @@ function buildZiWeiSnapshotText(params, result){
 	lines.push(`经纬度：${params.lon} ${params.lat}`);
 	lines.push(`性别：${`${params.gender}` === '1' ? '男' : (`${params.gender}` === '0' ? '女' : '未知')}`);
 	lines.push(`时间算法：${params.timeAlg === 1 ? '直接时间' : '真太阳时'}`);
-	const schoolLabel = { beipai: '北派·飞星', zhongzhou: '中州派', custom: '自定义' }[ZWConst.ZWSchool.school] || '北派·飞星';
+	const schoolLabel = { beipai: '通用·飞星', zhongzhou: '中州派', quanshu: '全书系', beixiang: '北派(天相忌)', custom: '自定义' }[ZWConst.ZWSchool.school] || '通用·飞星';
 	lines.push(`四化流派：${schoolLabel}`);
+	// 传本/排盘开关(非默认才注记,供 AI 知悉本盘用了哪套传本)。
+	const tbNotes = [];
+	if(ZWEngineOptions.daxianSpan !== 10){ tbNotes.push('大限跨度=局数年(钦天)'); }
+	if(ZWEngineOptions.tianmaBasis !== 'month'){ tbNotes.push('天马=年支三合马'); }
+	if(ZWEngineOptions.starSet !== 'full'){ tbNotes.push('星集=精简18星(河洛)'); }
+	if(ZWEngineOptions.sanPan && ZWEngineOptions.sanPan !== 'tian'){ tbNotes.push(`观察盘=${ZWEngineOptions.sanPan === 'di' ? '地盘(身宫起)' : '人盘(福德起)'}`); }
+	if(ZWEngineOptions.shangShi === 'yinyang'){ tbNotes.push('天伤天使=阴阳互换(中州)'); }
+	if(ZWEngineOptions.leapMonth && ZWEngineOptions.leapMonth !== 'mid_split'){ tbNotes.push(`闰月=${ZWEngineOptions.leapMonth === 'next' ? '整月归下月' : '整月归上月'}`); }
+	if(ZWEngineOptions.lateZi && ZWEngineOptions.lateZi !== 'zi_chu'){ tbNotes.push(`晚子时=${ZWEngineOptions.lateZi === 'midnight_split' ? '夜子折中' : '子正换日'}`); }
+	if(ZWEngineOptions.yearBoundary === 'lunar_1_1'){ tbNotes.push('定年界线=正月初一'); }
+	if(ZWEngineOptions.huoling === 'nanpai'){ tbNotes.push('火铃=南派(忽略生时)'); }
+	if(ZWEngineOptions.kongNaming === 'book'){ tbNotes.push('空劫=天空/地劫(古本)'); }
+	if(tbNotes.length){ lines.push(`传本设置：${tbNotes.join('、')}`); }
 	if(yearGan){
 		lines.push(`生年天干：${yearGan}`);
 	}
@@ -395,11 +422,24 @@ export async function buildZiweiSnapshotForParams(params){
 		// 否则快照里星曜级四化仍是旧流派、与 p.sihua 自相矛盾(ZiWeiInput.applySihuaSchool 同口径)。
 		ZiWeiHelper.resetHuaMap();
 	}
+	// 传本/排盘开关(挂载侧 record 显式覆盖时透传):临时切可变单例 ZWEngineOptions(builder 自读它),用毕还原,
+	// 避免污染用户全局现状(与 sihuaSchool 同范式)。缺省不覆盖 → 读全局单例 = 现状字节级一致。
+	const ZW_ENGINE_SWITCH_KEYS = ['daxianSpan', 'tianmaBasis', 'starSet', 'sanPan', 'shangShi', 'leapMonth', 'lateZi', 'yearBoundary', 'huoling', 'kongNaming'];
+	const prevEngine = {};
+	let hasEngineOverride = false;
+	ZW_ENGINE_SWITCH_KEYS.forEach((k)=>{
+		if(params[k] !== undefined && params[k] !== null && `${params[k]}` !== ''){
+			prevEngine[k] = ZWEngineOptions[k];
+			ZWEngineOptions[k] = params[k];
+			hasEngineOverride = true;
+		}
+	});
 	try{
 		const p = { ...params };
-		// 这两键只供前端本地消费,不发后端(后端按白名单忽略,但避免无谓体积/缓存键扰动一并删掉)。
+		// 这些键只供前端本地消费,不发后端(后端按白名单忽略,但避免无谓体积/缓存键扰动一并删掉)。
 		delete p.sihuaSchool;
 		delete p.period;
+		ZW_ENGINE_SWITCH_KEYS.forEach((k)=>{ delete p[k]; });
 		const school = ZWConst.ZWSchool.school;
 		if(school && school !== 'beipai'){
 			p.sihua = ZWConst.getActiveSiHuaGan();
@@ -412,12 +452,29 @@ export async function buildZiweiSnapshotForParams(params){
 		if(!result || !result.chart){
 			return '';
 		}
+		// WP-F:挂载/导出快照与 live 同口径——传本开关非默认时,用本地引擎重排盘+重算格局,
+		// 使快照「传本设置」注记与实际盘数据一致(否则注记说局数年、盘却是 Java 默认 10 年)。失败回退 Java。
+		if(ziweiNeedsLocalEngine()){
+			try{
+				const birth = { date: params.date, time: params.time, zone: params.zone, lon: params.lon, lat: params.lat, gpsLon: params.gpsLon, gpsLat: params.gpsLat, ad: 1, gender: params.gender };
+				const opts = { timeAlg: params.timeAlg, after23NewDay: params.after23NewDay, lateZiHourUseNextDay: params.lateZiHourUseNextDay, daxianSpan: ZWEngineOptions.daxianSpan, tianmaBasis: ZWEngineOptions.tianmaBasis, starSet: ZWEngineOptions.starSet, shangShi: ZWEngineOptions.shangShi, leapMonth: ZWEngineOptions.leapMonth, lateZi: ZWEngineOptions.lateZi, yearBoundary: ZWEngineOptions.yearBoundary, huoling: ZWEngineOptions.huoling, kongNaming: ZWEngineOptions.kongNaming };
+				let localChart = calcZiwei(birth, opts);
+				if(ZWEngineOptions.sanPan && ZWEngineOptions.sanPan !== 'tian'){ localChart = deriveSanPan(localChart, ZWEngineOptions.sanPan); }
+				if(localChart && Array.isArray(localChart.houses) && localChart.houses.length === 12){
+					result.chart = { ...result.chart, ...localChart };
+					try{ const lp = detectPatterns(result.chart); if(Array.isArray(lp)){ result.patterns = lp; } }catch(e3){ /* 保留 Java patterns */ }
+				}
+			}catch(e4){ /* 本地异常 → 保留 Java 盘 */ }
+		}
 		return buildZiWeiSnapshotText(params, result);
 	}finally{
 		if(overrideSchool && overrideSchool !== prevSchool){
 			ZWConst.ZWSchool.school = prevSchool;
 			ZWConst.refreshActiveSiHua();
 			ZiWeiHelper.resetHuaMap();
+		}
+		if(hasEngineOverride){
+			Object.keys(prevEngine).forEach((k)=>{ ZWEngineOptions[k] = prevEngine[k]; });
 		}
 	}
 }
@@ -478,12 +535,13 @@ class ZiWeiMain extends Component{
 		this.state = {
 			result: null,
 			rules: null,
-			currentDirectionIndex: null,
 			indicator: null,
 			cnt: 0,
 			tips: null,
 			centerInfoVisible: false,
-			luckMingIndex: null,
+			// 运限单一真值源（需求1）：命盘九宫格与运限 tab(ZWLuckPanel) 共读写；默认空＝无运限(本命四化+自化)。
+			// dirIndex / luckMingIndex / 各宫运限标签 / 四化滑窗 全由 luckSel 派生(见 render)。
+			luckSel: emptyLuckSel(),
 		};
 
 		this.unmounted = false;
@@ -502,7 +560,7 @@ class ZiWeiMain extends Component{
 		this.navigateFeature = this.navigateFeature.bind(this);
 		this.navigateDirectionTool = this.navigateDirectionTool.bind(this);
 		this.renderBottomQuickDock = this.renderBottomQuickDock.bind(this);
-		this.onLuckChange = this.onLuckChange.bind(this);
+		this.onLuckSelChange = this.onLuckSelChange.bind(this);
 		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
@@ -545,14 +603,22 @@ class ZiWeiMain extends Component{
 		}
 	}
 
+	// 命盘九宫格点大限(需求1)：写统一 luckSel(等价 ZWLuckPanel.pickDaxian)，立即驱动 运X/金框/大限四化叠层。
+	// 再点同一已选大限且无更深层 → 取消(回本命四化+自化的经典盘)，给用户「无运限」可达路径。
 	onChangeDirection(value){
-		let ind = this.state.indicator;
-		let cnt = this.state.cnt;
-		this.setState({
-			currentDirectionIndex: value,
-			indicator: ind,
-			cnt: cnt+1,
-		});
+		const chart = this.state.result ? this.state.result.chart : null;
+		if(!chart){
+			return;
+		}
+		const sel = this.state.luckSel || emptyLuckSel();
+		const isSame = sel.daxian && sel.daxian.mingIndex === value;
+		const noDeeper = !sel.liunian && !sel.liuyue && !sel.liuri && !sel.liushi;
+		if(isSame && noDeeper){
+			this.setState({ luckSel: emptyLuckSel() });
+			return;
+		}
+		const item = buildDaxianItems(chart).find((d)=> d.mingIndex === value) || null;
+		this.setState({ luckSel: luckSelectDaxian(chart, item, sel) });
 	}
 
 	genParams(fields){
@@ -598,13 +664,31 @@ class ZiWeiMain extends Component{
 		]);
 		const result = data[Constants.ResultKey]
 
-		let currentIdx = this.getNowDirectionIdx(result.chart);
+		// 本地引擎双路(传本开关):任一开关非默认 → 用本地 ZiweiCalc 重排中盘(Java 不支持大限跨度/天马/星集/三盘等);
+		// 全默认 → 保留 Java 盘(逐宫零回归)。本地失败一律 try/catch 兜底回退 Java,默认/异常都不破坏现有盘。
+		if(result && result.chart && ziweiNeedsLocalEngine()){
+			try {
+				const birth = { date: params.date, time: params.time, zone: params.zone, lon: params.lon, lat: params.lat, gpsLon: params.gpsLon, gpsLat: params.gpsLat, ad: 1, gender: params.gender };
+				const opts = { timeAlg: params.timeAlg, after23NewDay: params.after23NewDay, lateZiHourUseNextDay: params.lateZiHourUseNextDay, daxianSpan: ZWEngineOptions.daxianSpan, tianmaBasis: ZWEngineOptions.tianmaBasis, starSet: ZWEngineOptions.starSet, shangShi: ZWEngineOptions.shangShi, leapMonth: ZWEngineOptions.leapMonth, lateZi: ZWEngineOptions.lateZi, yearBoundary: ZWEngineOptions.yearBoundary, huoling: ZWEngineOptions.huoling, kongNaming: ZWEngineOptions.kongNaming };
+				let localChart = calcZiwei(birth, opts);
+				if(ZWEngineOptions.sanPan && ZWEngineOptions.sanPan !== 'tian'){ localChart = deriveSanPan(localChart, ZWEngineOptions.sanPan); }
+				if(localChart && Array.isArray(localChart.houses) && localChart.houses.length === 12){
+					result.chart = { ...result.chart, ...localChart };   // 保留 Java 顶层兼容字段、仅换排盘核心
+					// WP-G:格局随本地盘重算(切开关后主星可移位/四化变,Java 默认盘 patterns 会失配)。失败回退 Java。
+					try{ const lp = detectPatterns(result.chart); if(Array.isArray(lp)){ result.patterns = lp; } }catch(e2){ /* 保留 Java patterns */ }
+				}
+			} catch(e){ /* 本地异常 → 保留 Java 盘(零回归兜底) */ }
+		}
 
+		// 运限选择：仅当盘「身份」(生辰+性别+生年干+命宫)变 → 重置(新盘=本命四化+自化的经典盘)；
+		// 盘式(三合/四化)、流派等纯视图重排(同盘) → 保留 luckSel(其 mingIndex/gan 仍对当前盘有效)，避免误清用户所选运限。
+		const prevChart = (this.state.result && this.state.result.chart) ? this.state.result.chart : null;
+		const chartIdentity = (c)=> c ? `${c.birth}|${c.gender}|${c.yearGan}|${c.lifeHouseIndex}` : '';
+		const sameChart = !!prevChart && chartIdentity(prevChart) === chartIdentity(result.chart);
 		const st = {
 			result: result,
 			rules: rules[Constants.ResultKey],
-			currentDirectionIndex: currentIdx,
-			luckMingIndex: null,
+			luckSel: sameChart ? (this.state.luckSel || emptyLuckSel()) : emptyLuckSel(),
 		};
 
 
@@ -663,7 +747,8 @@ class ZiWeiMain extends Component{
 				</Row>
 			);
 			let btntype = null;
-			if(this.state.currentDirectionIndex !== null && this.state.currentDirectionIndex === idx){
+			const selDx = this.state.luckSel && this.state.luckSel.daxian;
+			if(selDx && selDx.mingIndex === idx){
 				btntype = 'primary';
 			}
 			let rad = (
@@ -707,10 +792,9 @@ class ZiWeiMain extends Component{
 		});
 	}
 
-	onLuckChange(idx){
-		this.setState({
-			luckMingIndex: (idx === undefined || idx === null) ? null : idx,
-		});
+	// 运限 tab(ZWLuckPanel) 受控上报：直接落 luckSel 单一真值源（与九宫格同源）。
+	onLuckSelChange(next){
+		this.setState({ luckSel: next || emptyLuckSel() });
 	}
 
 	openDrawer(key){
@@ -866,7 +950,7 @@ class ZiWeiMain extends Component{
 	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 未重排时缓存可能为空,
 	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
 	// 数据源与 requestZiWei 里 saveModuleAISnapshotLazy 同口径:result=this.state.result(盘渲染读的同一份),
-	// params=genParams(this.props.fields)(与 render 里 luckParams 同口径,含运限/流派,故 period 段一并保真)。
+	// params=genParams(this.props.fields)+period=buildPeriodFromLuckSel()(盘面当前所选运限,故 period 段随盘面保真)。
 	handleSnapshotRefreshRequest(evt){
 		const moduleName = evt && evt.detail ? evt.detail.module : '';
 		if(moduleName !== 'ziwei'){
@@ -879,6 +963,8 @@ class ZiWeiMain extends Component{
 		let text = '';
 		try{
 			const params = this.genParams(this.props.fields);
+			// 注入盘面当前所选运限(需求6A)：使「显示什么就导出什么」对运限也成立(此前实时导出不含 [运限])。
+			params.period = this.buildPeriodFromLuckSel();
 			text = `${buildZiWeiSnapshotText(params, result) || ''}`.trim();
 		}catch(e){
 			text = '';
@@ -891,6 +977,55 @@ class ZiWeiMain extends Component{
 		}
 	}
 
+	// 由 luckSel 单一真值源派生盘面渲染所需（需求1/3/5）：大限索引(运X)、最深运命宫(金框高亮)、
+	// 四化滑窗层(末3层+自化开关)、长生左侧标签层(年/月/日/时)。本命/大限按 hua 本色(periodColor=null)，
+	// 流年小限/流月/流日/流时按各层期色。
+	buildLuckRender(chart){
+		const sel = this.state.luckSel || emptyLuckSel();
+		const yearGan = chart && chart.yearGan ? chart.yearGan : '';
+		const win = ZiWeiHelper.luckSihuaWindow(sel, yearGan);
+		const isHuaColored = (key)=> key === 'benming' || key === 'daxian';
+		const sihuaLayers = win.layers.map((l)=>({
+			key: l.key,
+			gan: l.gan,
+			periodColor: isHuaColored(l.key) ? null : ZWConst.ZWPeriodColor[l.key],
+		}));
+		const labelLayers = ZiWeiHelper.luckLabelLayers(sel).map((l)=>({
+			prefix: l.prefix,
+			mingIndex: l.mingIndex,
+			color: ZWConst.ZWPeriodColor[l.key],
+		}));
+		// 稳定签名 key：派生数组每次 render 新建引用，重绘守卫不能用其做引用比较 → 用本 key（仅选择变才变）。
+		const key = [
+			sel.daxian ? sel.daxian.id : '',
+			sel.liunian ? sel.liunian.id : '',
+			sel.liuyue ? sel.liuyue.id : '',
+			sel.liuri ? sel.liuri.id : '',
+			sel.liushi ? sel.liushi.id : '',
+		].join('|');
+		return {
+			dirIndex: sel.daxian ? sel.daxian.mingIndex : null,
+			luckMingIndex: ZiWeiHelper.luckDeepestMingIndex(sel),
+			sihuaLayers,
+			showZihua: win.showZihua,
+			labelLayers,
+			key,
+		};
+	}
+
+	// luckSel → AI 快照 period（与挂载 record→period 同结构，经同一 buildZiweiPeriodLines 出文；需求6A，
+	// 使「显示什么就导出什么」对运限也成立）。全空→null（不产 [运限] 段，与现状逐字一致）。
+	buildPeriodFromLuckSel(){
+		const sel = this.state.luckSel || emptyLuckSel();
+		const period = {};
+		if(sel.daxian) period.daxian = [sel.daxian.mingIndex];
+		if(sel.liunian && Number.isFinite(sel.liunian.year)) period.liunian = [sel.liunian.year];
+		if(sel.liuyue && Number.isFinite(sel.liuyue.month)) period.liuyue = [sel.liuyue.month];
+		if(sel.liuri && Number.isFinite(sel.liuri.day)) period.liuri = [sel.liuri.day];
+		if(sel.liushi && Number.isFinite(sel.liushi.hourIdx)) period.liushi = [sel.liushi.hourIdx];
+		return (period.daxian || period.liunian || period.liuyue || period.liuri || period.liushi) ? period : null;
+	}
+
 	render(){
 		let height = this.props.height ? this.props.height : 760;
 		if(height === '100%'){
@@ -900,16 +1035,9 @@ class ZiWeiMain extends Component{
 		}
 
 		let chart = this.state.result ? this.state.result.chart : {};
-		let dirIndex = this.state.currentDirectionIndex;
+		const luckRender = this.buildLuckRender(chart);
 		let doms = this.genDirectionDom(chart);
 		let infoData = buildZiWeiInfoData(chart, this.props.fields);
-
-		let luckParams = {};
-		try {
-			luckParams = this.genParams(this.props.fields);
-		} catch (e) {
-			luckParams = {};
-		}
 
 		let tipheight = 270;
 		let docwid = document.documentElement.clientWidth;
@@ -933,8 +1061,12 @@ class ZiWeiMain extends Component{
 									value={chart}
 									height="100%"
 									fields={this.props.fields}
-									dirIndex={dirIndex}
-									luckMingIndex={this.state.luckMingIndex}
+									dirIndex={luckRender.dirIndex}
+									luckMingIndex={luckRender.luckMingIndex}
+									luckSihuaLayers={luckRender.sihuaLayers}
+									luckShowZihua={luckRender.showZihua}
+									luckLabelLayers={luckRender.labelLayers}
+									luckKey={luckRender.key}
 									indicate={this.indicate}
 									rules={this.state.rules}
 									onTipClick={this.onTipClick}
@@ -950,8 +1082,8 @@ class ZiWeiMain extends Component{
 								<TabPane tab="运限" key="luck">
 									<ZWLuckPanel
 										chart={chart}
-										params={luckParams}
-										onLuckChange={this.onLuckChange}
+										value={this.state.luckSel}
+										onChange={this.onLuckSelChange}
 										onAi={()=>this.navigateFeature('aianalysis')}
 									/>
 								</TabPane>

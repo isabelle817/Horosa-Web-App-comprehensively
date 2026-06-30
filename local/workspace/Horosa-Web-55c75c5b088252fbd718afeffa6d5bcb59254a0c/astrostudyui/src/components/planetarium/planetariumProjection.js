@@ -114,6 +114,20 @@ function eclipticToEquatorial(lon, lat = 0, jd) {
 	};
 }
 
+// Galactic (l,b in degrees) -> equatorial (ra/decl in degrees). Uses the IAU 1958
+// J2000 galactic pole (ra=192.85948°, decl=27.12825°) and ascending-node longitude
+// (lN=122.93192°). Galactic frame is time-invariant, so no jd dependence.
+function galacticToEquatorial(l, b) {
+	const ap = degToRad(192.85948), dp = degToRad(27.12825), lN = degToRad(122.93192);
+	const lr = degToRad(l), br = degToRad(b);
+	const sinDec = Math.sin(dp) * Math.sin(br) + Math.cos(dp) * Math.cos(br) * Math.cos(lN - lr);
+	const dec = Math.asin(clamp(sinDec, -1, 1));
+	const y = Math.cos(br) * Math.sin(lN - lr);
+	const x = Math.cos(dp) * Math.sin(br) - Math.sin(dp) * Math.cos(br) * Math.cos(lN - lr);
+	const ra = ap + Math.atan2(y, x);
+	return { ra: normalizeDegrees(radToDeg(ra)), decl: radToDeg(dec) };
+}
+
 // Equatorial (ra/decl) -> horizontal (alt/az) for the observer at `jd`.
 // `altitudeAppa` is the apparent (refracted) altitude — what toSkyVector uses —
 // matching swisseph; `altitudeTrue` is the geometric altitude. Azimuth keeps the
@@ -171,6 +185,47 @@ function projectedEquatorialItem(item, jd, observer, applyRefraction = true) {
 	};
 }
 
+// Local apparent sidereal time (degrees) at observer longitude.
+function localSiderealDeg(jd, lon) {
+	return normalizeDegrees(apparentSiderealDegrees(jd) + Number(lon || 0));
+}
+
+// Hour angle (degrees) of an object: HA = LST - RA, normalized to [0,360).
+function hourAngleDeg(jd, lon, ra) {
+	return normalizeDegrees(localSiderealDeg(jd, lon) - Number(ra));
+}
+
+// Rise / transit / set as Julian Days for a fixed-equatorial object (Meeus-style,
+// single iteration; visual-grade). h0 = standard horizon altitude (-0.5667° incl.
+// refraction). Returns {transitJd, riseJd, setJd} or {transitJd, circumpolar} /
+// {transitJd, neverRises} at high latitudes. 360.98564736629 = sidereal deg/day.
+function riseTransitSet(ra, decl, jd, observer, h0 = -0.5667) {
+	const lat = degToRad((observer && observer.lat) || 0);
+	const dec = degToRad(Number(decl));
+	const lst = localSiderealDeg(jd, (observer && observer.lon) || 0);
+	const ha = normalizeDegrees(lst - Number(ra));
+	const haS = (ha > 180 ? ha - 360 : ha);
+	const transitJd = jd + (-haS / 360.98564736629);
+	const cosH = (Math.sin(degToRad(h0)) - Math.sin(lat) * Math.sin(dec)) / (Math.cos(lat) * Math.cos(dec));
+	if (cosH < -1) { return { transitJd, circumpolar: true }; }
+	if (cosH > 1) { return { transitJd, neverRises: true }; }
+	const H = radToDeg(Math.acos(clamp(cosH, -1, 1)));
+	const dt = H / 360.98564736629;
+	return { transitJd, riseJd: transitJd - dt, setJd: transitJd + dt };
+}
+
+// Apparent ecliptic longitude of the Sun (degrees), Meeus low-accuracy (~0.01°).
+// Used for the analemma / 日行迹. Visual-grade.
+function sunEclipticLongitude(jd) {
+	const T = (Number(jd) - 2451545.0) / 36525;
+	const L0 = normalizeDegrees(280.46646 + 36000.76983 * T + 0.0003032 * T * T);
+	const M = degToRad(normalizeDegrees(357.52911 + 35999.05029 * T - 0.0001537 * T * T));
+	const C = (1.914602 - 0.004817 * T - 0.000014 * T * T) * Math.sin(M)
+		+ (0.019993 - 0.000101 * T) * Math.sin(2 * M)
+		+ 0.000289 * Math.sin(3 * M);
+	return normalizeDegrees(L0 + C);
+}
+
 export {
 	degToRad,
 	radToDeg,
@@ -182,6 +237,11 @@ export {
 	apparentSiderealDegrees,
 	atmosphericRefractionDeg,
 	eclipticToEquatorial,
+	galacticToEquatorial,
 	equatorialToHorizontal,
 	projectedEquatorialItem,
+	localSiderealDeg,
+	hourAngleDeg,
+	riseTransitSet,
+	sunEclipticLongitude,
 };

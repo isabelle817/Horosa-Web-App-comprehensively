@@ -151,16 +151,21 @@ def initOffsetMap():
         m = days[i]
         offsetMap[m] = offsets[i]
 
-def getOffset(monthday, gpsLon, baseLon):
+def getOffset(monthday, gpsLon, baseLon, mode='true'):
+    # mode: 'true'=真太阳时(经度时差+均时差,默认零回归) / 'mean'=平太阳时(仅经度时差) / 'off'=钟表时(不校正)
     parts = monthday.split(' ')
     mday = parts[0]
-    realsun = offsetMap[mday]
     lonTmDelta = (gpsLon - baseLon) * 240
+    if mode == 'off':
+        return 0
+    if mode == 'mean':
+        return int(lonTmDelta)
+    realsun = offsetMap[mday]
     return int(lonTmDelta + realsun)
 
-def getOffsetBylonstr(monthday, lonstr, baseLon):
+def getOffsetBylonstr(monthday, lonstr, baseLon, mode='true'):
     londeg = convertLonStrToDegree(lonstr)
-    return getOffset(monthday, londeg, baseLon)
+    return getOffset(monthday, londeg, baseLon, mode)
 
 def getBaseLonByZone(zone):
     # 数值时区(小时偏移,如 8 / -5 / 5.5)直接换算基准经度;纯数值字符串亦容错。
@@ -191,7 +196,7 @@ def getBaseLonByZone(zone):
         return lon
     return -lon
 
-def getOffsetByDate(birth, zone, lon):
+def getOffsetByDate(birth, zone, lon, mode='true'):
     initOffsetMap()
     baseLon = getBaseLonByZone(zone)
     monthday = birth
@@ -204,5 +209,5 @@ def getOffsetByDate(birth, zone, lon):
     parts = monthday.split('-')
     if len(parts) > 0:
         monthday = '{0}-{1}'.format(parts[1], parts[2])
-    timeOffset = getOffsetBylonstr(monthday, lon, baseLon)
+    timeOffset = getOffsetBylonstr(monthday, lon, baseLon, mode)
     return timeOffset

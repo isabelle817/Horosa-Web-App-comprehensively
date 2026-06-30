@@ -36,6 +36,16 @@ const REL_TABLES = [
 	['破', LRConst.ZiPo],
 ];
 
+// 刑冲破害合·断用(§22.2)。蜜中砒霜=合中带刑害(外合内离)单列。
+const REL_NOTE = {
+	'刑': '刑伤、官非、互害(子卯无礼凶意最甚;辰午酉亥自刑,自寻烦恼)',
+	'冲': '冲动、离散、急速、变动(返吟全冲主动荡、聚散无常)',
+	'六合': '和合、成就,亦主牵绊迟缓(占病讼逢合反缠绕难了)',
+	'害': '妨害、暗损、骨肉相残(六壬「涉害课」≠地支六害,勿混)',
+	'破': '破败、分离(六壬中地位最弱,多作辅参)',
+	'三合': '党类众助、成事(三传成局即全局课)',
+};
+
 // 选定五行于某支的十二长生状态（沿用既有「十二长生」口径：ZhangSheng.wxphase['<五行>_<长生名>'] = 支，此处反查支→长生名）。
 function getZhangShengState(elem, branch){
 	try{
@@ -98,6 +108,18 @@ export function buildXiangContext(branch, dayGan, elem){
 	if(Array.isArray(sangHe) && sangHe.length){
 		relations.push(`三合：${sangHe.join('、')}`);
 	}
+	// 刑冲破害合 断语(§22.2):仅列该支实有的关系 + 蜜中砒霜特例。
+	const relationNotes = [];
+	const hasRel = (label, table)=>{ const t = table ? table[zhi] : null; return Array.isArray(t) ? t.length > 0 : !!t; };
+	['刑', '冲', '六合', '害', '破'].forEach((label)=>{
+		const tbl = (REL_TABLES.find((r)=>r[0] === label) || [])[1];
+		if(hasRel(label, tbl)){ relationNotes.push({ type: label, note: REL_NOTE[label] }); }
+	});
+	if(Array.isArray(sangHe) && sangHe.length){ relationNotes.push({ type: '三合', note: REL_NOTE['三合'] }); }
+	// 蜜中砒霜:既六合又带刑/害(外合内离)
+	if(hasRel('六合', LRConst.ZiHe) && (hasRel('刑', LRConst.ZiXing) || hasRel('害', LRConst.ZiHai))){
+		relationNotes.push({ type: '蜜中砒霜', note: '合中带刑害——外合内离、看似团结实则分裂' });
+	}
 	return {
 		branch: zhi,
 		shenName: shen && shen.name ? shen.name : '',     // 月将古名（如「神后」）
@@ -107,6 +129,7 @@ export function buildXiangContext(branch, dayGan, elem){
 		direction: ZI_DIRECTION[zhi] || '',
 		liuqin,
 		relations,
+		relationNotes,
 		yima: LRConst.ZiYiMa[zhi] || '',
 		zhangsheng: getZhangShengState(elem, zhi),
 		zhangshengElem: `${elem || ''}`,

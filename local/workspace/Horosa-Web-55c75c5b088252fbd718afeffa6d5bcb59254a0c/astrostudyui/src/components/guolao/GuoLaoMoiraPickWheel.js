@@ -29,6 +29,7 @@ import {
 	moiraBuildStellarRelations as buildStellarRelations,
 	MOIRA_BIRTH_GOD_ORDER as BIRTH_GOD_ORDER,
 } from './GuoLaoMoiraWheel';
+import * as AstroConst from '../../constants/AstroConst';
 import { guolaoShenShaTip } from './GuoLaoShenShaDoc';
 import './GuoLaoMoiraWheel.less';
 
@@ -60,6 +61,26 @@ function tangentRotate(theta){
 
 function sectorCenter(index, parts){
 	return (index + 0.5) * (360 / parts);
+}
+
+// 命宫所在地支扇区(BRANCHES 子=0..亥=11)。
+// 七政「地支↔黄道星座」镜像:地支扇区序 = (10 - 黄道星座序 + 12) % 12(白羊=戌、水瓶=子,与 DIGNITY_TABLE 同源)。
+// 命度法非「占星上升」用命主度 LifeMasterDeg74 的黄道经度;占星上升用上升点经度(与右栏命度星座口径一致,非 RA)。
+function lifeSignIndex(chart, fields){
+	const objs = (chart && chart.objects) || [];
+	const find = (id)=>objs.find((o)=>o && o.id === id);
+	const mode = fields && fields.guolaoLifeMode && fields.guolaoLifeMode.value;
+	const useAsc = !mode || mode === 'asc';
+	const obj = useAsc ? find(AstroConst.ASC) : (find(AstroConst.LIFEMASTERDEG74) || find(AstroConst.ASC));
+	if(!obj){ return 0; }
+	const lon = Number(obj.lon);
+	if(!Number.isFinite(lon)){ return 0; }
+	return Math.floor((((lon % 360) + 360) % 360) / 30) % 12;
+}
+
+function lifeSectorIndex(chart, fields){
+	const signIdx = lifeSignIndex(chart, fields);
+	return (10 - signIdx + 12) % 12;
 }
 
 function pickPlanetConnectorLine(markTheta, labelTheta, inner, outer, dir, opt = {}){
@@ -299,16 +320,20 @@ class GuoLaoMoiraPickWheel extends Component{
 		const root = this.props.rootValue || {};
 		const chart = this.props.value || root.chart || {};
 		const ziGods = getZiGods(root, chart);
+		const lifeSector = lifeSectorIndex(chart, this.props.fields);
 			for(let i = 0; i < 12; i++){
 				const start = i * 30;
 				const end = (i + 1) * 30;
 				const theta = pickThetaFromDegree(sectorCenter(i, 12));
 				const houseNameRadius = (r(2) + r(3)) / 2;
 				const houseNumberRadius = (r(1) + r(2)) / 2;
+				const houseSlot = ((i - lifeSector) % 12 + 12) % 12;
+				const houseLabel = HOUSE_LABEL[houseSlot];
+				const houseNumber = HOUSE_NUMBERS[houseSlot];
 				const gods = orderedGods(collectGods(ziGods, BRANCHES[i]), BIRTH_GOD_ORDER);
 				const yearRow = yearSignRowForZi(this.props.moiraRules, BRANCHES[i]);
 				const tip = [
-					`${BRANCHES[i]}：${HOUSE_LABEL[i]}；同经：${INNER_PAIR[i]}`,
+					`${BRANCHES[i]}：${houseLabel}；同经：${INNER_PAIR[i]}`,
 					yearRow ? `命曜：${yearRow.star || '—'} ${yearRow.shortName || ''}${yearRow.quality ? `；${yearRow.quality}` : ''}` : '',
 					gods.length ? `神煞：${listText(gods)}` : '',
 				].filter(Boolean).join('\n');
@@ -322,8 +347,8 @@ class GuoLaoMoiraPickWheel extends Component{
 					</path>
 						{radialLine(pickThetaFromDegree(start), r(0), r(3), {color: BLACK, width: 0.95})}
 							{pairedRadialText(INNER_PAIR[i], theta, r(0), r(1), {size: 22, color: BLACK, weight: 600})}
-							{horizontalRingText(HOUSE_NUMBERS[i], houseNumberRadius, theta, {size: 19, color: GREEN, weight: 600})}
-							{horizontalRingText(HOUSE_LABEL[i], houseNameRadius, theta, {size: 19, color: GREEN, weight: 700})}
+							{horizontalRingText(houseNumber, houseNumberRadius, theta, {size: 19, color: GREEN, weight: 600})}
+							{horizontalRingText(houseLabel, houseNameRadius, theta, {size: 19, color: GREEN, weight: 700})}
 						</g>
 				);
 			}

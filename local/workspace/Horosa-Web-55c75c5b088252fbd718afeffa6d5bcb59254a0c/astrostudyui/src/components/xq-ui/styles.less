@@ -1102,6 +1102,9 @@
     }
 
     .horosa-selector-drawer {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
         color: var(--horosa-text);
     }
 
@@ -1115,9 +1118,98 @@
 
     .horosa-selector-drawer .xq-check-item {
         align-items: flex-start;
+        min-height: 38px;
     }
 
     .horosa-selector-drawer .xq-check-box {
         margin-top: 1px;
+    }
+
+    // 选项文字标签：一律正常字族（inherit，非 ywastro），数字 / 度数（如「30°内」）才不会被 glyph 字体映射成乱码。
+    .horosa-selector-drawer .horosa-selector-label {
+        display: inline;
+        font-family: inherit;
+        font-size: 13px;
+        line-height: 1.45;
+        letter-spacing: 0;
+    }
+
+    // 次级提示（如「仅托勒密界生效」）：弱化、跟在标签后另起视觉层次。
+    .horosa-selector-drawer .horosa-selector-label-hint {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--horosa-accent-soft);
+        color: var(--horosa-muted);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    // 禁用态：置灰 + 禁手势（如非托勒密界时「狮子土星优先」）。
+    .horosa-selector-drawer .xq-check-item-disabled,
+    .xq-check-item.xq-check-item-disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        filter: grayscale(0.35);
+    }
+
+    .horosa-selector-drawer .xq-check-item-disabled:hover,
+    .horosa-selector-drawer .xq-check-item-disabled:focus,
+    .xq-check-item.xq-check-item-disabled:hover,
+    .xq-check-item.xq-check-item-disabled:focus {
+        border-color: var(--horosa-border);
+        color: var(--horosa-text);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+    }
+
+    // 分组卡片：每区一个浅描边块，分组标题更清晰，组与组之间留呼吸。
+    .horosa-selector-drawer .horosa-selector-section {
+        margin: 0 0 10px;
+        padding: 10px 12px 12px;
+        border: 1px solid var(--horosa-border);
+        border-radius: 12px;
+        background: var(--horosa-panel-soft);
+    }
+
+    .horosa-selector-drawer .horosa-selector-section .xq-section-title {
+        margin-top: 2px;
+        margin-bottom: 10px;
+    }
+
+    .horosa-selector-drawer .horosa-selector-section .xq-check-list {
+        gap: 8px;
+    }
+
+    // 界系 / 月交点 / 区分判定等分段控件行：与 check-item 视觉统一（同样描边卡片）。
+    .horosa-selector-drawer .horosa-terms-row {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin: 8px 0 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--horosa-surface-raised);
+        border: 1px solid var(--horosa-border);
+    }
+
+    .horosa-selector-drawer .horosa-terms-label {
+        font-size: 12px;
+        font-weight: 650;
+        color: var(--horosa-text-soft);
+        opacity: 1;
+    }
+
+    .horosa-selector-drawer .horosa-terms-row .xq-segmented.ant-radio-group {
+        width: 100%;
+        display: flex;
+    }
+
+    .horosa-selector-drawer .horosa-terms-row .xq-segmented .ant-radio-button-wrapper {
+        flex: 1;
+        text-align: center;
     }
 }

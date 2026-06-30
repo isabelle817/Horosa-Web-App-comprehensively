@@ -21,6 +21,12 @@ class ChuangChart {
 		this.downZi = option.liuRengChart.downZi;
 		this.tianJiang = option.liuRengChart.houseTianJiang;
 
+		// 涉害取舍流派(默认 app:仅下贼上方向数克·计起点不计本家;已固定)
+		//   method: 'app'(默认) | 'standard'(深浅两向:贼数被克/克数主克) | 'mengzhongji'(直取孟仲季,不数克)
+		//   boundary: 'app'(计起点不计本家·默认) | 'both'(两端皆计) | 'neither'(皆不计)
+		//   shiRuKe: true → 单一下贼上发用单列「始入课」(并入重审=false 默认)
+		this.seHaiOpts = option.seHaiOpts || {};
+
 		this.x = option.x;
 		this.y = option.y;
 		this.width = option.width;
@@ -255,21 +261,27 @@ class ChuangChart {
 		return res;
 	}
 
-	getSeHais(cuangs){
+	getSeHais(cuangs, mode){
 		const ziList = this.uniqueZiList(cuangs || []);
 		if(ziList.length === 0){
 			return null;
 		}
-		let maxcuang = 0;
+		const method = (this.seHaiOpts && this.seHaiOpts.method) || 'app';
 		let stack = [];
-		for(let i=0; i<ziList.length; i++){
-			let cnt = this.getSeHaiCount(ziList[i]);
-			if(cnt > maxcuang){
-				maxcuang = cnt;
-				stack = [];
-				stack.push(ziList[i]);
-			}else if(cnt === maxcuang){
-				stack.push(ziList[i]);
+		if(method === 'mengzhongji'){
+			// 直取孟仲季法(陈公献/邵彦和古案):不数克,全部候选直接进孟仲季裁决
+			stack = ziList.slice(0);
+		}else{
+			let maxcuang = 0;
+			for(let i=0; i<ziList.length; i++){
+				let cnt = this.getSeHaiCount(ziList[i], mode);
+				if(cnt > maxcuang){
+					maxcuang = cnt;
+					stack = [];
+					stack.push(ziList[i]);
+				}else if(cnt === maxcuang){
+					stack.push(ziList[i]);
+				}
 			}
 		}
 		let res = {};
@@ -320,24 +332,30 @@ class ChuangChart {
 		}
 	}
 
-	getSeHaiCount(cuang){
+	getSeHaiCount(cuang, mode){
+		const method = (this.seHaiOpts && this.seHaiOpts.method) || 'app';
+		const boundary = (this.seHaiOpts && this.seHaiOpts.boundary) || 'app';
+		// 主克方向仅在「标准深浅两向」且候选来自上克下(mode==='克')时启用;否则恒数「被克」(=标准之贼)
+		const zhuKe = method === 'standard' && mode === '克';
 		let cnt = 0;
-		let upidx = this.upZi.indexOf(cuang);
-		let downidx = this.downZi.indexOf(cuang);
-		downidx = downidx >= upidx ? downidx : downidx + 12;
-		for(let i=upidx; i<downidx; i++){
-			let idx = i % 12;
-			let zi = this.downZi[idx];
-			if(LRConst.isRestrain(zi, cuang)){
+		let seat = this.upZi.indexOf(cuang);      // 起点:候选天盘支所临地盘宫
+		let home = this.downZi.indexOf(cuang);    // 本家:候选地支本宫
+		if(home < seat){ home += 12; }
+		// 默认 app=[seat, home):含起点、不含本家(已固定);both=[seat,home];neither=(seat,home)
+		const lo = boundary === 'neither' ? seat + 1 : seat;
+		const hi = boundary === 'both' ? home + 1 : home;
+		for(let i=lo; i<hi; i++){
+			let zi = this.downZi[i % 12];
+			if(zhuKe ? LRConst.isRestrain(cuang, zi) : LRConst.isRestrain(zi, cuang)){
 				cnt = cnt + 1;
 			}
 			let gan = LRConst.ZiHanGan[zi];
 			if(gan){
 				let ganary = gan.split('');
-				for(let i=0; i<ganary.length; i++){
-					if(LRConst.isRestrain(ganary[i], cuang)){
+				for(let j=0; j<ganary.length; j++){
+					if(zhuKe ? LRConst.isRestrain(cuang, ganary[j]) : LRConst.isRestrain(ganary[j], cuang)){
 						cnt = cnt + 1;
-					}		
+					}
 				}
 			}
 		}
@@ -358,7 +376,8 @@ class ChuangChart {
 		if(stack.length === 1){
 			let res = {};
 			res.cuang = this.getCuang(stack[0]);
-			res.name = '重审课';
+			// 始入课:单一下贼上,开关启则单列(九法变十法),默认并入重审
+			res.name = (this.seHaiOpts && this.seHaiOpts.shiRuKe) ? '始入课' : '重审课';
 			return res;
 		}else if(stack.length > 1){
 			let gan = this.nongli.dayGanZi.substr(0, 1);
@@ -367,10 +386,10 @@ class ChuangChart {
 			if(yinyang.cnt === 1){
 				let res = {};
 				res.cuang = this.getCuang(yinyangData[0]);
-				res.name = '比用课';	
+				res.name = '比用课';
 				return res;
 			}else{
-				return this.getSeHais(yinyangData);
+				return this.getSeHais(yinyangData, '贼');
 			}
 		}
 		return null;
@@ -399,10 +418,10 @@ class ChuangChart {
 			if(yinyang.cnt === 1){
 				let res = {};
 				res.cuang = this.getCuang(yinyangData[0]);
-				res.name = '知一课';	
+				res.name = '知一课';
 				return res;
 			}else{
-				return this.getSeHais(yinyangData);
+				return this.getSeHais(yinyangData, '克');
 			}
 		}
 		return null;

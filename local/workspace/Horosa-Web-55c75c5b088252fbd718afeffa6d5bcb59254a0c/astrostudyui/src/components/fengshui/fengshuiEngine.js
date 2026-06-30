@@ -731,13 +731,16 @@ export default class FengShuiEngine {
 			if ((marker.mode || 'naqi') === 'bagua') {
 				ctx.strokeStyle = selected ? '#c0883a' : '#fff';
 				ctx.lineWidth = 2 * vs; ctx.stroke();
-				// 圈下方写角色/格局名（白描边 + 深字，覆于户型图上始终清晰）
+				// 圈下方写角色/格局名（柔光衬底 + 深字，覆于户型图上清晰，无硬描边）
 				const cap = marker.kind === 'member' ? marker.role : marker.label;
 				ctx.font = 'bold ' + Math.round(11 * vs) + 'px "PingFang SC"';
 				ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-				ctx.lineWidth = 3 * vs; ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-				ctx.strokeText(cap, x, y + radius + 2 * vs);
-				ctx.fillStyle = '#2a2018'; ctx.fillText(cap, x, y + radius + 2 * vs);
+				ctx.save();
+				ctx.shadowColor = 'rgba(255,255,255,0.95)'; ctx.shadowBlur = 4 * vs;
+				ctx.fillStyle = '#2a2018';
+				ctx.fillText(cap, x, y + radius + 2 * vs);
+				ctx.fillText(cap, x, y + radius + 2 * vs);
+				ctx.restore();
 			} else {
 				const ev = this.evaluateMarker(marker);
 				ctx.strokeStyle = !ev.ok && ev.expected !== 'neutral' ? '#b14032' : '#fff';

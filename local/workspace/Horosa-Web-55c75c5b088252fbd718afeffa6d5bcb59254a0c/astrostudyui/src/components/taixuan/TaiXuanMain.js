@@ -525,7 +525,8 @@ class TaiXuanMain extends Component{
 			<Tabs activeKey={activeKey} onChange={this.setRightPanelTab} defaultActiveKey="overview" tabPosition="top" className="horosa-huangji-tabs">
 				<TabPane tab="概览" key="overview">
 					<div className="horosa-huangji-section-list">
-						{this.renderRows(pan ? (pan.sections || []).slice(0, 2) : [])}
+						{/* 概览=「起盘」节(sections[0]);玄首/方州部家归各自页签,避免「玄首」节在两个页签重复显示。 */}
+						{this.renderRows(pan ? (pan.sections || []).slice(0, 1) : [])}
 					</div>
 				</TabPane>
 				<TabPane tab="玄首" key="head">

@@ -363,6 +363,211 @@ export const EGYPTIAN_TERMS = {
     ]
 }
 
+// 界系另两套表(托勒密 Tetrabiblos / 莉莉),与 EGYPTIAN_TERMS 同结构;由界主表程序生成。盘内「界限环」按所选界系取表。
+export const TETRABIBLOS_TERMS = {
+
+    Aries: [
+        ['Jupiter', 0, 6],
+        ['Venus', 6, 14],
+        ['Mercury', 14, 21],
+        ['Mars', 21, 26],
+        ['Saturn', 26, 30]
+    ],
+
+    Taurus: [
+        ['Venus', 0, 8],
+        ['Mercury', 8, 15],
+        ['Jupiter', 15, 22],
+        ['Saturn', 22, 24],
+        ['Mars', 24, 30]
+    ],
+
+    Gemini: [
+        ['Mercury', 0, 7],
+        ['Jupiter', 7, 13],
+        ['Venus', 13, 20],
+        ['Mars', 20, 26],
+        ['Saturn', 26, 30]
+    ],
+
+    Cancer: [
+        ['Mars', 0, 6],
+        ['Jupiter', 6, 13],
+        ['Mercury', 13, 20],
+        ['Venus', 20, 27],
+        ['Saturn', 27, 30]
+    ],
+
+    Leo: [
+        ['Jupiter', 0, 6],
+        ['Mercury', 6, 13],
+        ['Saturn', 13, 19],
+        ['Venus', 19, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Virgo: [
+        ['Mercury', 0, 7],
+        ['Venus', 7, 13],
+        ['Jupiter', 13, 18],
+        ['Saturn', 18, 24],
+        ['Mars', 24, 30]
+    ],
+
+    Libra: [
+        ['Saturn', 0, 6],
+        ['Venus', 6, 11],
+        ['Mercury', 11, 16],
+        ['Jupiter', 16, 24],
+        ['Mars', 24, 30]
+    ],
+
+    Scorpio: [
+        ['Mars', 0, 6],
+        ['Venus', 6, 13],
+        ['Jupiter', 13, 21],
+        ['Mercury', 21, 27],
+        ['Saturn', 27, 30]
+    ],
+
+    Sagittarius: [
+        ['Jupiter', 0, 8],
+        ['Venus', 8, 14],
+        ['Mercury', 14, 19],
+        ['Saturn', 19, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Capricorn: [
+        ['Venus', 0, 6],
+        ['Mercury', 6, 12],
+        ['Jupiter', 12, 19],
+        ['Saturn', 19, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Aquarius: [
+        ['Saturn', 0, 6],
+        ['Mercury', 6, 12],
+        ['Venus', 12, 20],
+        ['Jupiter', 20, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Pisces: [
+        ['Venus', 0, 8],
+        ['Jupiter', 8, 14],
+        ['Mercury', 14, 20],
+        ['Mars', 20, 25],
+        ['Saturn', 25, 30]
+    ],
+
+};
+
+export const LILLY_TERMS = {
+
+    Aries: [
+        ['Jupiter', 0, 6],
+        ['Venus', 6, 14],
+        ['Mercury', 14, 21],
+        ['Mars', 21, 26],
+        ['Saturn', 26, 30]
+    ],
+
+    Taurus: [
+        ['Venus', 0, 8],
+        ['Mercury', 8, 15],
+        ['Jupiter', 15, 22],
+        ['Saturn', 22, 26],
+        ['Mars', 26, 30]
+    ],
+
+    Gemini: [
+        ['Mercury', 0, 7],
+        ['Jupiter', 7, 14],
+        ['Venus', 14, 21],
+        ['Saturn', 21, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Cancer: [
+        ['Mars', 0, 6],
+        ['Jupiter', 6, 13],
+        ['Mercury', 13, 20],
+        ['Venus', 20, 27],
+        ['Saturn', 27, 30]
+    ],
+
+    Leo: [
+        ['Saturn', 0, 6],
+        ['Mercury', 6, 13],
+        ['Venus', 13, 19],
+        ['Jupiter', 19, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Virgo: [
+        ['Mercury', 0, 7],
+        ['Venus', 7, 13],
+        ['Jupiter', 13, 18],
+        ['Saturn', 18, 24],
+        ['Mars', 24, 30]
+    ],
+
+    Libra: [
+        ['Saturn', 0, 6],
+        ['Venus', 6, 11],
+        ['Jupiter', 11, 19],
+        ['Mercury', 19, 24],
+        ['Mars', 24, 30]
+    ],
+
+    Scorpio: [
+        ['Mars', 0, 6],
+        ['Jupiter', 6, 14],
+        ['Venus', 14, 21],
+        ['Mercury', 21, 27],
+        ['Saturn', 27, 30]
+    ],
+
+    Sagittarius: [
+        ['Jupiter', 0, 8],
+        ['Venus', 8, 14],
+        ['Mercury', 14, 19],
+        ['Saturn', 19, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Capricorn: [
+        ['Venus', 0, 6],
+        ['Mercury', 6, 12],
+        ['Jupiter', 12, 19],
+        ['Mars', 19, 25],
+        ['Saturn', 25, 30]
+    ],
+
+    Aquarius: [
+        ['Saturn', 0, 6],
+        ['Mercury', 6, 12],
+        ['Venus', 12, 20],
+        ['Jupiter', 20, 25],
+        ['Mars', 25, 30]
+    ],
+
+    Pisces: [
+        ['Venus', 0, 8],
+        ['Jupiter', 8, 14],
+        ['Mercury', 14, 20],
+        ['Mars', 20, 25],
+        ['Saturn', 25, 30]
+    ],
+
+};
+
+// termsVariant 0 埃及(默认)/1 托勒密/2 莉莉 → 对应界主表(供星盘「界限环」按所选界绘制)。
+export const TERMS_TABLES_BY_VARIANT = [EGYPTIAN_TERMS, TETRABIBLOS_TERMS, LILLY_TERMS];
+
+
 export const HOUSE1 = 'House1'
 export const HOUSE2 = 'House2'
 export const HOUSE3 = 'House3'
@@ -867,7 +1072,7 @@ export const INDIA_AYANAMSA_OPTIONS = [
     // B. 真星定标 + 古典
     { value: 'true_citra', label: 'True Citra（角宿真星）', group: '真星·古典' },
     { value: 'true_revati', label: 'True Revati（娄宿真星）', group: '真星·古典' },
-    { value: 'true_pushya', label: 'True Pushya / 普舍亚（PVRN Rao）', group: '真星·古典' },
+    { value: 'true_pushya', label: 'True Pushya / 普舍亚', group: '真星·古典' },
     { value: 'true_mula', label: 'True Mula（Chandra Hari）', group: '真星·古典' },
     { value: 'true_sheoran', label: 'Vedic / Sheoran', group: '真星·古典' },
     { value: 'ss_citra', label: 'SS Citra', group: '真星·古典' },
@@ -1147,6 +1352,95 @@ export const INDIA_CHART_STYLE_OPTIONS = [
 export function normalizeIndiaChartStyle(value){
     const found = INDIA_CHART_STYLE_OPTIONS.find((item)=>item.value === value);
     return found ? found.value : INDIA_CHART_STYLE_SOUTH;
+}
+
+// WP-B 上升宫位(第1宫)参照:默认上升;可选七政/虚点为第1宫(Chandra/Surya Lagna 等,§12.3)
+// 或选 1-12 宫为第1宫(旋转宫号)。**纯显示重参照**(§1.6「只改显示参照,不改黄经」),零后端、零回归。
+export const INDIA_LAGNA_REF_DEFAULT = 'asc';
+export const INDIA_LAGNA_REF_OPTIONS = [
+    { label: '默认', options: [{ value: 'asc', label: '上升 Lagna（默认）' }] },
+    { label: '七政为第1宫', options: [
+        { value: SUN, label: '太阳 Sūrya Lagna' },
+        { value: MOON, label: '月亮 Chandra Lagna' },
+        { value: MERCURY, label: '水星' },
+        { value: VENUS, label: '金星' },
+        { value: MARS, label: '火星' },
+        { value: JUPITER, label: '木星' },
+        { value: SATURN, label: '土星' },
+    ] },
+    { label: '虚点为第1宫', options: [
+        { value: NORTH_NODE, label: '罗睺 Rahu' },
+        { value: SOUTH_NODE, label: '计都 Ketu' },
+    ] },
+    { label: '宫位为第1宫', options: Array.from({ length: 12 }, (_, i)=>({ value: `house${i + 1}`, label: `第${i + 1}宫` })) },
+];
+export function normalizeIndiaLagnaRef(value){
+    if(value === INDIA_LAGNA_REF_DEFAULT){ return INDIA_LAGNA_REF_DEFAULT; }
+    const flat = INDIA_LAGNA_REF_OPTIONS.reduce((acc, g)=>acc.concat(g.options.map((o)=>o.value)), []);
+    return flat.indexOf(value) >= 0 ? value : INDIA_LAGNA_REF_DEFAULT;
+}
+
+// WP-C 星体显示:文字(Su/Mo…默认)↔ 符号(ywastrochart glyph)。纯显示层,零请求(§1.6)。
+export const INDIA_PLANET_DISPLAY_TEXT = 'text';
+export const INDIA_PLANET_DISPLAY_GLYPH = 'glyph';
+export const INDIA_PLANET_DISPLAY_OPTIONS = [
+    { value: INDIA_PLANET_DISPLAY_TEXT, label: '文字' },
+    { value: INDIA_PLANET_DISPLAY_GLYPH, label: '符号' },
+];
+export function normalizeIndiaPlanetDisplay(value){
+    return value === INDIA_PLANET_DISPLAY_GLYPH ? INDIA_PLANET_DISPLAY_GLYPH : INDIA_PLANET_DISPLAY_TEXT;
+}
+
+// 罗睺/计都交点口径:'mean'(平交点,默认零回归)/ 'true'(真交点)。
+export const INDIA_NODE_TYPE_DEFAULT = 'mean';
+export const INDIA_NODE_TYPE_OPTIONS = [
+    { value: 'mean', label: '平交点' },
+    { value: 'true', label: '真交点' },
+];
+
+export function normalizeIndiaNodeType(value){
+    return value === 'true' ? 'true' : INDIA_NODE_TYPE_DEFAULT;
+}
+
+// 印度占星五大流派(预设包·软联动):切派写默认岁差/宫制/相位范式 + 可见右栏 tab 子集,
+// 但用户仍可单独覆盖(软联动);默认 parashari = 现状零行为差异。tab key 见 13 TabPane(1-13)。
+export const INDIA_SCHOOL_DEFAULT = 'parashari';
+export const INDIA_SCHOOL_OPTIONS = [
+    { value: 'parashari', label: 'Parāśarī 帕拉萨拉(默认)' },
+    { value: 'jaimini', label: 'Jaimini 贾米尼' },
+    { value: 'tajika', label: 'Tājika 塔吉卡(年盘)' },
+    { value: 'kp', label: 'KP 系统' },
+    { value: 'nadi', label: 'Nāḍī 纳迪' },
+];
+// 每派默认:ayanamsa / hsys(分宫数) / aspectParadigm(中栏相位范式) / tabs(可见右栏 tab key 集)。
+export const INDIA_SCHOOL_DEFAULTS = {
+    parashari: { ayanamsa: 'lahiri', hsys: 0, aspectParadigm: 'graha', tabs: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13'] },
+    jaimini: { ayanamsa: 'lahiri', hsys: 0, aspectParadigm: 'rasi', tabs: ['1', '2', '3', '4', '7', '9', '13'] },
+    tajika: { ayanamsa: 'lahiri', hsys: 0, aspectParadigm: 'tajika', tabs: ['1', '2', '3', '11'] },
+    kp: { ayanamsa: 'krishnamurti', hsys: 3, aspectParadigm: 'kp', tabs: ['1', '3', '5', '6', '10'] },
+    nadi: { ayanamsa: 'lahiri', hsys: 0, aspectParadigm: 'nadi', tabs: ['1', '3', '4'] },
+};
+
+export function normalizeIndiaSchool(value){
+    return INDIA_SCHOOL_OPTIONS.find((item)=>item.value === value) ? value : INDIA_SCHOOL_DEFAULT;
+}
+
+export function getIndiaSchoolDefaults(school){
+    return INDIA_SCHOOL_DEFAULTS[normalizeIndiaSchool(school)] || INDIA_SCHOOL_DEFAULTS[INDIA_SCHOOL_DEFAULT];
+}
+
+// 大运体系:vimshottari(120 年,默认)/ yogini(36 年 8 女神)/ ashtottari(108 年 Ardradi)。
+export const INDIA_DASHA_SYSTEM_DEFAULT = 'vimshottari';
+export const INDIA_DASHA_SYSTEM_OPTIONS = [
+    { value: 'vimshottari', label: 'Vimshottari' },
+    { value: 'yogini', label: 'Yogini' },
+    { value: 'ashtottari', label: 'Ashtottari' },
+    { value: 'tribhagi', label: 'Tribhāgī（÷3）' },
+];
+
+export function normalizeIndiaDashaSystem(value){
+    const found = INDIA_DASHA_SYSTEM_OPTIONS.find((item)=>item.value === value);
+    return found ? found.value : INDIA_DASHA_SYSTEM_DEFAULT;
 }
 
 const colorSelector = {

@@ -4,11 +4,14 @@ import { dstAwareZoneAt } from '../../utils/timezone';
 import DateTime from '../comp/DateTime';
 import SpaceTimePanel from '../comp/SpaceTimePanel';
 import * as SZConst from '../suzhan/SZConst';
+import * as AstroConst from '../../constants/AstroConst';
 import { XQSelect as Select, XQToggle } from '../xq-ui';
+import GuoLaoStarSectDoc from './GuoLaoStarSectDoc';
 import XQIcon from '../xq-icons';
-import { GUOLAO_ALL_ASPECTS, GUOLAO_CHART_STYLE_CLASSIC, GUOLAO_CHART_STYLE_MOIRA, GUOLAO_CHART_STYLE_PICK, GUOLAO_CHART_STYLE_QIZHENG, GUOLAO_LIFE_MODE_ASC, GUOLAO_LIFE_MODE_COTRANS, GUOLAO_LIFE_MODE_YUMAO, GUOLAO_NODE_MODE_NORTH_KETU, GUOLAO_NODE_MODE_NORTH_RAHU, getStoredGuolaoLifeMode, getStoredGuolaoNodeMode, normalizeGuolaoLifeMode, normalizeGuolaoNodeMode, } from './GuoLaoChartStyle';
+import { GUOLAO_ALL_ASPECTS, GUOLAO_CHART_STYLE_CLASSIC, GUOLAO_CHART_STYLE_MOIRA, GUOLAO_CHART_STYLE_PICK, GUOLAO_CHART_STYLE_QIZHENG, GUOLAO_LIFE_MODE_ASC, GUOLAO_LIFE_MODE_COTRANS, GUOLAO_LIFE_MODE_YUMAO, GUOLAO_NODE_MODE_NORTH_KETU, GUOLAO_NODE_MODE_NORTH_RAHU, getStoredGuolaoLifeMode, getStoredGuolaoNodeMode, setStoredGuolaoAyanamsa, getStoredGuolaoTrueSolarTime, setStoredGuolaoTrueSolarTime, getStoredGuolaoNodeType, setStoredGuolaoNodeType, getStoredGuolaoLilithType, setStoredGuolaoLilithType, getStoredGuolaoBodyMode, setStoredGuolaoBodyMode, getStoredGuolaoTuibianMethod, setStoredGuolaoTuibianMethod, getStoredGuolaoGufaPrecess, setStoredGuolaoGufaPrecess, getStoredGuolaoEqTropicalAnchor, setStoredGuolaoEqTropicalAnchor, setStoredGuolaoLifeMode, setStoredGuolaoSu28Mode, GUOLAO_SCHOOL_PRESETS, normalizeGuolaoLifeMode, normalizeGuolaoNodeMode, } from './GuoLaoChartStyle';
+import { SU28_MODE_GROUPS, TUIBIAN_METHOD_OPTIONS, GUFA_PRECESS_OPTIONS, EQ_TROPICAL_ANCHOR_OPTIONS, TRUE_SOLAR_TIME_OPTIONS, NODE_TYPE_OPTIONS, LILITH_TYPE_OPTIONS, BODY_MODE_OPTIONS, LIFE_MODE_OPTIONS, LIFE_MASTER_MODE_OPTIONS, MINOR_LIMIT_TYPE_OPTIONS, TONGXIAN_BASE_OPTIONS, SCHOOL_PRESET_OPTIONS, LIFE_CUSTOM_ZHI_OPTIONS, BODY_CUSTOM_ZHI_OPTIONS } from './guolaoData';
 
-const {Option} = Select;
+const {Option, OptGroup} = Select;
 
 class GuoLaoInput extends Component{
 	
@@ -27,6 +30,14 @@ class GuoLaoInput extends Component{
 		this.onChartStyleChange = this.onChartStyleChange.bind(this);
 		this.onLifeModeChange = this.onLifeModeChange.bind(this);
 		this.onNodeModeChange = this.onNodeModeChange.bind(this);
+		this.onAyanamsaChange = this.onAyanamsaChange.bind(this);
+		this.onTrueSolarTimeChange = this.onTrueSolarTimeChange.bind(this);
+		this.onNodeTypeChange = this.onNodeTypeChange.bind(this);
+		this.onLilithTypeChange = this.onLilithTypeChange.bind(this);
+		this.onBodyModeChange = this.onBodyModeChange.bind(this);
+		this.onTuibianMethodChange = this.onTuibianMethodChange.bind(this);
+		this.onGufaPrecessChange = this.onGufaPrecessChange.bind(this);
+		this.onEqTropicalAnchorChange = this.onEqTropicalAnchorChange.bind(this);
 		this.onMoiraTransitTimeChanged = this.onMoiraTransitTimeChanged.bind(this);
 		this.onMoiraTransitGodsToggle = this.onMoiraTransitGodsToggle.bind(this);
 		this.onEngineModeChange = this.onEngineModeChange.bind(this);
@@ -182,6 +193,86 @@ class GuoLaoInput extends Component{
 				},
 			});
 		}
+	}
+
+	onAyanamsaChange(val){
+		if(this.props.onFieldsChange){
+			let dt = this.tmHook.getValue().value;
+			setStoredGuolaoAyanamsa(val);
+			this.props.onFieldsChange({
+				guolaoAyanamsa: { value: val || '' },
+				date: { value: dt.clone() },
+				time: { value: dt.clone() },
+				ad: { value: dt.ad },
+				zone: { value: dt.zone },
+			});
+		}
+	}
+
+	// G6/G10/G11 起盘类参数:变更须重排盘(带 date/time/ad/zone 触发后端重取,同 onAyanamsaChange)。
+	onGuolaoParamChange(fieldKey, val, setter){
+		if(this.props.onFieldsChange){
+			const dt = this.tmHook.getValue().value;
+			if(setter){ setter(val); }
+			const patch = { date: { value: dt.clone() }, time: { value: dt.clone() }, ad: { value: dt.ad }, zone: { value: dt.zone } };
+			patch[fieldKey] = { value: val };
+			this.props.onFieldsChange(patch);
+		}
+	}
+
+	onTrueSolarTimeChange(val){
+		this.onGuolaoParamChange('guolaoTrueSolarTime', val, setStoredGuolaoTrueSolarTime);
+	}
+
+	onNodeTypeChange(val){
+		this.onGuolaoParamChange('guolaoNodeType', val, setStoredGuolaoNodeType);
+	}
+
+	onLilithTypeChange(val){
+		this.onGuolaoParamChange('guolaoLilithType', val, setStoredGuolaoLilithType);
+	}
+
+	onBodyModeChange(val){
+		this.onGuolaoParamChange('guolaoBodyMode', val, setStoredGuolaoBodyMode);
+	}
+
+	// WP-D 授时历古法(用制 6)子选项:推变法 + 古宿岁差,变更须重排盘(同 onBodyModeChange 起盘类)。
+	onTuibianMethodChange(val){
+		this.onGuolaoParamChange('guolaoTuibianMethod', val, setStoredGuolaoTuibianMethod);
+	}
+
+	onGufaPrecessChange(val){
+		this.onGuolaoParamChange('guolaoGufaPrecess', val, setStoredGuolaoGufaPrecess);
+	}
+
+	// 额外档 赤道回归制(用制 7)锚点:牛前冬至/春分壁2.3,变更须重排盘。
+	onEqTropicalAnchorChange(val){
+		this.onGuolaoParamChange('guolaoEqTropicalAnchor', val, setStoredGuolaoEqTropicalAnchor);
+	}
+
+	// 类B 显示偏好的下拉(命主取法/行运法):写 guolaoDisplay,纯前端即时联动,不重取后端。
+	onGuolaoDisplaySelect(key, val){
+		if(this.props.onGuolaoDisplayChange){
+			this.props.onGuolaoDisplayChange({[key]: val});
+		}
+	}
+
+	// G34 流派预设一键:批量套 类A fields(单帧重排)+ 类B display(即时);选后回 custom 可微调。
+	onSchoolPresetChange(preset){
+		const p = GUOLAO_SCHOOL_PRESETS[preset];
+		if(!p || !this.props.onFieldsChange){ return; }
+		const f = p.fields || {};
+		const setters = {
+			guolaoLifeMode: setStoredGuolaoLifeMode, guolaoBodyMode: setStoredGuolaoBodyMode,
+			guolaoTrueSolarTime: setStoredGuolaoTrueSolarTime, guolaoNodeType: setStoredGuolaoNodeType,
+			doubingSu28: setStoredGuolaoSu28Mode,
+		};
+		Object.keys(f).forEach((k)=>{ if(setters[k]){ setters[k](f[k]); } });
+		const dt = this.tmHook.getValue().value;
+		const patch = { date: { value: dt.clone() }, time: { value: dt.clone() }, ad: { value: dt.ad }, zone: { value: dt.zone } };
+		Object.keys(f).forEach((k)=>{ patch[k] = { value: f[k] }; });
+		this.props.onFieldsChange(patch);
+		if(p.display && this.props.onGuolaoDisplayChange){ this.props.onGuolaoDisplayChange(p.display); }
 	}
 
 	onMoiraTransitTimeChanged(value){
@@ -463,33 +554,119 @@ class GuoLaoInput extends Component{
 						<label className="horosa-guolao-select-field">
 							<span>宿度制</span>
 							<Select value={fields.doubingSu28.value} onChange={this.onDoubingSu28Change} size='small' dropdownMatchSelectWidth={false}>
-								<Option value={2}>回归今制</Option>
-								<Option value={3}>回归开禧（开禧历）</Option>
-								<Option value={4}>恒星制（郑式）</Option>
-								<Option value={0}>荀爽19年测量</Option>
-								<Option value={1}>斗柄定房法</Option>
+								{SU28_MODE_GROUPS.map((g)=>(
+									<OptGroup key={g.header} label={g.header}>
+										{g.options.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+									</OptGroup>
+								))}
 							</Select>
 						</label>
 						<label className="horosa-guolao-select-field">
 							<span>命度</span>
 							<Select value={lifeMode} onChange={this.onLifeModeChange} size='small' dropdownMatchSelectWidth={false}>
-								<Option value={GUOLAO_LIFE_MODE_ASC}>占星上升</Option>
-								<Option value={GUOLAO_LIFE_MODE_YUMAO}>遇卯安命</Option>
-								<Option value={GUOLAO_LIFE_MODE_COTRANS}>赤黄转换</Option>
+								{LIFE_MODE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								{LIFE_CUSTOM_ZHI_OPTIONS.map((o)=>(<Option key={`lc-${o.value}`} value={o.value}>{o.label}</Option>))}
 							</Select>
 						</label>
-						<label className="horosa-guolao-select-field">
-							<span>盘式</span>
-							<Select value={szshape} onChange={this.onChartShapeChange} size='small' dropdownMatchSelectWidth={false}>
-								<Option value={SZConst.SZChart_Circle}>圆形盘</Option>
-								<Option value={SZConst.SZChart_Square}>方形盘</Option>
-							</Select>
-						</label>
+						{chartStyle === GUOLAO_CHART_STYLE_CLASSIC ? (
+							<label className="horosa-guolao-select-field">
+								<span>盘式</span>
+								<Select value={szshape} onChange={this.onChartShapeChange} size='small' dropdownMatchSelectWidth={false}>
+									<Option value={SZConst.SZChart_Circle}>圆形盘</Option>
+									<Option value={SZConst.SZChart_Square}>方形盘</Option>
+								</Select>
+							</label>
+						) : null}
 						<label className="horosa-guolao-select-field">
 							<span>罗计</span>
 							<Select value={nodeMode} onChange={this.onNodeModeChange} size='small' dropdownMatchSelectWidth={false}>
 								<Option value={GUOLAO_NODE_MODE_NORTH_RAHU}>北罗南计</Option>
 								<Option value={GUOLAO_NODE_MODE_NORTH_KETU}>北计南罗</Option>
+							</Select>
+						</label>
+						{Number(fields.doubingSu28.value) === 4 ? (
+							<label className="horosa-guolao-select-field">
+								<span>恒星岁差</span>
+								<Select value={(fields.guolaoAyanamsa && fields.guolaoAyanamsa.value) || ''} onChange={this.onAyanamsaChange} size='small' dropdownMatchSelectWidth={false}>
+									<Option value="">郑式(默认)</Option>
+									{(AstroConst.INDIA_AYANAMSA_OPTIONS || []).map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								</Select>
+							</label>
+						) : null}
+						{Number(fields.doubingSu28.value) === 6 ? (
+							<label className="horosa-guolao-select-field">
+								<span>推变法</span>
+								<Select value={(fields.guolaoTuibianMethod && fields.guolaoTuibianMethod.value) || getStoredGuolaoTuibianMethod()} onChange={this.onTuibianMethodChange} size='small' dropdownMatchSelectWidth={false}>
+									{TUIBIAN_METHOD_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								</Select>
+							</label>
+						) : null}
+						{Number(fields.doubingSu28.value) === 6 ? (
+							<label className="horosa-guolao-select-field">
+								<span>古宿岁差</span>
+								<Select value={Number((fields.guolaoGufaPrecess && fields.guolaoGufaPrecess.value) || getStoredGuolaoGufaPrecess())} onChange={this.onGufaPrecessChange} size='small' dropdownMatchSelectWidth={false}>
+									{GUFA_PRECESS_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								</Select>
+							</label>
+						) : null}
+						{Number(fields.doubingSu28.value) === 7 ? (
+							<label className="horosa-guolao-select-field">
+								<span>回归锚点</span>
+								<Select value={(fields.guolaoEqTropicalAnchor && fields.guolaoEqTropicalAnchor.value) || getStoredGuolaoEqTropicalAnchor()} onChange={this.onEqTropicalAnchorChange} size='small' dropdownMatchSelectWidth={false}>
+									{EQ_TROPICAL_ANCHOR_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								</Select>
+							</label>
+						) : null}
+						<label className="horosa-guolao-select-field">
+							<span>报时星</span>
+							<Select value={(fields.guolaoTrueSolarTime && fields.guolaoTrueSolarTime.value) || getStoredGuolaoTrueSolarTime()} onChange={this.onTrueSolarTimeChange} size='small' dropdownMatchSelectWidth={false}>
+								{TRUE_SOLAR_TIME_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+							</Select>
+						</label>
+						<label className="horosa-guolao-select-field">
+							<span>罗计取法</span>
+							<Select value={(fields.guolaoNodeType && fields.guolaoNodeType.value) || getStoredGuolaoNodeType()} onChange={this.onNodeTypeChange} size='small' dropdownMatchSelectWidth={false}>
+								{NODE_TYPE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+							</Select>
+						</label>
+						<label className="horosa-guolao-select-field">
+							<span>月孛取法</span>
+							<Select value={(fields.guolaoLilithType && fields.guolaoLilithType.value) || getStoredGuolaoLilithType()} onChange={this.onLilithTypeChange} size='small' dropdownMatchSelectWidth={false}>
+								{LILITH_TYPE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+							</Select>
+						</label>
+						<label className="horosa-guolao-select-field">
+							<span>身宫法</span>
+							<Select value={(fields.guolaoBodyMode && fields.guolaoBodyMode.value) || getStoredGuolaoBodyMode()} onChange={this.onBodyModeChange} size='small' dropdownMatchSelectWidth={false}>
+								{BODY_MODE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								{BODY_CUSTOM_ZHI_OPTIONS.map((o)=>(<Option key={`bc-${o.value}`} value={o.value}>{o.label}</Option>))}
+							</Select>
+						</label>
+						<label className="horosa-guolao-select-field">
+							<span>命主取法</span>
+							<Select value={display.lifeMasterMode || 'gong'} onChange={(v)=>this.onGuolaoDisplaySelect('lifeMasterMode', v)} size='small' dropdownMatchSelectWidth={false}>
+								{LIFE_MASTER_MODE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+							</Select>
+						</label>
+						<label className="horosa-guolao-select-field">
+							<span>行运法</span>
+							<Select value={display.minorLimitType || ''} onChange={(v)=>this.onGuolaoDisplaySelect('minorLimitType', v)} size='small' dropdownMatchSelectWidth={false}>
+								<Option value="">古度限度法(默认)</Option>
+								{MINOR_LIMIT_TYPE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+							</Select>
+						</label>
+						{display.minorLimitType === 'tong' ? (
+							<label className="horosa-guolao-select-field">
+								<span>童限基数</span>
+								<Select value={display.tongxianBase || 'tong10'} onChange={(v)=>this.onGuolaoDisplaySelect('tongxianBase', v)} size='small' dropdownMatchSelectWidth={false}>
+									{TONGXIAN_BASE_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+								</Select>
+							</label>
+						) : null}
+						<label className="horosa-guolao-select-field">
+							<span>流派预设</span>
+							<Select value="custom" onChange={(v)=>{ if(v !== 'custom'){ this.onSchoolPresetChange(v); } }} size='small' dropdownMatchSelectWidth={false}>
+								{SCHOOL_PRESET_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
 							</Select>
 						</label>
 						{chartStyleField}
@@ -573,6 +750,7 @@ class GuoLaoInput extends Component{
 								}}
 							>政余格局 · 显示档位设置…</button>
 						) : null}
+						<GuoLaoStarSectDoc />
 					</div>
 				) : null}
 			</div>

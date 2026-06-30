@@ -97,6 +97,14 @@ public class IndiaChartController {
 		params.put("indiaAyanamsa", indiaAyanamsa);
 		params.put("ayanamsa", indiaAyanamsa);
 		params.put("siderealMode", indiaAyanamsa);
+		// 罗睺/计都交点口径:'mean'(平交点,默认)或 'true'(真交点)。白名单未登记会被静默丢弃。
+		String nodeType = "mean";
+		if(TransData.containsParam("nodeType")) {
+			nodeType = TransData.getValueAsString("nodeType");
+		} else if(TransData.containsParam("indiaNodeType")) {
+			nodeType = TransData.getValueAsString("indiaNodeType");
+		}
+		params.put("nodeType", nodeType);
 		params.put("tradition", TransData.getValueAsBool("tradition", false));
 		params.put("strongRecption", TransData.getValueAsBool("strongRecption", false));
 		params.put("virtualPointReceiveAsp", TransData.getValueAsBool("virtualPointReceiveAsp", false));
@@ -121,6 +129,30 @@ public class IndiaChartController {
 		}
 		if(TransData.containsParam("pdTimeKey")) {
 			params.put("pdTimeKey", TransData.get("pdTimeKey"));
+		}
+		// 印度功能扩展可选参数(白名单未登记会被静默丢弃)：
+		//   vargaSet 多分盘集 / transitDate 过运日期 / tajakaYear+tajakaApprox 年度盘 / dashaSystem 大运派别。
+		//   均可选、仅前端下发时透传，缺省不进 cache key → 既有请求零缓存影响。
+		if(TransData.containsParam("vargaSet")) {
+			params.put("vargaSet", TransData.get("vargaSet"));
+		}
+		if(TransData.containsParam("transitDate")) {
+			params.put("transitDate", TransData.get("transitDate"));
+		}
+		if(TransData.containsParam("tajakaYear")) {
+			params.put("tajakaYear", TransData.getValueAsInt("tajakaYear", 0));
+		}
+		if(TransData.containsParam("tajakaApprox")) {
+			params.put("tajakaApprox", TransData.getValueAsBool("tajakaApprox", false));
+		}
+		if(TransData.containsParam("dashaSystem")) {
+			params.put("dashaSystem", TransData.get("dashaSystem"));
+		}
+		if(TransData.containsParam("dashaSeed")) {
+			params.put("dashaSeed", TransData.get("dashaSeed"));
+		}
+		if(TransData.containsParam("sthiraStart")) {
+			params.put("sthiraStart", TransData.get("sthiraStart"));
 		}
 		if(TransData.containsParam("gpsLat")) {
 			params.put("gpsLat", TransData.get("gpsLat"));

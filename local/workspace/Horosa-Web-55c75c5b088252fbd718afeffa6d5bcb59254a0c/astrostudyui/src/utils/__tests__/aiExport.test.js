@@ -47,7 +47,7 @@ describe('aiExport settings', ()=>{
 	it('exposes structured section groups for newly added techniques', ()=>{
 		const options = optionsByTechnique();
 		expect(options.suzhan).toEqual(expect.arrayContaining(['起盘信息', '宿盘宫位与二十八宿星曜']));
-		expect(options.qimen).toEqual(expect.arrayContaining(['八宫详解', '九宫方盘', '九宫与宫内星体']));
+		expect(options.qimen).toEqual(expect.arrayContaining(['八宫详解', '九宫方盘', '旺相休囚死·月令能量']));
 		expect(options.jinkou).toEqual(expect.arrayContaining([
 			'金口诀速览',
 			'金口诀四位',
@@ -69,7 +69,8 @@ describe('aiExport settings', ()=>{
 		expect(options.taixuan).toEqual(expect.arrayContaining(['起盘', '玄首', '方州部家', '表']));
 		expect(options.jingjue).toEqual(expect.arrayContaining(['起课', '卦辞', '三分', '十六卦']));
 		expect(options.shenyishu).toEqual(expect.arrayContaining(['干支与五行', '神卦', '五行法则', '主客判断', '长生', '吉凶']));
-		expect(options.germany).toEqual(expect.arrayContaining(['宫位宫头', '行星', '中点', '中点相位']));
+		// 量化盘 preset 须含[汉堡学派要素]——buildHamburgLines 拼进 germany 快照,否则「AI导出设置」勾不到且被静默过滤。
+		expect(options.germany).toEqual(expect.arrayContaining(['宫位宫头', '行星', '中点', '中点相位', '汉堡学派要素']));
 		expect(options.otherbu).toEqual(expect.arrayContaining(['骰子结果', '骰子盘宫位与星体', '天象盘宫位与星体']));
 		expect(options.bazi).toEqual(expect.arrayContaining(['四柱与三元', '神煞（四柱与三元）', '大运', '流年行运概略', '多运限·指定时段']));
 		expect(options.ziwei).toEqual(expect.arrayContaining(['起盘信息', '宫位总览', '运限']));
@@ -211,10 +212,11 @@ describe('aiExport settings', ()=>{
 		const settings = loadAIExportSettings();
 		expect(settings.version).toBe(AI_EXPORT_SETTINGS_VERSION);
 		expect(settings.sections.suzhan).toEqual(expect.arrayContaining(['宿盘宫位与二十八宿星曜']));
-		expect(settings.sections.qimen).toEqual(expect.arrayContaining(['九宫与宫内星体']));
+		expect(settings.sections.qimen).toEqual(expect.arrayContaining(['旺相休囚死·月令能量']));
 		expect(settings.sections.jinkou).toEqual(expect.arrayContaining(['金口诀三盘', '十二长生']));
 		expect(settings.sections.taiyi).toEqual(expect.arrayContaining(['太乙诸神', '断法', '十六宫标记']));
-		expect(settings.sections.germany).toEqual(expect.arrayContaining(['中点', '中点相位']));
+		// v28:量化盘 union 后含新段[汉堡学派要素](汉堡功能段此前未登记 preset → 自定义过段的老用户会被静默删)。
+		expect(settings.sections.germany).toEqual(expect.arrayContaining(['中点', '中点相位', '汉堡学派要素']));
 		expect(settings.sections.otherbu).toEqual(expect.arrayContaining(['骰子结果', '天象盘宫位与星体']));
 		expect(settings.sections.bazi).toEqual(expect.arrayContaining(['大运', '多运限·指定时段']));
 		expect(settings.sections.ziwei).toEqual(expect.arrayContaining(['宫位总览', '运限']));

@@ -8,7 +8,7 @@ Created on Wed May 17 11:55:49 2023
 import re
 import datetime
 from itertools import cycle
-from jieqi import get_jieqi_start_date, jq, gangzhi, jiazi, lunar_date_d, repeat_list, zhirun_jieqi
+from jieqi import get_jieqi_start_date, get_current_jieqi_start_date, jq, gangzhi, jiazi, lunar_date_d, repeat_list, zhirun_jieqi, zhirun_jieqi_noleap
 
 cnum = list("一二三四五六七八九十")
 #干支
@@ -255,10 +255,52 @@ def qimen_ju_name_zhirun(year, month, day, hour, minute):
         "下": jieqi_code[2]}.get(find_yuen),
         find_yuen)
 
-#定局實際所用之節氣:1拆補=當日曆法節氣(jq);2置閏=超神接氣置閏節氣(zhirun_jieqi)
+#奇門排局茅山:曆法節氣定陰陽遁,元由「距交節之時辰數」定(不問符頭、不置閏);與時家前端 qimenJuNameMaoshan 同口徑
+def qimen_ju_name_maoshan(year, month, day, hour, minute):
+    yydun = {tuple(new_list(jieqi_name, "冬至")[0:12]): "陽遁",
+             tuple(new_list(jieqi_name, "夏至")[0:12]): "陰遁"}
+    # 時刻感知取「當前所處節氣」及其交節時刻(修節氣當天未到點誤取下一節氣→shichen負數鉗0→錯判上元的邊界bug)
+    _cur = get_current_jieqi_start_date(year, month, day, hour, minute)
+    jieqi = _cur["節氣"]
+    find_yingyang = multi_key_dict_get(yydun, jieqi)
+    jieqi_code = jieqicode_jq(jieqi)
+    jq_time = _cur["時間"]
+    now = datetime.datetime(year, month, day, hour, minute)
+    shichen = int((now - jq_time).total_seconds() // 7200)   # 每2小時一時辰
+    if shichen < 0:
+        shichen = 0
+    yuan_raw = shichen // 60                                   # 每元60時辰(5日)
+    if yuan_raw >= 3:                                          # 滿3元(下元足60時辰)→ 接下一節氣上元(專題§2.1)
+        idx = list(jieqi_name).index(jieqi)
+        jieqi = list(jieqi_name)[(idx + 1) % len(jieqi_name)]
+        find_yingyang = multi_key_dict_get(yydun, jieqi)
+        jieqi_code = jieqicode_jq(jieqi)
+        yuan_idx = 0
+    else:
+        yuan_idx = yuan_raw                                    # 0上1中2下
+    yuan = ["上", "中", "下"][yuan_idx]
+    return "{}{}局{}元".format(find_yingyang, jieqi_code[yuan_idx], yuan)
+
+#奇門排局無閏:超神接氣定局但不置閏(同置閏管道,節氣改用 zhirun_jieqi_noleap);與時家前端 qimenJuNameWurun 同口徑
+def qimen_ju_name_wurun(year, month, day, hour, minute):
+    jieqi = zhirun_jieqi_noleap(year, month, day, hour, minute)
+    yydun = {tuple(new_list(jieqi_name, "冬至")[0:12]): "陽遁",
+             tuple(new_list(jieqi_name, "夏至")[0:12]): "陰遁"}
+    find_yingyang = multi_key_dict_get(yydun, jieqi)
+    find_yuen = findyuen(year, month, day, hour, minute)
+    jieqi_code = jieqicode_jq(jieqi)
+    return "{}{}局{}元".format(find_yingyang, {
+        "上": jieqi_code[0],
+        "中": jieqi_code[1],
+        "下": jieqi_code[2]}.get(find_yuen),
+        find_yuen)
+
+#定局實際所用之節氣:1拆補/3茅山=當日曆法節氣(jq);2置閏=超神接氣置閏節氣(zhirun_jieqi);4無閏=超神接氣不置閏節氣(zhirun_jieqi_noleap)
 def dingju_jieqi(year, month, day, hour, minute, option):
     if option == 2:
         return zhirun_jieqi(year, month, day, hour, minute)
+    if option == 4:
+        return zhirun_jieqi_noleap(year, month, day, hour, minute)
     return jq(year, month, day, hour, minute)
 
         
@@ -308,7 +350,9 @@ def pan_earth_min_r(year, month, day, hour, minute):
 #排值符
 def zhifu_pai(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     yinyang = qmju[0]
     kook =  qmju[2]
     pai = {"陽":{"一":"九八七一二三四五六",
@@ -336,7 +380,9 @@ def zhifu_pai(year, month, day, hour, minute, option):
 
 def zhifu_pai_ke(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     yinyang = qmju[0]
     kook =  qmju[2]
     pai = {"陽":{"一":"九八七一二三四五六",
@@ -366,7 +412,9 @@ def zhifu_pai_ke(year, month, day, hour, minute, option):
 #1拆補 #2置閏
 def zhishi_pai(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     yinyang = qmju[0]
     kook =  qmju[2]
     new_kook = new_list(cnumber, kook)
@@ -380,7 +428,9 @@ def zhishi_pai(year, month, day, hour, minute, option):
 
 def zhishi_pai_ke(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     yinyang = qmju[0]
     kook = qmju[2]
     new_kook = new_list(cnumber, kook)
@@ -394,7 +444,9 @@ def zhishi_pai_ke(year, month, day, hour, minute, option):
 #八門
 def pan_door(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     zfnzs = zhifu_n_zhishi(year, month, day, hour, minute, option)
     starting_door = zfnzs.get("值使門宮")[0]
     starting_gong = zfnzs.get("值使門宮")[1]
@@ -425,7 +477,9 @@ def pan_door_minute(year, month, day, hour, minute, option):
 #九星
 def pan_star(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     zhifunzhishi = zhifu_n_zhishi(year, month, day, hour, minute, option)
     star_r = list("蓬任沖輔英禽柱心")
     starting_star = zhifunzhishi.get("值符星宮")[0].replace("芮", "禽")
@@ -459,7 +513,9 @@ def pan_star_minute(year, month, day, hour, minute, option):
 #八神
 def pan_god(year, month, day, hour, minute, option):
     qmju = {1:qimen_ju_name_chaibu(year, month, day, hour, minute),
-            2:qimen_ju_name_zhirun(year, month, day, hour, minute)}.get(option)
+            2:qimen_ju_name_zhirun(year, month, day, hour, minute),
+            3:qimen_ju_name_maoshan(year, month, day, hour, minute),
+            4:qimen_ju_name_wurun(year, month, day, hour, minute)}.get(option)
     zfzs = zhifu_n_zhishi(year, month, day, hour, minute, option)
     starting_gong = zfzs.get("值符星宮")[1]
     rotate = {"陽":clockwise_eightgua,

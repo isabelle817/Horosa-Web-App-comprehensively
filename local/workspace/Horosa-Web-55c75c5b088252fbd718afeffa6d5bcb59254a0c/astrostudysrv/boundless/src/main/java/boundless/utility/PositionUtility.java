@@ -194,6 +194,10 @@ public class PositionUtility {
     		parts = StringUtility.splitString(latstr, 's');
     		positive = -1;
     	}
+    	if(parts.length < 2){
+    		// 防御:无 n/s 分隔(畸形或十进制度数)→ 按十进制度解析,失败归 0,绝不越界崩盘
+    		try { return Double.parseDouble(latstr.replaceAll("[^0-9.\\-]", "")); } catch(Exception ex){ return 0; }
+    	}
     	String min = parts[1];
     	int minInt;
     	if(parts[1].length() == 2){
@@ -219,6 +223,10 @@ public class PositionUtility {
     	if(parts.length == 1){
     		parts = StringUtility.splitString(lonstr, 'w');
     		positive = -1;
+    	}
+    	if(parts.length < 2){
+    		// 防御:无 e/w 分隔(畸形或十进制度数,如 "108.9")→ 按十进制度解析,失败归 0,绝不越界崩盘
+    		try { return Double.parseDouble(lonstr.replaceAll("[^0-9.\\-]", "")); } catch(Exception ex){ return 0; }
     	}
 
     	String minstr = parts[1];

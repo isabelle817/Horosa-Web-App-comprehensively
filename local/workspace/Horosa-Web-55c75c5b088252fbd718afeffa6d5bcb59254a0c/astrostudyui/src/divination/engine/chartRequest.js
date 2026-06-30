@@ -35,6 +35,8 @@ export function buildChartParams(fields){
 		pos: v('pos', null),
 		after23NewDay: v('after23NewDay', 1),
 		lateZiHourUseNextDay: v('lateZiHourUseNextDay', 0),
+		// 界系(bounds)：默认 0/缺省 不下发(同主盘 fieldsToParams 口径,零回归);仅非 0 才传 → /chart 已按界算尊贵/界主。
+		...((fields && fields.termsVariant && fields.termsVariant.value) ? { termsVariant: fields.termsVariant.value } : {}),
 	};
 	if(params.pdaspects && params.pdaspects instanceof String){
 		params.pdaspects = JSON.parse(params.pdaspects);

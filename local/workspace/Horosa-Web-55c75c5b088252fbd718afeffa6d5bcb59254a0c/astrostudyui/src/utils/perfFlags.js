@@ -5,7 +5,9 @@
 //   localStorage.setItem('horosa.perf.lazySnapshot', '0')   // 快照惰性构建
 //   localStorage.setItem('horosa.perf.ziweiRulesCache', '0')// 紫微 rules 会话缓存
 //   localStorage.setItem('horosa.perf.chartDrawGuard', '0') // 图面重绘签名守卫
+//   localStorage.setItem('horosa.perf.chartSCU', '0')       // 盘面重组件 shouldComponentUpdate
 //   localStorage.setItem('horosa.perf.hookRaf', '0')        // 排盘 hook rAF 化
+//   localStorage.setItem('horosa.perf.freezeInactiveTabs','0')// 冻结非激活 TabPane 重渲
 // 恢复:对应 key removeItem 或设 '1'。
 
 function flagEnabled(key){
@@ -31,6 +33,14 @@ export function chartDrawGuardEnabled(){
 	return flagEnabled('horosa.perf.chartDrawGuard');
 }
 
+export function chartSCUEnabled(){
+	return flagEnabled('horosa.perf.chartSCU');
+}
+
 export function hookRafEnabled(){
 	return flagEnabled('horosa.perf.hookRaf');
+}
+
+export function freezeInactiveTabsEnabled(){
+	return flagEnabled('horosa.perf.freezeInactiveTabs');
 }

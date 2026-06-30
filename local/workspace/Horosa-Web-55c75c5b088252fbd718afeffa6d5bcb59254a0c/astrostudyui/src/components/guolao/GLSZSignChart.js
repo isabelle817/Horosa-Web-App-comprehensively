@@ -65,10 +65,26 @@ class GLSZSignChart extends SZChartComm{
 			.attr('width', this.width).attr('height', this.height);
 		
 		this.su28chart.draw();
-		this.ascSign = this.su28chart.getAscSign();
+		// R: 命度法非「占星上升」时,命宫(立命)以 BaZi 命度 LifeMasterDeg74 所在宫为准(对齐右栏/Moira圆盘);
+		// 自定命宫(地支)/日出/赤黄/古法遇卯 都走此,占星上升仍用上升点。
+		this.ascSign = this.getLifeMasterSign() || this.su28chart.getAscSign();
 		this.ascSignIndex = AstroConst.LIST_SIGNS.indexOf(this.ascSign);
 
 		this.drawHouses();
+	}
+
+	getLifeMasterSign(){
+		try{
+			const mode = this.fields && this.fields.guolaoLifeMode && this.fields.guolaoLifeMode.value;
+			if(!mode || mode === 'asc'){ return null; }   // 占星上升用上升点
+			const objs = (this.chartObj && this.chartObj.objects) || [];
+			let life = null;
+			for(let i = 0; i < objs.length; i++){ if(objs[i] && objs[i].id === AstroConst.LIFEMASTERDEG74){ life = objs[i]; break; } }
+			if(!life){ return null; }
+			const lon = Number(life.lon);
+			if(!Number.isFinite(lon)){ return null; }
+			return AstroConst.LIST_SIGNS[Math.floor((((lon % 360) + 360) % 360) / 30) % 12] || null;
+		}catch(e){ return null; }
 	}
 
 	drawHouses(){

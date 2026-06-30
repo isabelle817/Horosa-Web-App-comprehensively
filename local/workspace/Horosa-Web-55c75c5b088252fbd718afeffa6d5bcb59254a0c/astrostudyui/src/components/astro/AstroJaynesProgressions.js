@@ -1,13 +1,15 @@
 import { Component } from 'react';
-import { Spin } from 'antd';
+import { Spin, Select } from 'antd';
 import { XQButton as Button, XQTabs as Tabs } from '../xq-ui';
 import request from '../../utils/request';
 import * as Constants from '../../utils/constants';
 import * as AstroText from '../../constants/AstroText';
-import { unwrapResult, astroSymbol, symbolWithMeaning, fmtNum, chartParams, chartRequestKey, cardStyle, SmallTable } from './AstroExtraCommon';
+import { unwrapResult, fmtNum, chartParams, chartRequestKey, cardStyle } from './AstroExtraCommon';
 import { buildStarAndLotPositionLines, buildHouseCuspLines, } from '../../utils/astroAiSnapshot';
+import ProgMethodPanel, { MINOR_VARIANT_OPTIONS } from './AstroProgChart';
 
 const TabPane = Tabs.TabPane;
+const { Option } = Select;
 
 function today(){
 	const dt = new Date();
@@ -16,17 +18,22 @@ function today(){
 
 function typeLabel(t){ return t === 'contraparallel' ? '反平行' : '平行'; }
 
-// Jayne 赤纬推运 AI 快照（无头）：内部 fetch /astroextra/jaynesprog。无数据返回 ''。
-// opts（AI 挂载「每技法设置」）：targetDate + targetTime（目标时刻）。缺省 → today()/12:00:00（=现状）。
+function methodTab(method){
+	return method.method === 'secondary' ? '二次推运' : (method.method === 'tertiary' ? '三次推运' : '小推运');
+}
+
+// 赤纬推运 AI 快照（无头）：内部 fetch /astroextra/jaynesprog。无数据返回 ''。
+// opts（AI 挂载「每技法设置」）：targetDate + targetTime（目标时刻）+ minorVariant（小推运月长，缺省 engine=现状）。
 export async function buildJaynesProgSnapshotText(chartObj, opts){
 	if(!chartObj){ return ''; }
 	const o = opts && typeof opts === 'object' ? opts : {};
 	const targetDate = `${o.targetDate || ''}`.trim() || today();
 	const targetTime = `${o.targetTime || ''}`.trim() || '12:00:00';
+	const minorVariant = `${o.minorVariant || ''}`.trim() || 'engine';
 	let result = null;
 	try{
 		const data = await request(`${Constants.ServerRoot}/astroextra/jaynesprog`, {
-			body: JSON.stringify({ ...chartParams(chartObj), targetDate, targetTime, orb: 1.0 }),
+			body: JSON.stringify({ ...chartParams(chartObj), targetDate, targetTime, minorVariant, orb: 1.0 }),
 			timeoutMs: 45000,
 		});
 		result = unwrapResult(data) || {};
@@ -36,8 +43,8 @@ export async function buildJaynesProgSnapshotText(chartObj, opts){
 	if(!sec || !Array.isArray(sec.parallels) || sec.parallels.length === 0){ return ''; }
 	const sym = (id) => (AstroText.AstroTxtMsg[id] || `${id}`);
 	const lines = [];
-	lines.push('[赤纬推运（Jayne Declination）]');
-	lines.push('Charles Jayne 赤纬推运：推运后看赤纬平行/反平行（下表为二次推运，截至今日）。');
+	lines.push('[赤纬推运（Declination）]');
+	lines.push('赤纬推运：推运后看赤纬平行/反平行（下表为二次推运，截至今日）。');
 	const natalStars = buildStarAndLotPositionLines(chartObj);
 	const natalHouses = buildHouseCuspLines(chartObj);
 	if(natalStars.length || natalHouses.length){
@@ -56,10 +63,11 @@ export async function buildJaynesProgSnapshotText(chartObj, opts){
 	return lines.join('\n');
 }
 
+// 赤纬推运（Declination）：二次/三次/小推运。每个子 tab → 左固定推运双盘 + 右可滚动 赤纬 / 平行·反平行表。
 class AstroJaynesProgressions extends Component{
 	constructor(props){
 		super(props);
-		this.state = { targetDate: today(), targetTime: '12:00:00', loading: false, result: null, requestKey: '' };
+		this.state = { targetDate: today(), targetTime: '12:00:00', minorVariant: 'engine', loading: false, result: null, requestKey: '' };
 		this.load = this.load.bind(this);
 		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 	}
@@ -80,27 +88,27 @@ class AstroJaynesProgressions extends Component{
 	}
 
 	componentDidUpdate(){
-		const key = chartRequestKey(this.props.value, `jaynesprog|${this.state.targetDate}|${this.state.targetTime}`);
+		const key = chartRequestKey(this.props.value, `jaynesprog|${this.state.targetDate}|${this.state.targetTime}|${this.state.minorVariant}`);
 		if(key && key !== this.state.requestKey && !this.state.loading){ this.load(); }
 	}
 
 	handleSnapshotRefreshRequest(evt){
 		if(!evt || !evt.detail || evt.detail.module !== 'jaynesprog' || !this.props.value){ return; }
-		buildJaynesProgSnapshotText(this.props.value).then((txt) => { evt.detail.snapshotText = txt || ''; }).catch(() => {});
+		buildJaynesProgSnapshotText(this.props.value, { minorVariant: this.state.minorVariant }).then((txt) => { evt.detail.snapshotText = txt || ''; }).catch(() => {});
 	}
 
 	ensureLoaded(){
-		const key = chartRequestKey(this.props.value, `jaynesprog|${this.state.targetDate}|${this.state.targetTime}`);
+		const key = chartRequestKey(this.props.value, `jaynesprog|${this.state.targetDate}|${this.state.targetTime}|${this.state.minorVariant}`);
 		if(key && key !== this.state.requestKey && !this.state.loading){ setTimeout(this.load, 0); }
 	}
 
 	async load(){
 		if(!this.props.value){ return; }
-		const key = chartRequestKey(this.props.value, `jaynesprog|${this.state.targetDate}|${this.state.targetTime}`);
+		const key = chartRequestKey(this.props.value, `jaynesprog|${this.state.targetDate}|${this.state.targetTime}|${this.state.minorVariant}`);
 		this.setState({ loading: true });
 		try{
 			const data = await request(`${Constants.ServerRoot}/astroextra/jaynesprog`, {
-				body: JSON.stringify({ ...chartParams(this.props.value), targetDate: this.state.targetDate, targetTime: this.state.targetTime, orb: 1.0 }),
+				body: JSON.stringify({ ...chartParams(this.props.value), targetDate: this.state.targetDate, targetTime: this.state.targetTime, minorVariant: this.state.minorVariant, orb: 1.0 }),
 				timeoutMs: 45000,
 			});
 			if(!this._mounted) return;
@@ -111,48 +119,38 @@ class AstroJaynesProgressions extends Component{
 		}
 	}
 
-	renderMethod(method){
-		return (
-			<div style={cardStyle}>
-				<div className="horosa-info-card-title">{method.label}（赤纬）：{method.progressedDate && method.progressedDate.datetime}</div>
-				<SmallTable
-					rows={method.declinations || []}
-					columns={[
-						{ key: 'id', title: '点', render: (v) => symbolWithMeaning(v, this.props.showAstroMeaning) },
-						{ key: 'decl', title: '赤纬', render: (v) => `${fmtNum(v, 2)}°` },
-					]}
-				/>
-				<div style={{ height: 12 }} />
-				<SmallTable
-					rows={(method.parallels || []).slice(0, 80)}
-					columns={[
-						{ key: 'a', title: '推运点', render: (v) => symbolWithMeaning(v, this.props.showAstroMeaning) },
-						{ key: 'type', title: '类型', render: (v) => typeLabel(v) },
-						{ key: 'b', title: '本命点', render: (v) => symbolWithMeaning(v, this.props.showAstroMeaning) },
-						{ key: 'orb', title: '误差', render: (v) => fmtNum(v, 3) },
-					]}
-				/>
-			</div>
-		);
-	}
-
 	render(){
 		this.ensureLoaded();
 		const result = this.state.result || {};
+		const height = this.props.height || 700;
+		const panelH = Math.max(360, height - 104);
 		return (
 			<Spin spinning={this.state.loading}>
-				<div style={{ height: this.props.height || 700, overflow: 'auto', paddingRight: 8 }}>
-					<div style={{ ...cardStyle, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-						<span style={{ fontWeight: 600 }}>赤纬推运（Jayne / 平行·反平行）</span>
+				<div style={{ height, display: 'flex', flexDirection: 'column' }}>
+					<div style={{ ...cardStyle, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', flex: '0 0 auto' }}>
+						<span style={{ fontWeight: 600 }}>赤纬推运（平行 / 反平行）</span>
 						<label>目标日期 <input type="date" value={this.state.targetDate} onChange={(e) => this.setState({ targetDate: e.target.value })} /></label>
 						<label>时间 <input type="time" step="1" value={this.state.targetTime} onChange={(e) => this.setState({ targetTime: e.target.value })} /></label>
+						<label>月长算法 <Select size="small" style={{ width: 150 }} value={this.state.minorVariant} onChange={(v)=>this.setState({ minorVariant: v })}>
+							{MINOR_VARIANT_OPTIONS.map((o)=>(<Option key={o.value} value={o.value}>{o.label}</Option>))}
+						</Select></label>
 						<Button size="small" onClick={this.load}>计算推运</Button>
 						<span>年龄天数：{fmtNum(result.ageDays, 1)}</span>
 					</div>
-					<Tabs defaultActiveKey="secondary" tabPosition="top">
+					<Tabs defaultActiveKey="secondary" tabPosition="top" style={{ flex: '1 1 auto' }}>
 						{(result.methods || []).map((method) => (
-							<TabPane tab={method.method === 'secondary' ? '二次推运' : (method.method === 'tertiary' ? '三次推运' : '小推运')} key={method.method}>
-								{this.renderMethod(method)}
+							<TabPane tab={methodTab(method)} key={method.method}>
+								<ProgMethodPanel
+									value={this.props.value}
+									method={method}
+									mode="declination"
+									natalDeclinations={result.natalDeclinations}
+									height={panelH}
+									chartDisplay={this.props.chartDisplay}
+									planetDisplay={this.props.planetDisplay}
+									lotsDisplay={this.props.lotsDisplay}
+									showAstroMeaning={this.props.showAstroMeaning}
+								/>
 							</TabPane>
 						))}
 					</Tabs>

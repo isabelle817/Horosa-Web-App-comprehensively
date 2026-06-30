@@ -221,6 +221,13 @@ function fieldsToState(fields){
 		gpsLat: fields.gpsLat.value,
 		gpsLon: fields.gpsLon.value,
 		doubingSu28: fields.doubingSu28.value,
+		// 古典占星参数随分至盘透传(节气盘=标准星盘,须与主盘 fieldsToParams 同口径):三分/福点反转/界/交点真平/宗派缓冲/狮子木首
+		termsVariant: fields.termsVariant ? fields.termsVariant.value : '',
+		triplicity: fields.triplicity ? fields.triplicity.value : '',
+		lotReversal: fields.lotReversal ? fields.lotReversal.value : '',
+		westNodeType: fields.westNodeType ? fields.westNodeType.value : '',
+		sectBuffer: fields.sectBuffer ? fields.sectBuffer.value : '',
+		leoBoundFirst: fields.leoBoundFirst ? fields.leoBoundFirst.value : '',
 		fields: {
 			...fields
 		},
@@ -249,6 +256,12 @@ function getChartCacheKey(params, term, birth){
 		params && params.zodiacal,
 		params && params.siderealAyanamsa,
 		params && params.doubingSu28,
+		params && params.termsVariant,
+		params && params.triplicity,
+		params && params.lotReversal,
+		params && params.westNodeType,
+		params && params.sectBuffer,
+		params && params.leoBoundFirst,
 	].join('|');
 }
 
@@ -449,6 +462,13 @@ function buildChartRequestParams(params, birth){
 		name: null,
 		pos: null,
 		group: null,
+		// 古典占星参数条件透传(默认不下发=请求体零回归,与 fieldsToParams 同条件)
+		...((params.termsVariant) ? { termsVariant: params.termsVariant } : {}),
+		...((params.triplicity && params.triplicity !== 'Dorothean') ? { triplicity: params.triplicity } : {}),
+		...((params.lotReversal === 0 || params.lotReversal === '0') ? { lotReversal: 0 } : {}),
+		...((params.westNodeType === 'true') ? { westNodeType: 'true' } : {}),
+		...((params.sectBuffer === 'ptolemy5') ? { sectBuffer: 'ptolemy5' } : {}),
+		...((params.leoBoundFirst === 1 || params.leoBoundFirst === '1') ? { leoBoundFirst: 1 } : {}),
 	};
 }
 

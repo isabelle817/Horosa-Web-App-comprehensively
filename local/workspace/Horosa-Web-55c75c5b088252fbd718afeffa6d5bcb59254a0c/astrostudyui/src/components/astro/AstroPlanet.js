@@ -6,6 +6,7 @@ import * as AstroHelper from './AstroHelper';
 import {getAzimuthStr} from '../../utils/helper';
 import { appendPlanetHouseInfoById, splitPlanetHouseInfoText, } from '../../utils/planetHouseInfo';
 import { buildMeaningTipByCategory, } from './AstroMeaningData';
+import { termsTableForVariant } from '../../divination/data/hellenisticData';
 import { isMeaningEnabled, wrapWithMeaning, } from './AstroMeaningPopover';
 import styles from '../../css/styles.less';
 import { XQCard as Card } from '../xq-ui';
@@ -67,6 +68,11 @@ class AstroPlanet extends Component{
 
 	genPlanetsDom(chartObj){
 		let doms = [];
+		// 界主显示按所选界系(含迦勒底,按昼夜);与中间盘界环、后端尊贵同口径。
+		let _termsTable = termsTableForVariant(
+			chartObj.params && chartObj.params.termsVariant,
+			chartObj.chart && chartObj.chart.isDiurnal,
+			AstroConst.TERMS_TABLES_BY_VARIANT, AstroConst.EGYPTIAN_TERMS);
 		for(let i=0; i<AstroConst.LIST_OBJECTS.length; i++){
 			let objid = AstroConst.LIST_OBJECTS[i];
 			let obj = AstroHelper.getObject(chartObj, objid);
@@ -176,7 +182,7 @@ class AstroPlanet extends Component{
 											), obj.sign)}
 											<span>{signdeg[1]+"'；"}</span>
 											{this.withSignMeaning((
-												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.sign, signdeg[0])}&nbsp;界</span>
+												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.sign, signdeg[0], _termsTable)}&nbsp;界</span>
 											), obj.sign)}
 											<span>{signdeg[0] === 29 ? '；位于歧度。' : null}</span>
 										{
@@ -217,7 +223,7 @@ class AstroPlanet extends Component{
 											), obj.antisciaPoint.sign)}
 											<span>{antisigndeg[1]+"'；"}</span>
 											{this.withSignMeaning((
-												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.antisciaPoint.sign, antisigndeg[0])}&nbsp;界</span>
+												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.antisciaPoint.sign, antisigndeg[0], _termsTable)}&nbsp;界</span>
 											), obj.antisciaPoint.sign)}
 										</div>
 									</Col>
@@ -232,7 +238,7 @@ class AstroPlanet extends Component{
 											), obj.cantisciaPoint.sign)}
 											<span>{cantisigndeg[1]+"'；"}</span>
 											{this.withSignMeaning((
-												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.cantisciaPoint.sign, cantisigndeg[0])}&nbsp;界</span>
+												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.cantisciaPoint.sign, cantisigndeg[0], _termsTable)}&nbsp;界</span>
 											), obj.cantisciaPoint.sign)}
 										</div>
 									</Col>

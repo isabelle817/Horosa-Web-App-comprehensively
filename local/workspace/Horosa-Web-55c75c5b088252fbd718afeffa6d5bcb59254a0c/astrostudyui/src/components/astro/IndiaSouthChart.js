@@ -2,7 +2,32 @@ import { Component } from 'react';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import { splitDegree } from './AstroHelper';
+import { sameDisplayList, shallowPropsEqual } from '../../utils/chartUpdateGuard';
+import { chartSCUEnabled } from '../../utils/perfFlags';
 import '../../css/styles.less';
+
+// 印度盘 sCU(根因 E):三种盘式(南/北/东)render 消费的「全部影响盘面输出 props」。
+// 逐项核(grep this.props.* 全集):value(盘数据,大对象引用比)/ planetDisplay·lotsDisplay(显示开关数组,内容比)
+//  / chartnum·label·height·degreeDisplayMode·aspectSourceId·planetGlyphMode·lagnaRef·onPlanetClick(标量/函数,Object.is)。
+// 北印/东印额外消费 counterClockwise(镜像)→ 各自 keys 追加。
+// 三盘均不读 this.state(_aspectedSigns 是 render 内派生的实例字段,随 value/aspectSourceId 变);
+// lockAquarius 被父级透传但三盘 render 全程未消费(grep 证零引用)→ 不影响输出 → 不纳入(纳入仅多比一项,无害但冗余)。
+export const INDIA_CHART_SCU_KEYS = [
+	'value', 'planetDisplay', 'lotsDisplay', 'chartnum', 'label', 'height',
+	'degreeDisplayMode', 'aspectSourceId', 'aspectParadigm', 'planetGlyphMode', 'lagnaRef', 'onPlanetClick',
+];
+export const INDIA_CHART_SCU_KEYS_MIRROR = INDIA_CHART_SCU_KEYS.concat(['counterClockwise']);
+export const INDIA_CHART_SCU_COMPARATORS = {
+	planetDisplay: sameDisplayList,
+	lotsDisplay: sameDisplayList,
+};
+
+export function indiaChartShouldUpdate(self, nextProps, keys){
+	if(!chartSCUEnabled()){
+		return true;
+	}
+	return !shallowPropsEqual(self.props, nextProps, keys, INDIA_CHART_SCU_COMPARATORS);
+}
 
 const SOUTH_INDIAN_SIGN_GRID = [
 	[12, 1, 2, 3],
@@ -116,6 +141,25 @@ export function getHouseNumberForSign(signNumber, ascSignNumber){
 	return ((signNumber - ascSignNumber + 12) % 12) + 1;
 }
 
+// WP-B 上升宫位参照:解出「第1宫」的星座号(1-12)。纯显示重参照(§1.6/§12.3),不动黄经。
+// 'asc'/空 → 上升星座(默认,零回归);'houseN' → 上升起整宫第 N 宫的星座;行星/虚点 id → 该星座座号。
+export function resolveLagnaRefSignNumber(chartObj, lagnaRef){
+	const ascSign = getAscSignNumber(chartObj);
+	if(!lagnaRef || lagnaRef === 'asc'){
+		return ascSign;
+	}
+	const houseMatch = /^house(\d+)$/.exec(lagnaRef);
+	if(houseMatch){
+		const n = parseInt(houseMatch[1], 10);
+		if(n >= 1 && n <= 12){
+			return ((ascSign - 1 + (n - 1)) % 12) + 1;
+		}
+		return ascSign;
+	}
+	const sn = getSignNumber(getObject(chartObj, lagnaRef));
+	return sn || ascSign;
+}
+
 export function getHouseLabel(houseNumber){
 	return HOUSE_LABELS[houseNumber - 1] || `${houseNumber}`;
 }
@@ -134,6 +178,17 @@ export function getObjectLabel(obj){
 	}
 	const cn = AstroText.AstroMsgCN[obj.id] || obj.name || obj.id;
 	return `${cn}`.slice(0, 2);
+}
+
+// WP-C 星体符号:glyph 模式下返回该星体的 ywastrochart 字形(Su='A'…),无字形(如部分阿拉伯点)返回 ''→回退文字。
+export function resolveObjectGlyph(obj, glyphMode){
+	if(glyphMode !== AstroConst.INDIA_PLANET_DISPLAY_GLYPH){
+		return '';
+	}
+	if(!obj || !obj.id){
+		return '';
+	}
+	return AstroText.AstroMsg[obj.id] || '';
 }
 
 function formatIndiaDegree(value, degreeDisplayMode){
@@ -266,20 +321,103 @@ export function getObjectColor(obj){
 		|| 'var(--horosa-accent-strong, #e7bd75)';
 }
 
+// WP-A 相映高亮：只有九曜(日月五星+罗计)投射 graha drishti(§4.1 表4-4)，故仅这些可点。
+export const ASPECT_CASTERS = [
+	AstroConst.SUN,
+	AstroConst.MOON,
+	AstroConst.MARS,
+	AstroConst.MERCURY,
+	AstroConst.JUPITER,
+	AstroConst.VENUS,
+	AstroConst.SATURN,
+	AstroConst.NORTH_NODE,
+	AstroConst.SOUTH_NODE,
+];
+
+export function isAspectCaster(objId){
+	return ASPECT_CASTERS.indexOf(objId) >= 0;
+}
+
+// WP-N 逆时针→顺时针:北印/东印为图形盘,顺时针即把整盘水平镜像(X→100−X)。
+// 文字用绝对定位(非 transform),镜像后仍正立可读。doMirror=true 时翻转,否则原样。
+export function mirrorXIf(coord, doMirror){
+	return doMirror ? (100 - Number(coord)) : Number(coord);
+}
+
+export function mirrorPolygonIf(points, doMirror){
+	if(!doMirror || !points){
+		return points;
+	}
+	return points.split(' ').map((pt)=>{
+		const xy = pt.split(',');
+		return `${100 - parseFloat(xy[0])},${xy[1]}`;
+	}).join(' ');
+}
+
+// 由「当前显示盘」解出源星 aspectSourceId 所相映的星座号集合(1-12)。零请求，纯前端读真值。
+//  - graha(Parashari，默认):整宫、非对称的曜相 jyotish.grahaDrishti——火 4/7/8、木·罗·计 5/7/9、土 3/7/10、余仅 7(§4.1)。
+//  - rasi(Jaimini):座相 jyotish.jaimini.rasiDrishti——按源星「所在星座」查该座照见的座集(动→定/定→动[除邻]/双→双，§4.3)。
+//    源星所在座本身不计(自照无意义)。tajika/kp/nadi 范式无对应高亮真值结构 → 回退 graha(切派只改右栏 tab 子集)。
+export function getAspectedSignNumbers(chartObj, aspectSourceId, aspectParadigm){
+	const set = new Set();
+	if(!chartObj || !chartObj.jyotish || !aspectSourceId){
+		return set;
+	}
+	if(aspectParadigm === 'rasi'){
+		// Jaimini 座相:先定源星所在座 → 查 rasiDrishti 该座照见的座。
+		const src = getObject(chartObj, aspectSourceId);
+		const srcSign = src ? src.sign : null;
+		const jaimini = chartObj.jyotish.jaimini;
+		const rasiDrishti = (jaimini && Array.isArray(jaimini.rasiDrishti)) ? jaimini.rasiDrishti : [];
+		const row = srcSign ? rasiDrishti.find((r)=>r && r.sign === srcSign) : null;
+		const aspects = (row && Array.isArray(row.aspects)) ? row.aspects : [];
+		aspects.forEach((sign)=>{
+			const num = getSignNumberFromSign(sign);
+			if(num){
+				set.add(num);
+			}
+		});
+		return set;
+	}
+	const graha = Array.isArray(chartObj.jyotish.grahaDrishti) ? chartObj.jyotish.grahaDrishti : [];
+	graha.forEach((item)=>{
+		if(item && item.giver === aspectSourceId){
+			const num = getSignNumberFromSign(item.targetSign);
+			if(num){
+				set.add(num);
+			}
+		}
+	});
+	return set;
+}
+
 class IndiaSouthChart extends Component{
+	shouldComponentUpdate(nextProps){
+		// 南印为固定 4×4 星座网格,不用 counterClockwise → 用基础 keys(不含镜像项)。
+		return indiaChartShouldUpdate(this, nextProps, INDIA_CHART_SCU_KEYS);
+	}
+
 	renderObject(obj, idx){
 		const retro = obj && Number(obj.lonspeed) < 0;
 		const label = getObjectLabel(obj);
+		const glyph = resolveObjectGlyph(obj, this.props.planetGlyphMode);
 		const degree = getObjectDegree(obj, this.props.degreeDisplayMode);
 		const titleName = AstroText.AstroMsgCN[obj.id] || obj.name || obj.id;
+		const clickable = !!(obj && obj.id && typeof this.props.onPlanetClick === 'function');
+		const caster = !!(obj && isAspectCaster(obj.id));
+		const isSource = !!(obj && this.props.aspectSourceId && this.props.aspectSourceId === obj.id);
+		const handleClick = clickable ? (e)=>{ e.stopPropagation(); this.props.onPlanetClick(obj.id); } : undefined;
 		return (
 			<span
-				className="horosa-india-square-object"
+				className={`horosa-india-square-object${clickable ? ' horosa-india-square-object-clickable' : ''}${isSource ? ' is-aspect-source' : ''}`}
 				key={`${obj.id}_${idx}_${obj.lon}`}
-				title={`${titleName} ${degree}${retro ? ' 逆行' : ''}`}
+				title={`${titleName} ${degree}${retro ? ' 逆行' : ''}${clickable ? (caster ? ' · 点击高亮相映宫' : ' · 点击选中') : ''}`}
 				style={{ '--india-object-color': getObjectColor(obj) }}
+				onClick={handleClick}
 			>
-				<span className="horosa-india-square-object-name">{label}</span>
+				{glyph
+					? <span className="horosa-india-square-object-name horosa-india-square-object-glyph">{glyph}</span>
+					: <span className="horosa-india-square-object-name">{label}</span>}
 				<span className="horosa-india-square-object-degree">{degree}</span>
 				{retro ? <span className="horosa-india-square-retro">R</span> : null}
 			</span>
@@ -293,10 +431,11 @@ class IndiaSouthChart extends Component{
 		const signName = AstroText.AstroMsgCN[sign] || sign;
 		const cuspDegree = getHouseCuspDegree(chartObj, houseNumber, signNumber, this.props.degreeDisplayMode);
 		const isAscCell = houseNumber === 1;
+		const isAspected = !!(this._aspectedSigns && this._aspectedSigns.has(signNumber));
 		return (
 			<div
 				key={`india_sign_${signNumber}`}
-				className={`horosa-india-square-cell${isAscCell ? ' horosa-india-square-cell-asc' : ''}`}
+				className={`horosa-india-square-cell${isAscCell ? ' horosa-india-square-cell-asc' : ''}${isAspected ? ' is-aspected' : ''}`}
 				style={{
 					gridColumn: colIndex + 1,
 					gridRow: rowIndex + 1,
@@ -343,8 +482,9 @@ class IndiaSouthChart extends Component{
 				</div>
 			);
 		}
-		const ascSignNumber = getAscSignNumber(chartObj);
+		const ascSignNumber = resolveLagnaRefSignNumber(chartObj, this.props.lagnaRef);
 		const objectsBySign = getObjectsBySign(chartObj, this.props.planetDisplay, this.props.lotsDisplay);
+		this._aspectedSigns = getAspectedSignNumbers(chartObj, this.props.aspectSourceId, this.props.aspectParadigm);
 		return (
 			<div className="horosa-india-square-shell xq-chart-renderer xq-chart-renderer-india" style={chartHeightStyle}>
 				<div className="horosa-india-square-board xq-india-board">

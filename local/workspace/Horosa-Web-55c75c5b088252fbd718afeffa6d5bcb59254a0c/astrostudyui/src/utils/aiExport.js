@@ -1,4 +1,5 @@
 import { getStore, } from './storageutil';
+import { copyDesktopClipboard } from './aiAnalysisDesktop';
 import request from './request';
 import * as ExportConstants from './constants';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from './dayBoundary';
@@ -125,8 +126,22 @@ const AI_EXPORT_SETTINGS_KEY = 'horosa.ai.export.settings.v1';
 // v27 — 全量四镜审计补漏(in-app 实测):印占[大运Dasha](Vimshottari)、六壬[常用神煞]/[毕法（已命中）]、
 //        太乙[起盘]——右栏/导出已输出但未登记 PRESET_SECTIONS → 自定义过导出段的用户被 filterContentByWantedSections
 //        静默删、且在导出设置中不可勾选。同 v22-v26 范式(补 preset + 升版 union 并入,不删用户项)。
-export const AI_EXPORT_SETTINGS_VERSION = 27;
-const AI_EXPORT_SECTION_MIGRATION_VERSION = 27;
+// v28 — 量化盘补[汉堡学派要素]段:汉堡功能(流派/六宫框/差值表/医学四液/赤纬)由 buildHamburgLines 拼进 germany
+//        快照(仅用户介入汉堡功能时附,默认 classic 零回归),但此前未登记 germany PRESET_SECTIONS → 自定义过
+//        量化盘导出段的老用户会被 filterContentByWantedSections 静默删、且导出设置里勾不到。同 v22-v27 范式
+//        (补 preset 末尾段 + 升版 union 并入,不删用户项;默认未自定义用户走 applyUserSectionFilter 不过滤分支不受影响)。
+// v29 — 大六壬全流派补「断卦层」9 段(年月神煞/课体结构/三传旺衰/空亡真假/旬空落点/陷空/遁干特殊/年命上神/占断向导):
+//        buildLiuRengSnapshotText 条件产出(每盘几乎必出)但此前未登记 liureng PRESET_SECTIONS → 自定义过六壬导出段的
+//        用户被 filterContentByWantedSections 静默删、且导出设置勾不到。liureng 已在 MIGRATION_KEYS → 同 v22-v28 范式
+//        (补 preset 末尾段 + 升版 union 并入,不删用户项)。
+// v30 — 三式合一(sanshiunited)对齐独立页:此前三式合一快照比独立页贫很多(奇门缺~9派生/法奇门段、太乙缺动态 pan.sections、
+//        六壬缺~12 断卦段——UI 已渲染但没进快照=导出/挂载缺内容)。buildSanShiUnitedSnapshotText 改为复用三个独立
+//        builder(buildDunJiaSnapshotText/buildTaiyiSnapshotText/buildLiuRengSnapshotText,单一真值源,正文照搬,只选段+改前缀)
+//        补齐:太乙7段(加「太乙」前缀)/六壬断卦12段/奇门派生10段(加「奇门」前缀避与六壬「概览」碰撞)。这些段此前未登记
+//        sanshiunited PRESET_SECTIONS → 自定义过三式合一导出段的用户会被 filterContentByWantedSections 静默删、且导出设置勾不到。
+//        sanshiunited 已在 MIGRATION_KEYS → 同 v22-v29 范式(补 preset 末尾段 + 升版 union 并入,不删用户项)。
+export const AI_EXPORT_SETTINGS_VERSION = 31;
+const AI_EXPORT_SECTION_MIGRATION_VERSION = 30;
 const AI_EXPORT_SECTION_MIGRATION_KEYS = [
 	// v18 补:占星/星运核心 + 卜卦/择日(此前漏登记)。务必与新增「有 preset 的技法」同步(aiExport.test 跨系统自检守)。
 	'astrochart',
@@ -167,6 +182,8 @@ const AI_EXPORT_SECTION_MIGRATION_KEYS = [
 	'taixuan',
 	'jingjue',
 	'shenyishu',
+	'geomancy',
+	'tarot',
 	'shaozi',
 	'tieban',
 	'fendjing',
@@ -299,6 +316,8 @@ const AI_EXPORT_TECHNIQUES = [
 	{ key: 'taixuan', label: '太玄筮法' },
 	{ key: 'jingjue', label: '荆诀' },
 	{ key: 'shenyishu', label: '神易数' },
+	{ key: 'geomancy', label: '天文地占' },
+	{ key: 'tarot', label: '塔罗' },
 	{ key: 'liureng', label: '六壬' },
 	{ key: 'jinkou', label: '金口诀' },
 	{ key: 'qimen', label: '奇门遁甲' },
@@ -332,7 +351,7 @@ const AI_EXPORT_PRESET_SECTIONS = {
 	astrochart: ['起盘信息', '宫位宫头', '星与虚点', '信息', '相位', '行星', '希腊点', '12分度', '主宰星链', '古典', '古典格局', '寿命格局', '可能性'],
 	indiachart: ['星盘信息', '起盘信息', '信息', '相位', '行星', '希腊点', '古典', '可能性', '大运Dasha'],
 	astrochart_like: ['起盘信息', '宫位宫头', '星与虚点', '信息', '相位', '行星', '希腊点', '12分度', '主宰星链', '古典', '古典格局', '寿命格局', '可能性'],
-	mundane: ['世俗入宫', '新月图', '满月图', '日食图', '月食图', '地区盘', '行星周期', '世俗宫义', '起盘信息', '宫位宫头', '星与虚点', '信息', '相位', '行星', '希腊点', '12分度', '主宰星链', '古典', '寿命格局', '可能性'],
+	mundane: ['世俗入宫', '新月图', '满月图', '日食图', '月食图', '地区盘', '行星周期', '世俗宫义', '定局·年主/盘主', '入境骨架', '地理分野', '地区盘推运', '起盘信息', '宫位宫头', '星与虚点', '信息', '相位', '行星', '希腊点', '12分度', '主宰星链', '古典', '寿命格局', '可能性'],
 	relative: ['关系起盘信息', 'A对B相位', 'B对A相位', 'A对B中点相位', 'B对A中点相位', 'A对B映点', 'A对B反映点', 'B对A映点', 'B对A反映点', '合成图盘', '影响图盘-星盘A', '影响图盘-星盘B'],
 	primarydirect: ['出生时间', '星盘信息', '主限法设置', '主限法表格', '主/界限法设置', '主/界限法表格'],
 	distributions: ['界推运（分配法 / Distributions）'],
@@ -348,7 +367,7 @@ const AI_EXPORT_PRESET_SECTIONS = {
 	decennials: ['起盘信息', '星盘信息', '十年大运设置', '基于X起运'],
 	planetaryages: ['行星年龄（Ages of Man）'],
 	vedicprog: ['恒星推运（Vedic Sidereal）', '本命盘配置', '时段盘配置 二次推运位置'],
-	jaynesprog: ['赤纬推运（Jayne Declination）', '本命盘配置', '时段盘 赤纬平行/反平行'],
+	jaynesprog: ['赤纬推运（Declination）', '本命盘配置', '时段盘 赤纬平行/反平行'],
 	planetaryarc: ['行星弧（Planetary Arc）', '本命盘配置', '时段盘配置', '相位'],
 	persiandirected: ['波斯向运（Persian Directed）'],
 	yearsystem129: ['129年系统表格'],
@@ -357,16 +376,18 @@ const AI_EXPORT_PRESET_SECTIONS = {
 	keypoints: ['数字相位推运'],
 	lunationphase: ['月相推运'],
 	extrareturns: ['多重回归'],
-	bazi: ['起盘信息', '四柱与三元', '神煞（四柱与三元）', '大运', '流年行运概略', '多运限·指定时段'],
+	bazi: ['起盘信息', '四柱与三元', '神煞（四柱与三元）', '五行力量', '格局·用神', '盲派结构', '月令司令（分野）', '大运', '流年行运概略', '多运限·指定时段'],
 	ziwei: ['起盘信息', '宫位总览', '来因宫', '命中格局', '运限'],
 	suzhan: ['起盘信息', '宿盘宫位与二十八宿星曜'],
-	sixyao: ['起盘信息', '卦象', '六爻与动爻', '卦辞与断语'],
+	sixyao: ['起盘信息', '卦象', '六爻与动爻', '断卦结构', '卦辞与断语'],
 	tongshefa: ['本卦', '六爻', '潜藏', '亲和'],
 	huangji: ['起盘', '元会运世', '天道卦', '人事卦', '心易发微', '历史年表'],
 	wuzhao: ['起盘', '揲筮', '兆', '木乡', '火乡', '土乡', '金乡', '水乡', '特殊标记'],
 	taixuan: ['起盘', '玄首', '方州部家', '表'],
 	jingjue: ['起课', '卦辞', '三分', '十六卦'],
 	shenyishu: ['起盘', '干支与五行', '神卦', '五行法则', '兵占', '主客判断', '神煞', '长生', '吉凶'],
+	geomancy: ['判定', '解读技法', '十二宫·图形入宫', '十六图形'],
+	tarot: ['牌阵直断', '牌阵细论', '牌义深解', '综合建议'],
 	liureng: [
 		'起盘信息',
 		'十二盘式',
@@ -387,6 +408,18 @@ const AI_EXPORT_PRESET_SECTIONS = {
 		'参考',
 		'概览',
 		'常用神煞',
+		// 大六壬全流派补齐:断卦层派生段(年月神煞/课体结构/三传旺衰/空亡真假/旬空落点/陷空/遁干特殊/年命上神/占断向导)。
+		// 这些由 buildLiuRengSnapshotText 条件产出(每盘几乎必出)但此前未登记 → 自定义过六壬导出段的用户被
+		// filterContentByWantedSections 静默删、导出设置勾不到(v22/v27 同类坑)。同范式补 preset 末尾 + 升版 union 并入。
+		'年月神煞',
+		'课体结构',
+		'三传旺衰',
+		'空亡真假',
+		'旬空落点',
+		'陷空',
+		'遁干特殊',
+		'年命上神',
+		'占断向导',
 		'毕法（已命中）',
 	],
 	jinkou: [
@@ -396,11 +429,15 @@ const AI_EXPORT_PRESET_SECTIONS = {
 		'金口诀三盘',
 		'四位神煞',
 		'用神强弱',
+		'发用·五动三动',
+		'格局',
 		'四位生克',
 		'应期',
+		'太岁月建',
 		'地支关系',
 		'相关神煞',
-		'分类用神·求财',
+		'贵神月将象意',
+		'分类用神',
 		'行年',
 		'旬日',
 		'旺衰',
@@ -427,7 +464,7 @@ const AI_EXPORT_PRESET_SECTIONS = {
 		'命宫行限',
 		'十六宫标记',
 	],
-	qimen: ['起盘信息', '盘型', '盘面要素', '奇门演卦', '八宫详解', '九宫方盘', '九宫与宫内星体', '六害总览', '化解方案', '八门化气大阵', '用神分论', '财富七要', '事业七要', '恋爱姻缘', '孤辰寡宿'],
+	qimen: ['起盘信息', '盘型', '盘面要素', '奇门演卦', '八宫详解', '九宫方盘', '旺相休囚死·月令能量', '六害总览', '化解方案', '八门化气大阵', '用神分论', '财富七要', '事业七要', '恋爱姻缘', '孤辰寡宿'],
 	sanshiunited: [
 		'起盘信息',
 		'概览',
@@ -448,6 +485,39 @@ const AI_EXPORT_PRESET_SECTIONS = {
 		'西南坤宫',
 		'正西兑宫',
 		'西北乾宫',
+		// v30 — 三式合一对齐独立页:复用独立 builder(单一真值源)补全此前缺的派生/断卦段。
+		// 太乙(复用 buildTaiyiSnapshotText 的 pan.sections,加「太乙」前缀避叠词/碰撞):
+		'太乙主客定算',
+		'太乙八门与宿曜',
+		'太乙断法',
+		'太乙七大兵法',
+		'太乙博弈',
+		'太乙命法',
+		'太乙命宫行限',
+		// 六壬断卦层(复用 buildLiuRengSnapshotText 断卦段;大格/小局/参考/概览三式合一已自有不重出):
+		'十二盘式',
+		'常用神煞',
+		'年月神煞',
+		'课体结构',
+		'三传旺衰',
+		'空亡真假',
+		'旬空落点',
+		'陷空',
+		'遁干特殊',
+		'年命上神',
+		'毕法（已命中）',
+		'占断向导',
+		// 奇门派生/法奇门段(复用 buildDunJiaSnapshotText;加「奇门」前缀避与六壬「概览」等碰撞):
+		'奇门九宫方盘',
+		'奇门旺相休囚死·月令能量',
+		'奇门六害总览',
+		'奇门化解方案',
+		'奇门八门化气大阵',
+		'奇门用神分论',
+		'奇门财富七要',
+		'奇门事业七要',
+		'奇门恋爱姻缘',
+		'奇门孤辰寡宿',
 	],
 	guolao: ['起盘信息', '七政四余宫位与二十八宿星曜', '神煞', '大限', '政余格局', '相位'],
 	qizhengkin: ['起盘', '四柱', '星曜', '十二宫', '神煞', '年限', '流时', '择日', '张果断语', '命宫解读'],
@@ -459,11 +529,11 @@ const AI_EXPORT_PRESET_SECTIONS = {
 	chunzi: ['起盘', '四柱', '代码来源', '结构解析', '候选条文', '代码查询', '批量代码查询', '关键词检索', '多标签检索', '宿名检索', '时辰检索'],
 	xianqin: ['起盘', '三宫', '三星', '衍生星', '十二宫', '吞啖合战', '情性与格局', '二十八宿禽', '十二宫顺序', '三元起宿', '合宿表', '科名月宿', '四季得时', '情性赋全表', '二十八宿正像', '吞啖合战规则', '贵贱赋摘要'],
 	cetian: ['起盘', '农历与命身', '四化', '飞星', '格局', '命宮', '兄弟宮', '夫妻宮', '子女宮', '財帛宮', '疾厄宮', '遷移宮', '交友宮', '官祿宮', '田宅宮', '福德宮', '父母宮', '星曜属性', '正曜副曜', '宫干四化表', '飞化规则', '古法格局规则', '三合组'],
-	germany: ['起盘信息', '宫位宫头', '行星', '中点', 'TNP星体', '中点相位', '90°中点盘', '行星图', '映点', '中点列表'],
+	germany: ['起盘信息', '宫位宫头', '行星', '中点', 'TNP星体', '中点相位', '90°中点盘', '行星图', '映点', '中点列表', '汉堡学派要素'],
 	jieqi: ['节气盘参数', '春分星盘', '春分宿盘', '夏至星盘', '夏至宿盘', '秋分星盘', '秋分宿盘', '冬至星盘', '冬至宿盘'],
 	...JIEQI_SETTING_PRESETS,
 	otherbu: ['起盘信息', '骰子结果', '骰子盘宫位与星体', '天象盘宫位与星体'],
-	fengshui: ['起盘信息', '标记判定', '冲突清单', '未定位标注', '破局危害', '龙虎灶台', '移动盘', '吉凶评分', '缓解建议', '使用要点', '建议汇总', '纳气建议', '八卦定位', '成員卦象', '四类象格局', '应期成格', '改运建议'],
+	fengshui: ['起盘信息', '标记判定', '冲突清单', '未定位标注', '破局危害', '龙虎灶台', '移动盘', '吉凶评分', '缓解建议', '使用要点', '建议汇总', '纳气建议', '八卦定位', '成員卦象', '四类象格局', '应期成格', '改运建议', '风水·纳气盘', '风水·八卦阳宅', '风水·八宅大游年', '风水·玄空飞星', '风水·三合水法', '风水·金锁玉关', '风水·乾坤国宝', '风水·紫白飞星'],
 	canping: ['起盘', '本命', '大运·歲運', '流年·歲運'],
 	heluo: ['起命', '先天卦·元堂爻辞', '后天卦·元堂爻辞', '命运篇', '大限·岁运', '流年·岁运'],
 	generic: ['起盘信息'],
@@ -776,6 +846,8 @@ function snapshotModuleKeyByContextKey(key){
 		taixuan: 'taixuan',
 		jingjue: 'jingjue',
 		shenyishu: 'shenyishu',
+		geomancy: 'geomancy',
+		tarot: 'tarot',
 		shaozi: 'kinastro-shaozi',
 		tieban: 'kinastro-tieban',
 		fendjing: 'kinastro-fendjing',
@@ -952,6 +1024,13 @@ function mapLegacySectionTitle(key, title){
 		}
 		return normalized;
 	}
+	if(key === 'jaynesprog'){
+		// v31:首段名「赤纬推运（Jayne Declination）」对齐 builder 实产「赤纬推运（Declination）」(去 Jayne 死段);老用户存的旧段名迁移,避免被当陌生段过滤掉。
+		if(normalized === '赤纬推运（Jayne Declination）'){
+			return '赤纬推运（Declination）';
+		}
+		return normalized;
+	}
 	if(key === 'tongshefa'){
 		if(normalized === '互潜'){
 			return '潜藏';
@@ -977,10 +1056,21 @@ function mapLegacySectionTitle(key, title){
 		if(normalized === '右侧栏目' || normalized === '概览'){
 			return '盘面要素';
 		}
+		// 旧版 preset 误写「九宫与宫内星体」(奇门实际产出[旺相休囚死·月令能量])→ 老用户自定义里若残留,归一到真实段。
+		if(normalized === '九宫与宫内星体'){
+			return '旺相休囚死·月令能量';
+		}
 	}
 	if(key === 'liureng'){
 		if(normalized.startsWith('三传(')){
 			return '三传';
+		}
+	}
+	if(key === 'mundane'){
+		// 地区盘/入宫地理分野段头随数据集动态(如「地理分野·世俗黄道分野」)→ 归一到静态[地理分野]
+		// (内容侧已静态化为[地理分野];此分支额外兜住老用户自定义里残留的带数据集后缀的旧段名)。
+		if(normalized.startsWith('地理分野')){
+			return '地理分野';
 		}
 	}
 	if(key === 'sanshiunited'){
@@ -1766,6 +1856,9 @@ function resolveActiveContext(){
 		{ label: '荊訣', key: 'jingjue', domain: 'kentang_raw', name: '荆诀' },
 		{ label: '神易数', key: 'shenyishu', domain: 'kentang_raw', name: '神易数' },
 		{ label: '神易數', key: 'shenyishu', domain: 'kentang_raw', name: '神易数' },
+		{ label: '天文地占', key: 'geomancy', domain: 'kentang_raw', name: '天文地占' },
+		{ label: '地占', key: 'geomancy', domain: 'kentang_raw', name: '天文地占' },
+		{ label: '塔罗', key: 'tarot', domain: 'kentang_raw', name: '塔罗' },
 		{ label: '六爻', key: 'sixyao', domain: 'sixyao', name: '六爻' },
 		{ label: '易卦', key: 'sixyao', domain: 'sixyao', name: '六爻' },
 		{ label: '六壬', key: 'liureng', domain: 'liureng', name: '大六壬' },
@@ -1792,6 +1885,7 @@ function resolveActiveContext(){
 			{ label: '择日盘', key: 'election', name: '择日盘' },
 			{ label: '世俗盘', key: 'mundane', name: '世俗盘' },
 			{ label: '十三分盘', key: 'astrochart_like', name: '十三分盘' },
+			{ label: '十二分盘', key: 'astrochart_like', name: '十二分盘' },
 			{ label: '占星地图', key: 'astrochart_like', name: '占星地图' },
 			{ label: '调波盘', key: 'astrochart_like', name: '调波盘' },
 			{ label: '龙盘', key: 'astrochart_like', name: '龙盘' },
@@ -2370,7 +2464,7 @@ function getExtractorKindByExportKey(key){
 		return 'tongshefa';
 	}
 	if(exportKey === 'huangji' || exportKey === 'wuzhao' || exportKey === 'taixuan' || exportKey === 'jingjue'
-		|| exportKey === 'shenyishu' || exportKey === 'shaozi' || exportKey === 'tieban' || exportKey === 'fendjing'
+		|| exportKey === 'shenyishu' || exportKey === 'geomancy' || exportKey === 'tarot' || exportKey === 'shaozi' || exportKey === 'tieban' || exportKey === 'fendjing'
 		|| exportKey === 'beiji' || exportKey === 'nanji' || exportKey === 'chunzi' || exportKey === 'xianqin'
 		|| exportKey === 'cetian' || exportKey === 'qizhengkin' || exportKey === 'guolao' || exportKey === 'suzhan'
 		|| exportKey === 'bazi' || exportKey === 'ziwei' || exportKey === 'horary' || exportKey === 'election'
@@ -4860,7 +4954,15 @@ function formatStamp(date){
 }
 
 function downloadBlob(filename, content, mime){
-	const blob = new Blob([content], { type: mime });
+	// 🔧 文字类导出补 UTF-8 BOM:macOS TextEdit / Windows 记事本 / 旧版 Word 对无 BOM 的 UTF-8 文件会按
+	//   本地默认编码(MacRoman/GBK)猜测 → 中文全乱(如「技术」UTF-8 字节 E6 8A 80 … 被 MacRoman 解码成
+	//   「ÊäÄ…」)。BOM(EF BB BF)显式标记 UTF-8,各平台文本编辑器/Word 均正确识别。
+	//   仅给人读的文本/Word 加;JSON/CSV 等机读格式不加(BOM 会破坏 JSON.parse / 首列名)。
+	let payload = content;
+	if(typeof content === 'string' && /text\/plain|msword|text\/markdown/i.test(mime) && content.charCodeAt(0) !== 0xFEFF){
+		payload = String.fromCharCode(0xFEFF) + content;
+	}
+	const blob = new Blob([payload], { type: mime });
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
@@ -4873,61 +4975,69 @@ function downloadBlob(filename, content, mime){
 }
 
 async function copyText(text){
+	// 1) Tauri 桌面剪贴板:webview 里 navigator.clipboard/execCommand 被拦,走原生 pbcopy 命令(invoke)。
+	try{ if(await copyDesktopClipboard(text)){ return true; } }catch(e){ /* 回退 */ }
+	// 2) 标准剪贴板(需安全上下文 + 文档焦点;异步后用户手势可能已失效,失败即回退)。
 	if(navigator.clipboard && window.isSecureContext){
-		try{
-			await navigator.clipboard.writeText(text);
-			return true;
-		}catch(e){
-			// 继续回退到 execCommand，避免权限异常导致无提示。
-		}
+		try{ await navigator.clipboard.writeText(text); return true; }catch(e){ /* 回退 */ }
 	}
+	// 3) execCommand 回退:先抢回窗口/选区焦点(导出多由菜单触发、焦点已散)。
+	try{ window.focus(); }catch(e){}
 	const ta = document.createElement('textarea');
 	ta.value = text;
 	ta.setAttribute('readonly', '');
-	ta.style.position = 'fixed';
-	ta.style.left = '-9999px';
+	ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
 	document.body.appendChild(ta);
+	ta.focus();
 	ta.select();
-	ta.setSelectionRange(0, ta.value.length);
+	try{ ta.setSelectionRange(0, ta.value.length); }catch(e){}
 	let ok = false;
-	try{
-		ok = document.execCommand('copy');
-	}catch(e){
-		ok = false;
-	}
+	try{ ok = document.execCommand('copy'); }catch(e){ ok = false; }
 	document.body.removeChild(ta);
 	return ok;
 }
 
-function printAsPdf(title, text){
-	const win = window.open('', '_blank');
-	if(!win){
+// v2.6.10:弃用 window.open 打印窗(桌面 webview 拦截 + 浏览器弹窗拦截)。
+// 改为离屏 DOM → html-to-image → jsPDF 分页直接下载 .pdf:无窗口、CJK 安全(走系统字体渲染成图)、
+// 浏览器与 Tauri 一致(downloadBlob/save 路径既有,TXT/Word 同款已验证可用)。
+async function exportPdf(payload){
+	const title = payload.tech || '';
+	const text = payload.text || '';
+	let host = null;
+	try{
+		const htiMod = await import('html-to-image');
+		const toCanvas = htiMod.toCanvas || (htiMod.default && htiMod.default.toCanvas);
+		const jspdfMod = await import('jspdf');
+		const jsPDF = jspdfMod.jsPDF || jspdfMod.default || jspdfMod;
+		if(!toCanvas || !jsPDF){ return false; }
+		host = document.createElement('div');
+		host.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;padding:48px 56px;box-sizing:border-box;background:#ffffff;color:#111111;font:13px/1.7 "PingFang SC","Microsoft YaHei",Arial,sans-serif;white-space:pre-wrap;word-break:break-word;z-index:-1;';
+		host.textContent = `${title ? title + '\n\n' : ''}${text}`;
+		document.body.appendChild(host);
+		const canvas = await toCanvas(host, { pixelRatio: 2, backgroundColor: '#ffffff', cacheBust: true });
+		const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+		const margin = 10;
+		const cwMm = pdf.internal.pageSize.getWidth() - margin * 2;     // 内容宽(mm)
+		const chMm = pdf.internal.pageSize.getHeight() - margin * 2;    // 内容高(mm)
+		const pxPerMm = canvas.width / cwMm;
+		const pageHpx = Math.floor(chMm * pxPerMm);
+		let y = 0, first = true;
+		while(y < canvas.height){
+			const sliceH = Math.min(pageHpx, canvas.height - y);
+			const slice = document.createElement('canvas');
+			slice.width = canvas.width; slice.height = sliceH;
+			slice.getContext('2d').drawImage(canvas, 0, y, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+			if(!first) pdf.addPage();
+			pdf.addImage(slice.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, cwMm, sliceH / pxPerMm);
+			first = false; y += sliceH;
+		}
+		pdf.save(`${payload.filenameBase}.pdf`);
+		return true;
+	}catch(e){
 		return false;
+	}finally{
+		if(host && host.parentNode){ try{ host.parentNode.removeChild(host); }catch(e){} }
 	}
-	const html = `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>${escapeHtml(title)}</title>
-<style>
-@page { size: A4; margin: 16mm; }
-body { font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif; color: #111; }
-pre { white-space: pre-wrap; word-break: break-word; line-height: 1.5; font-size: 12px; }
-</style>
-</head>
-<body>
-<pre>${escapeHtml(text)}</pre>
-<script>
-window.onload = function(){
-  setTimeout(function(){ window.print(); }, 120);
-};
-</script>
-</body>
-</html>`;
-	win.document.open();
-	win.document.write(html);
-	win.document.close();
-	return true;
 }
 
 function exportTxt(payload){
@@ -5452,7 +5562,10 @@ export async function runAIExport(action){
 
 		if(action === 'copy'){
 			const ok = await copyText(payload.text);
-			return { ok: ok, message: ok ? 'AI纯文字已复制。' : '复制失败，请手动导出TXT。' };
+			if(ok){ return { ok: true, message: 'AI纯文字已复制。' }; }
+			// 剪贴板不可用(桌面 webview / 非聚焦 / 安全上下文)→ 自动导出 TXT,用户必有产物。
+			exportTxt(payload);
+			return { ok: true, message: '剪贴板不可用，已自动导出 TXT 文件。' };
 		}
 		if(action === 'txt'){
 			exportTxt(payload);
@@ -5463,20 +5576,19 @@ export async function runAIExport(action){
 			return { ok: true, message: 'Word 已导出。' };
 		}
 		if(action === 'pdf'){
-			const ok = printAsPdf(payload.tech, payload.text);
-			return { ok: ok, message: ok ? 'PDF 打印窗口已打开。' : 'PDF 窗口被浏览器拦截。' };
+			const ok = await exportPdf(payload);
+			return { ok: ok, message: ok ? 'PDF 已导出。' : 'PDF 生成失败，请改用 Word/TXT。' };
 		}
 		if(action === 'all'){
 			const copied = await copyText(payload.text);
 			exportTxt(payload);
 			exportWord(payload);
-			const pdfOk = printAsPdf(payload.tech, payload.text);
-			return {
-				ok: true,
-				message: copied
-					? (pdfOk ? '已完成复制 + TXT/Word/PDF。' : '已完成复制 + TXT/Word，PDF窗口被拦截。')
-					: (pdfOk ? '已导出TXT/Word/PDF（复制失败）。' : '已导出TXT/Word（复制失败，PDF窗口被拦截）。')
-			};
+			const pdfOk = await exportPdf(payload);
+			const got = ['TXT', 'Word'].concat(pdfOk ? ['PDF'] : []);
+			let message = `已导出 ${got.join(' / ')}${copied ? '，并复制到剪贴板' : ''}。`;
+			if(!copied){ message += '（剪贴板不可用，全文已在 TXT 内）'; }
+			if(!pdfOk){ message += '（PDF 生成失败，可用 Word）'; }
+			return { ok: true, message };
 		}
 		return { ok: false, message: '未知导出动作。' };
 	}catch(e){

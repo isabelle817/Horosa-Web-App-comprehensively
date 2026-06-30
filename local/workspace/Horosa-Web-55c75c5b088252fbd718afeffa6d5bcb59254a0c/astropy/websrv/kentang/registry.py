@@ -65,6 +65,13 @@ KENTANG_SERVICE_SPECS = [
         "class_name": "ShenYiShuSrv",
     },
     {
+        "key": "geomancy",
+        "engine": "astronomical_geomancy",
+        "mount": "/geomancy",
+        "module": "websrv.webgeomancysrv",
+        "class_name": "GeomancySrv",
+    },
+    {
         "key": "shaozi",
         "engine": "kinastro-shaozi",
         "mount": "/shaozi",
@@ -114,18 +121,18 @@ KENTANG_SERVICE_SPECS = [
         "class_name": "XianQinSrv",
     },
     {
-        "key": "cetian",
-        "engine": "kinastro-cetian",
-        "mount": "/cetian",
-        "module": "websrv.webcetiansrv",
-        "class_name": "CeTianSrv",
-    },
-    {
         "key": "qizhengkin",
         "engine": "kinastro-qizheng",
         "mount": "/qizhengkin",
         "module": "websrv.webqizhengkinsrv",
         "class_name": "QiZhengKinSrv",
+    },
+    {
+        "key": "xuanshi",
+        "engine": "xuanshi_history",
+        "mount": "/xuanshi",
+        "module": "websrv.webxuanshisrv",
+        "class_name": "XuanShiSrv",
     },
 ]
 

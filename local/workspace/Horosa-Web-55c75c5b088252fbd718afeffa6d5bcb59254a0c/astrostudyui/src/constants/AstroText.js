@@ -22,7 +22,7 @@ export const ChartOptionText = {
 	'128': '显示四角点连线',
 	'256': '行星文本正向',
 	'512': '星座入垣擢升星（仅经典）',
-	'1024': '埃及界',
+	'1024': '界限环',
 	'2048': '外刻度线',
 	'4096': '内刻度线',
 	'8192': '行星度数',
@@ -440,14 +440,5 @@ export const UranianAbbr = {
 };
 export function isUranian(id){ return UranianAbbr[id] !== undefined; }
 export function uranianGlyph(id){ return UranianAbbr[id] || AstroMsg[id] || id; }
-// 实义据 Witte《Rules for Planetary Pictures》本源典籍（汉堡学派源头文献）。
-export const URANIAN_MEANING = {
-	[AstroConst.CUPIDO]: '社群·家庭·婚姻·艺术·团体/法人',
-	[AstroConst.HADES]: '衰朽·匮乏·污秽·隐秘·过去·疾病',
-	[AstroConst.ZEUS]: '受控之火·创造·领导·导向能量·生育',
-	[AstroConst.KRONOS]: '权威·高位·政府·卓越·独立',
-	[AstroConst.APOLLON]: '扩展·成功·科学贸易·众多·广远',
-	[AstroConst.ADMETOS]: '凝滞·原料·收缩·专注·死亡·原始',
-	[AstroConst.VULCANUS]: '强力·能量·支配·巨大势能',
-	[AstroConst.POSEIDON]: '精神·理念·启迪·灵性·光',
-};
+// 虚星含义已迁入含义词典单一真值源(物理唯一份),此处仅 re-export,既有读取处不破。
+export { URANIAN_MEANING } from '../data/uranianMeanings';

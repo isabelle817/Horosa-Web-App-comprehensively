@@ -13,6 +13,100 @@ import DateTime from '../comp/DateTime';
 import { saveModuleAISnapshotLazy, saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
 import { buildPredictiveSnapshotText, } from '../../utils/predictiveAiSnapshot';
 import { appendPlanetHouseInfoById, splitPlanetHouseInfoText, } from '../../utils/planetHouseInfo';
+import { XQSegmented, XQSelect } from '../xq-ui';
+import { SIGNS } from '../../divination/data/signs';
+
+// ===== G9 月/日小限 + 多起点(纯前端派生) =====
+// flatlib 后端小限盘已连续旋转(年盘自上升),此处的「年/月/日」摘要为离散古典口径的纯前端派生,
+// 不改后端、不动既有年盘(零回归)。起点摘要亦纯前端。
+const PROFECTION_GRAIN_OPTIONS = [
+	{ value: 'y', label: '年' },
+	{ value: 'm', label: '月' },
+	{ value: 'd', label: '日' },
+];
+// 起点:上升(默认)/区分光(昼日夜月)/福点/月/MC 所在座。
+const PROFECTION_START_OPTIONS = [
+	{ value: 'asc', label: '上升（默认）' },
+	{ value: 'sect', label: '区分光（昼日夜月）' },
+	{ value: 'fortune', label: '福点' },
+	{ value: 'moon', label: '月亮' },
+	{ value: 'mc', label: '天顶' },
+];
+const PROFECTION_GRAIN_CN = { y: '年', m: '月', d: '日' };
+const PROFECTION_START_CN = { asc: '上升', sect: '区分光', fortune: '福点', moon: '月亮', mc: '天顶' };
+// 座序庙主(domicile)→ 行星 glyph 标识(与 AstroText.AstroMsg 一致)。
+const PROFECTION_SIGN_RULER_ID = {
+	mars: 'Mars', venus: 'Venus', mercury: 'Mercury', moon: 'Moon', sun: 'Sun',
+	jupiter: 'Jupiter', saturn: 'Saturn',
+};
+
+function profectionPointSignIdx(chartObj, startKey){
+	// 从本命盘取起点所在座的序号(0=白羊…11=双鱼);取不到返回 null(降级)。
+	const chart = chartObj && chartObj.chart ? chartObj.chart : null;
+	if(!chart){ return null; }
+	const byId = {};
+	(chart.objects || []).forEach((o)=>{ if(o && o.id){ byId[o.id] = o; } });
+	(chart.angles || []).forEach((a)=>{ if(a && a.id){ byId[a.id] = a; } });
+	let id = AstroConst.ASC;
+	if(startKey === 'mc'){ id = AstroConst.MC; }
+	else if(startKey === 'moon'){ id = AstroConst.MOON; }
+	else if(startKey === 'fortune'){ id = AstroConst.PARS_FORTUNA; }
+	else if(startKey === 'sect'){ id = chart.isDiurnal ? AstroConst.SUN : AstroConst.MOON; }
+	const o = byId[id];
+	if(!o){ return null; }
+	if(o.sign && AstroConst.LIST_SIGNS.indexOf(o.sign) >= 0){
+		return AstroConst.LIST_SIGNS.indexOf(o.sign);
+	}
+	if(o.lon != null){ return Math.floor(((o.lon % 360) + 360) % 360 / 30) % 12; }
+	return null;
+}
+
+function profectionSignRulerId(signIdx){
+	const name = AstroConst.LIST_SIGNS[((signIdx % 12) + 12) % 12];
+	const key = name ? name.toLowerCase() : '';
+	const dom = SIGNS[key] ? SIGNS[key].domicile : null;
+	return PROFECTION_SIGN_RULER_ID[dom] || null;
+}
+
+// 计算所选粒度/起点的离散小限派生结果。
+// 入:本命 birth(DateTime) + 目标 datetime(DateTime) + grain('y'|'m'|'d') + startKey + 本命盘。
+// 出:{ ageYears, startSignIdx, yearSignIdx, yearHouse, signIdx, house, rulerId, monthsIntoYear } 或 null。
+function deriveProfection(birthDt, targetDt, grain, startKey, chartObj){
+	const startSignIdx = profectionPointSignIdx(chartObj, startKey);
+	if(startSignIdx === null || !birthDt || !targetDt){ return null; }
+	const birthJdn = birthDt.jdn || (birthDt.calcJdn ? birthDt.calcJdn() : 0);
+	const targetJdn = targetDt.jdn || (targetDt.calcJdn ? targetDt.calcJdn() : 0);
+	let days = targetJdn - birthJdn;
+	if(!(days >= 0)){ days = 0; }
+	const YEAR_DAYS = 365.2422;
+	const age = Math.floor(days / YEAR_DAYS);               // 已满整岁(12/24/36 岁回上升)
+	const yearSignIdx = (startSignIdx + age) % 12;          // 当年小限座
+	const yearHouse = (age % 12) + 1;                        // 当年小限宫
+	const daysIntoYear = days - age * YEAR_DAYS;            // 当年周年以来天数(月/日推进用)
+	const MONTH_DAYS = YEAR_DAYS / 12.0;                    // ≈30.4368 天/月
+	let monthsIntoYear = Math.floor(daysIntoYear / MONTH_DAYS);
+	monthsIntoYear = Math.max(0, Math.min(11, monthsIntoYear));
+	const monthSignIdx = (yearSignIdx + monthsIntoYear) % 12;
+	const daysIntoMonth = daysIntoYear - monthsIntoYear * MONTH_DAYS;
+	const DAY_STEP = 2.5;                                   // 360/12/12=2.5 天/座
+	let daysAdv = Math.floor(daysIntoMonth / DAY_STEP);
+	daysAdv = Math.max(0, Math.min(11, daysAdv));
+	const daySignIdx = (monthSignIdx + daysAdv) % 12;
+	let signIdx = yearSignIdx;
+	let house = yearHouse;
+	if(grain === 'm'){ signIdx = monthSignIdx; house = ((monthSignIdx - startSignIdx + 12) % 12) + 1; }
+	else if(grain === 'd'){ signIdx = daySignIdx; house = ((daySignIdx - startSignIdx + 12) % 12) + 1; }
+	return {
+		ageYears: age,
+		startSignIdx,
+		yearSignIdx,
+		yearHouse,
+		signIdx,
+		house,
+		rulerId: profectionSignRulerId(signIdx),
+		monthsIntoYear,
+	};
+}
 
 class AstroProfection extends Component{
 
@@ -48,6 +142,9 @@ class AstroProfection extends Component{
 				asporb: 1,
 			},
 			dirChart: null,
+			// G9:小限粒度(年/月/日,默认年=现状) + 起点(上升默认)。纯前端摘要,不影响后端年盘请求。
+			profGrain: 'y',
+			profStart: 'asc',
 		};
 
 		if(this.state.params.date){
@@ -68,6 +165,9 @@ class AstroProfection extends Component{
 		this.genAspectDom = this.genAspectDom.bind(this);
 		this.renderPlanetLabel = this.renderPlanetLabel.bind(this);
 		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
+		this.changeProfGrain = this.changeProfGrain.bind(this);
+		this.changeProfStart = this.changeProfStart.bind(this);
+		this.renderProfectionSummary = this.renderProfectionSummary.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (chartObj)=>{
@@ -326,6 +426,69 @@ class AstroProfection extends Component{
 		}
 	}
 
+	changeProfGrain(e){
+		const val = e && e.target ? e.target.value : e;
+		this.setState({ profGrain: val });
+	}
+
+	changeProfStart(val){
+		this.setState({ profStart: val });
+	}
+
+	// G9 小限派生摘要(纯前端):按所选粒度/起点显示当前小限座 · 宫 · 主星;月/日另显年级座作参照。
+	renderProfectionSummary(){
+		const grain = this.state.profGrain || 'y';
+		const startKey = this.state.profStart || 'asc';
+		let birthDt = null;
+		const p = this.state.params;
+		if(p && p.date){
+			birthDt = new DateTime();
+			try{ birthDt.parse(`${p.date} ${p.time || '12:00:00'}`, 'YYYY-MM-DD HH:mm:ss'); }
+			catch(e){ try{ birthDt.parse(p.date, 'YYYY-MM-DD'); }catch(e2){ birthDt = null; } }
+		}
+		const targetDt = p ? p.datetime : null;
+		const info = deriveProfection(birthDt, targetDt, grain, startKey, this.props.value);
+		const glyphFont = { fontFamily: AstroConst.AstroFont };
+		const normFont = { fontFamily: AstroConst.NormalFont };
+		const signGlyph = (idx)=>{
+			const name = AstroConst.LIST_SIGNS[((idx % 12) + 12) % 12];
+			return <span style={glyphFont}>{AstroText.AstroMsg[name]}</span>;
+		};
+		const signCn = (idx)=>{
+			const name = AstroConst.LIST_SIGNS[((idx % 12) + 12) % 12];
+			return AstroText.AstroTxtMsg[name] || name;
+		};
+		const planet = (id)=> id ? (
+			<span><span style={glyphFont}>{AstroText.AstroMsg[id]}</span><span style={normFont}>{AstroText.AstroTxtMsg[id] ? `（${AstroText.AstroTxtMsg[id]}）` : ''}</span></span>
+		) : <span style={{opacity: 0.6}}>—</span>;
+		return (
+			<div style={{marginBottom: 10}}>
+				<div style={{display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8}}>
+					<XQSegmented value={grain} onChange={this.changeProfGrain} options={PROFECTION_GRAIN_OPTIONS} />
+					<XQSelect size="small" value={startKey} onChange={this.changeProfStart} style={{minWidth: 132}} dropdownMatchSelectWidth={false}>
+						{PROFECTION_START_OPTIONS.map((it)=>(<XQSelect.Option value={it.value} key={it.value}>{it.label}</XQSelect.Option>))}
+					</XQSelect>
+				</div>
+				{!info ? (
+					<div style={{opacity: 0.65, fontSize: 12}}>排盘后显示小限摘要。</div>
+				) : (
+					<div style={{fontSize: 12.5, lineHeight: 2}}>
+						<div>
+							<span style={normFont}>{PROFECTION_GRAIN_CN[grain]}小限（自{PROFECTION_START_CN[startKey]}）：</span>
+							{signGlyph(info.signIdx)} <span style={normFont}>{signCn(info.signIdx)}</span>
+							<span style={normFont}>　第 {info.house} 宫</span>
+						</div>
+						<div><span style={normFont}>主星：</span>{planet(info.rulerId)}</div>
+						<div style={{opacity: 0.75}}><span style={normFont}>满 {info.ageYears} 岁</span>{grain !== 'y' ? <span style={normFont}>　当年 {info.monthsIntoYear + 1} 月</span> : null}</div>
+						{grain !== 'y' ? (
+							<div style={{opacity: 0.65}}><span style={normFont}>年级参照：</span>{signGlyph(info.yearSignIdx)} <span style={normFont}>{signCn(info.yearSignIdx)} · 第 {info.yearHouse} 宫</span></div>
+						) : null}
+					</div>
+				)}
+			</div>
+		);
+	}
+
 	render(){
 		let chartObj = {
 			natualChart: this.props.value,
@@ -411,6 +574,8 @@ class AstroProfection extends Component{
 									/>
 								</Col>
 							</Row>
+							<Divider orientation="left">小限摘要</Divider>
+							{this.renderProfectionSummary()}
 							<Divider orientation="left">相位</Divider>
 							{aspdom}
 						</div>

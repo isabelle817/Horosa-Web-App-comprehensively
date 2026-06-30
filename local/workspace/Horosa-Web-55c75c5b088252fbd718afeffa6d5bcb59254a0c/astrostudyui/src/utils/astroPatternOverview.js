@@ -12,7 +12,8 @@ const { SUN, MOON, MERCURY, VENUS, MARS, JUPITER, SATURN, NORTH_NODE } = AstroCo
 const SEVEN = [SUN, MOON, MERCURY, VENUS, MARS, JUPITER, SATURN];
 const MALEFIC_HOUSES = new Set([6, 8, 12]);      // 后天凶宫(主宰即后天凶星)
 const JUP_WEAK_HOUSES = new Set([3, 6, 8, 12]);  // 木非强吉的凶宫
-const OTHERWORLDLY = new Set([6, 8, 12]);        // 反世俗宫=6/8/12 三大凶宫(用户订正,文档146-147「6/8/12大凶」)
+const NON_MUNDANE = new Set([8, 12]);            // 非世俗宫=仅8/12(成格局/有情无情/先验权力 专用,文档664-678/802);其余皆世俗。
+                                                  // ⚠ 勿与上面「后天凶宫 MALEFIC_HOUSES={6,8,12}」混为一谈——大凶宫与非世俗宫是两套独立概念,6th 属世俗。
 const MODALITY_CN = { cardinal: '转宫', fixed: '定宫', mutable: '二体宫' };
 
 function norm360(x){ return ((x % 360) + 360) % 360; }
@@ -27,7 +28,38 @@ function dignToken(sd){
 	return '';
 }
 
-export function buildPatternOverview(perchart, chart){
+// 成格局四象(文档664-679)→ 有情/无情。非世俗宫=仅{8,12}(文档606),其余皆世俗。
+// 外交官模型(673):主宰星只为「所主宰宫」服务,在「所落宫」吸能带回所主宰宫。故按每星落座判有向四象:
+//   ①世俗主宰→世俗 ②玄主宰→玄 ③世俗主宰→玄(用玄手段谋世俗·有情·玄谋世俗) ④玄主宰→世俗(无情)。
+// 互换(互容)=纯粹交易→恒有情(文档511 拉康12R-8R玄纯粹 / 1006 施密特12R-5R玄世混合亦「极其有情」),
+//   无论双方落宫玄/世俗;互换直接覆盖 case④,realm 仅决定子标签。这是因为互换=双方各落入对方所主宰之宫的对等交换,
+//   而非「单向倾倒」(如文书企划金8R/水12R落10th无互换→case④无情)。
+// 注意:不做「主宰宫×对方宫」笛卡尔积 cross-link——只有2个非世俗宫,cross-link 会因某星兼主一个世俗宫而虚构 case④,
+//   把拉康那样纯粹的8-12互换错杀成无情。落座有向 + 互换覆盖才是文档原意。
+function realmOfHouse(h){ return (h != null && NON_MUNDANE.has(h)) ? '玄' : '世俗'; }
+function purityLabel(realm){ return realm === '玄谋世俗' ? '有情·玄谋世俗' : `有情·${realm}纯粹`; }
+// parts = [{rules:[宫号...], fall:宫号|null}, ...](2 星联结 或 N 星主宰环皆可)。
+function judgeRealmPurity(parts){
+	const ps = (parts || []).filter(Boolean);
+	if(!ps.length){ return null; }
+	// 互换(仅 2 星):双方各落入对方所主宰之宫 → 纯粹交易,恒有情。
+	const swap = ps.length === 2 && ps[0].fall != null && ps[1].fall != null
+		&& (ps[0].rules || []).includes(ps[1].fall) && (ps[1].rules || []).includes(ps[0].fall);
+	if(swap){
+		const ra = realmOfHouse(ps[0].fall); const rb = realmOfHouse(ps[1].fall);
+		const realm = (ra === '玄' && rb === '玄') ? '玄' : (ra === '世俗' && rb === '世俗') ? '世俗' : '玄谋世俗';
+		return { pure: true, realm, label: purityLabel(realm), swap: true };
+	}
+	const rels = [];   // 每条 = [主宰宫realm, 落宫realm];仅各星自身落座,不做 cross-link
+	ps.forEach((p)=>{ if(p.fall == null){ return; } (p.rules || []).forEach((r)=>{ rels.push([realmOfHouse(r), realmOfHouse(p.fall)]); }); });
+	if(!rels.length){ return null; }
+	if(rels.some(([ru, tg])=> ru === '玄' && tg === '世俗')){ return { pure: false, realm: null, label: '无情', swap: false }; }   // case④ 非世俗主宰→世俗
+	if(rels.every(([ru, tg])=> ru === '世俗' && tg === '世俗')){ return { pure: true, realm: '世俗', label: '有情·世俗纯粹', swap: false }; }
+	if(rels.every(([ru, tg])=> ru === '玄' && tg === '玄')){ return { pure: true, realm: '玄', label: '有情·玄纯粹', swap: false }; }
+	return { pure: true, realm: '玄谋世俗', label: '有情·玄谋世俗', swap: false };   // 含 case③(世俗主宰→玄)、无 case④
+}
+
+export function buildPatternOverview(perchart, chart, opts){
 	const objs = (perchart && perchart.objects) || [];
 	if(!objs.length){ return { empty: true }; }
 	const byId = {};
@@ -44,18 +76,9 @@ export function buildPatternOverview(perchart, chart){
 		const t = dignToken(o.selfDignity); if(t === '陷' || t === '落'){ f.push(t); }
 		return f; };
 
-	// ── 联结纯粹度(有情/无情)：双方「主宰宫∪落宫」全集，全世俗→有情·世俗 / 全{8,12}→有情·玄 / 混杂→无情；互换=A落B主宫且B落A主宫 ──
-	const realmPurity = (houses)=>{ const all = houses.filter((n)=> n != null); if(!all.length){ return null; }
-		const anyWorld = all.some((h)=> !OTHERWORLDLY.has(h));
-		const anyOther = all.some((h)=> OTHERWORLDLY.has(h));
-		const pure = !(anyWorld && anyOther);
-		const realm = (anyOther && !anyWorld) ? '玄' : '世俗';
-		return { pure, realm, label: pure ? `有情·${realm}纯粹` : '无情' }; };
-	const housesOfPlanets = (list)=> list.reduce((acc, o)=> acc.concat(ruleHousesOf(o)).concat([houseOf(o)]), []);
+	// ── 有情/无情(成格局四象 → judgeRealmPurity):有向「主宰宫realm→所落/联结宫realm」+ 两者结合 + 无情优先(case④)。互换=A落B主宫且B落A主宫 ──
 	const connectionPurity = (a, b)=>{ if(!a || !b){ return null; }
-		const p = realmPurity(housesOfPlanets([a, b])); if(!p){ return null; }
-		const swap = ruleHousesOf(a).includes(houseOf(b)) && ruleHousesOf(b).includes(houseOf(a));
-		return { ...p, swap }; };
+		return judgeRealmPurity([{ rules: ruleHousesOf(a), fall: houseOf(a) }, { rules: ruleHousesOf(b), fall: houseOf(b) }]); };
 
 	// ── 两星是否高层联结(互容/接纳/合相)：供龙截 2:5 判定 ──
 	const pairLinked = (idA, idB)=>{
@@ -135,7 +158,7 @@ export function buildPatternOverview(perchart, chart){
 	// ── 主宰循环：终极主宰 + 互容环(带纯粹标) ──
 	const finals = [...disp.finals].map((k)=> chartIdOfKey(k)).filter(Boolean);
 	const loops = (disp.loops || []).map((loop)=>{ const ids = loop.map((k)=> chartIdOfKey(k)).filter(Boolean);
-		const purity = ids.length >= 2 ? realmPurity(housesOfPlanets(ids.map((id)=> byId[id]).filter(Boolean))) : null;
+		const purity = ids.length >= 2 ? judgeRealmPurity(ids.map((id)=> byId[id]).filter(Boolean).map((o)=> ({ rules: ruleHousesOf(o), fall: houseOf(o) }))) : null;
 		return { ids, purity }; });
 	const dispositor = { finals, loops };
 
@@ -146,7 +169,17 @@ export function buildPatternOverview(perchart, chart){
 	const connList = (list, kind)=> (list || []).map((it)=>{ const a = it.planetA ? it.planetA.id : it.beneficiary; const b = it.planetB ? it.planetB.id : it.supplier;
 		const oa = byId[a]; const ob = byId[b]; const purity = connectionPurity(oa, ob);
 		return { kind, a, b, purity, abnormal: false }; });
-	const m = (chart && chart.mutuals) || {}; const r = (chart && chart.receptions) || {};
+	// 「仅按本垣擢升计算互容接纳」开启时,先过滤掉非 本垣(ruler)/擢升(exalt) 的互容/接纳,使速览(互容/接纳/
+	// 先验权力——其联结亦取自 m/r)与星盘、古典 tab 详细行(keepReceptionLine/keepMutualLine)口径一致(用户要求同步)。
+	const onlyRulExalt = !!(opts && opts.onlyRulExalt);
+	const hasRulExalt = (ary)=> Array.isArray(ary) && ary.some((x)=> x === 'ruler' || x === 'exalt');
+	const keepRec = (it, abn)=>{ if(!onlyRulExalt){ return true; } if(!it){ return false; }
+		const supOk = hasRulExalt(it.supplierRulerShip); return abn ? (supOk || hasRulExalt(it.beneficiaryDignity)) : supOk; };
+	const keepMut = (it)=>{ if(!onlyRulExalt){ return true; } if(!it || !it.planetA || !it.planetB){ return false; }
+		return hasRulExalt(it.planetA.rulerShip) && hasRulExalt(it.planetB.rulerShip); };
+	const rawM = (chart && chart.mutuals) || {}; const rawR = (chart && chart.receptions) || {};
+	const m = { normal: (rawM.normal || []).filter((it)=> keepMut(it)), abnormal: (rawM.abnormal || []).filter((it)=> keepMut(it)) };
+	const r = { normal: (rawR.normal || []).filter((it)=> keepRec(it, false)), abnormal: (rawR.abnormal || []).filter((it)=> keepRec(it, true)) };
 	const connections = {
 		mutual: connList(m.normal, '互容').concat(connList(m.abnormal, '互容').map((x)=> ({ ...x, abnormal: true }))),
 		reception: (r.normal || []).map((it)=> ({ kind: '接纳', beneficiary: it.beneficiary, supplier: it.supplier, dign: dignToken(it.supplierRulerShip), purity: connectionPurity(byId[it.beneficiary], byId[it.supplier]), refuse: false }))
@@ -154,10 +187,12 @@ export function buildPatternOverview(perchart, chart){
 	};
 
 	// ── 先验权力(文档784-802/问答287-311):8th 与 12th 或 8th 与 1th 之联结(接纳/互容/合相/主宰环);夜生 → 八杀朝天大贵 ──
+	// 双方「分别」落或主宰这两宫(分立成对):一方(落或主宰)8th 且 另一方(落或主宰)12th 或 1th。
+	// 旧实现把双方宫位合池查 has(8)&&has(12) → 单星兼主/兼落 8&12 时任何联结都误判,故重写。
+	const inOrRules = (o, h)=>{ if(!o){ return false; } if(houseOf(o) === h){ return true; } return ruleHousesOf(o).includes(h); };
 	const aprioriLink = (oa, ob)=>{ if(!oa || !ob){ return null; }
-		const hs = new Set(ruleHousesOf(oa).concat([houseOf(oa)]).concat(ruleHousesOf(ob)).concat([houseOf(ob)]));
-		if(hs.has(8) && hs.has(12)){ return '8·12'; }
-		if(hs.has(8) && hs.has(1)){ return '8·1'; }
+		if((inOrRules(oa, 8) && inOrRules(ob, 12)) || (inOrRules(oa, 12) && inOrRules(ob, 8))){ return '8·12'; }
+		if((inOrRules(oa, 8) && inOrRules(ob, 1)) || (inOrRules(oa, 1) && inOrRules(ob, 8))){ return '8·1'; }
 		return null; };
 	const apriori = { has: false, links: [] };
 	const checkApriori = (aId, bId, kind)=>{ const w = aprioriLink(byId[aId], byId[bId]); if(w){ apriori.has = true; apriori.links.push({ a: aId, b: bId, which: w, kind }); } };
@@ -176,14 +211,7 @@ export function connectionPurityById(idA, idB, objects){
 	const a = byId[idA]; const b = byId[idB]; if(!a || !b){ return null; }
 	const rh = (o)=> ((o.ruleHouses) || []).map(houseNumOf).filter((n)=> n != null);
 	const ho = (o)=> houseNumOf(o.house);
-	const houses = rh(a).concat([ho(a)]).concat(rh(b)).concat([ho(b)]).filter((n)=> n != null);
-	if(!houses.length){ return null; }
-	const anyWorld = houses.some((h)=> !OTHERWORLDLY.has(h));
-	const anyOther = houses.some((h)=> OTHERWORLDLY.has(h));
-	const pure = !(anyWorld && anyOther);
-	const realm = (anyOther && !anyWorld) ? '玄' : '世俗';
-	const swap = rh(a).includes(ho(b)) && rh(b).includes(ho(a));
-	return { pure, realm, swap, label: pure ? `有情·${realm}纯粹` : '无情' };
+	return judgeRealmPurity([{ rules: rh(a), fall: ho(a) }, { rules: rh(b), fall: ho(b) }]);
 }
 
 // ── 信息 tab 速览紧凑行：Row={key,label,items,empty}；Item={parts:[{g:id}|{t:text}],note,tone} ──
@@ -193,7 +221,9 @@ export function toOverviewRows(data){
 	const g = (id)=> ({ g: id });
 	const t = (txt)=> ({ t: txt });
 
-	const tone = (p, refuse)=> (refuse ? 'bad' : (p ? (p.pure ? 'good' : 'bad') : undefined));
+	// 配色只认有情/无情(成格局):有情=good(绿)/无情=bad(红)。拒绝(supplier 陷/落)是另一回事,
+	// 仅在 note 文本标「·拒绝」,绝不据此染红——否则「有情却拒绝」的联结会被错染成红(用户指认)。
+	const tone = (p)=> (p ? (p.pure ? 'good' : 'bad') : undefined);
 	// 互容
 	const mu = (data.connections && data.connections.mutual) || [];
 	rows.push({ key: 'mutual', label: '互容', empty: mu.length ? null : '无',
@@ -201,7 +231,7 @@ export function toOverviewRows(data){
 	// 接纳
 	const rc = (data.connections && data.connections.reception) || [];
 	rows.push({ key: 'reception', label: '接纳', empty: rc.length ? null : '无',
-		items: rc.map((c)=> ({ parts: [g(c.beneficiary), t('被'), g(c.supplier), t('接纳')], note: `${c.dign ? c.dign : ''}${c.refuse ? '·拒绝' : ''}${purityNote(c.purity, true)}`, tone: tone(c.purity, c.refuse) })) });
+		items: rc.map((c)=> ({ parts: [g(c.beneficiary), t('被'), g(c.supplier), t('接纳')], note: `${c.dign ? c.dign : ''}${c.refuse ? '·拒绝' : ''}${purityNote(c.purity, true)}`, tone: tone(c.purity) })) });
 	// 先验权力(8·12 / 8·1 联结;夜生=八杀朝天大贵)
 	const ap = data.apriori || {};
 	rows.push({ key: 'apriori', label: '先验权力', empty: ap.has ? null : '无',
