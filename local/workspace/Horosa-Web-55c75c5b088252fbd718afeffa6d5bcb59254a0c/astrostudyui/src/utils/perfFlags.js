@@ -8,6 +8,11 @@
 //   localStorage.setItem('horosa.perf.chartSCU', '0')       // 盘面重组件 shouldComponentUpdate
 //   localStorage.setItem('horosa.perf.hookRaf', '0')        // 排盘 hook rAF 化
 //   localStorage.setItem('horosa.perf.freezeInactiveTabs','0')// 冻结非激活 TabPane 重渲
+//   localStorage.setItem('horosa.perf.planetariumRenderGating','0')// 天文馆:隐藏/非激活时暂停渲染循环
+//   localStorage.setItem('horosa.perf.planetariumOnDemandRender','0')// 天文馆:静止时按需渲染(非每帧)
+//   localStorage.setItem('horosa.perf.planetariumIdleHeartbeat','0')// 天文馆:按需渲染的 1fps 兜底心跳
+//   localStorage.setItem('horosa.perf.planetariumMetricsThrottle','0')// 天文馆:FPS/网格读数节流到 ~2Hz
+//   localStorage.setItem('horosa.perf.planetariumTimeEditDebounce','0')// 天文馆:可编辑时间的后端重算去抖
 // 恢复:对应 key removeItem 或设 '1'。
 
 function flagEnabled(key){
@@ -43,4 +48,29 @@ export function hookRafEnabled(){
 
 export function freezeInactiveTabsEnabled(){
 	return flagEnabled('horosa.perf.freezeInactiveTabs');
+}
+
+// 天文馆性能门控(只动渲染时机,不动任何排盘/外推内容):
+//   - renderGating:隐藏/非激活时暂停 Babylon 渲染循环(可见+激活时一字不动)。
+//   - onDemandRender:可见+激活但静止(暂停)时按需渲染而非每帧 60fps;配 idleHeartbeat 1fps 兜底。
+//   - metricsThrottle:FPS/网格调试读数节流到 ~2Hz。
+//   - timeEditDebounce:可编辑时间的后端整盘重算去抖(显示与「确定」提交均同步、不去抖)。
+export function planetariumRenderGatingEnabled(){
+	return flagEnabled('horosa.perf.planetariumRenderGating');
+}
+
+export function planetariumOnDemandRenderEnabled(){
+	return flagEnabled('horosa.perf.planetariumOnDemandRender');
+}
+
+export function planetariumIdleHeartbeatEnabled(){
+	return flagEnabled('horosa.perf.planetariumIdleHeartbeat');
+}
+
+export function planetariumMetricsThrottleEnabled(){
+	return flagEnabled('horosa.perf.planetariumMetricsThrottle');
+}
+
+export function planetariumTimeEditDebounceEnabled(){
+	return flagEnabled('horosa.perf.planetariumTimeEditDebounce');
 }

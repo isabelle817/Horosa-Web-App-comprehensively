@@ -1,6 +1,13 @@
 import { Component, createRef, memo } from 'react';
 import DateTime from '../comp/DateTime';
 import DateTimeSelector from '../comp/DateTimeSelector';
+import { planetariumRenderGatingEnabled, planetariumOnDemandRenderEnabled, planetariumMetricsThrottleEnabled, planetariumTimeEditDebounceEnabled } from '../../utils/perfFlags';
+
+// perf:planetariumRenderGating —— 天文馆渲染时机门控参数(只动时机不动内容):
+//   IDLE_FRAME_MS:静止时降帧间隔(~10fps);静止画面在任何帧率下视觉一致,留出 CPU 给主线程消除卡顿。
+//   SETTLE_MS:一次交互后维持满帧的时窗(拖动顺滑 + 覆盖惯性/收尾),之后回落到降帧。
+const PLANETARIUM_IDLE_FRAME_MS = 100;
+const PLANETARIUM_SETTLE_MS = 600;
 
 // 时间编辑器隔离壳:天文馆每秒上百次 metrics/FPS 重渲,会带着 DateTimeSelector 一起重渲;
 // 而 DateTimeSelector 内部 Option 用 randomStr 每渲生成新 key → Select 下拉项被不断 remount → 下拉无法停留。
@@ -1320,6 +1327,16 @@ class PlanetariumRenderer {
 		this.onPick = onPick;
 		this.onMetrics = onMetrics;
 		this.onInteraction = onInteraction;
+		// perf:planetariumRenderGating —— 渲染循环时机门控状态(内容/语义一字不动)。
+		this._loopRunning = false;
+		this._onDemand = planetariumOnDemandRenderEnabled();
+		this._metricsThrottle = planetariumMetricsThrottleEnabled();
+		this._playing = false;
+		this._renderRequested = false;
+		this._settleUntil = 0;
+		this._lastIdleRender = 0;
+		this._lastMetricEmit = 0;
+		this._boundRenderTick = null;
 		this.engine = new BABYLON.Engine(canvas, true, {
 			preserveDrawingBuffer: false,
 			stencil: false,
@@ -1414,6 +1431,7 @@ class PlanetariumRenderer {
 				return;
 			}
 			evt.preventDefault();
+			this.markCameraSettle();
 			if(this.viewMode === 'orbit'){
 				this.camera.radius = clamp(this.camera.radius + (evt.deltaY > 0 ? 64 : -64), ORBIT_MIN_RADIUS, ORBIT_MAX_RADIUS);
 				return;
@@ -1429,6 +1447,7 @@ class PlanetariumRenderer {
 			if(this.onInteraction){
 				this.onInteraction();
 			}
+			this.markCameraSettle();
 			this.pointerDrag = {
 				id: evt.pointerId,
 				x: evt.clientX,
@@ -1453,6 +1472,7 @@ class PlanetariumRenderer {
 				if(this.camera){ this.camera.lockedTarget = null; }
 			}
 			evt.preventDefault();
+			this.markCameraSettle();
 			if(this.viewMode === 'orbit'){
 				if(this.onInteraction){
 					this.onInteraction();
@@ -1580,21 +1600,8 @@ class PlanetariumRenderer {
 			}
 		});
 
-		this.engine.runRenderLoop(()=>{
-			if(this.scene){
-				this.updateGroundScenePosition();
-				this.applyLabelVisibility();
-				this.applyGridLod();
-				this.scene.render();
-				if(this.onMetrics){
-					const fps = Math.round(this.engine.getFps());
-					this.onMetrics({
-						fps: Number.isFinite(fps) ? Math.min(240, Math.max(0, fps)) : 0,
-						meshes: this.scene.meshes.length,
-					});
-				}
-			}
-		});
+		// perf:planetariumRenderGating —— 循环体抽成具名 _renderTick(可停/起 + 静止降帧 + metrics 节流),内容不变。
+		this._startRenderLoop();
 		this.resizeHandler = ()=>{
 			if(this.engine){
 				// Keep the backing store at full device resolution; re-apply on resize so
@@ -4212,8 +4219,108 @@ class PlanetariumRenderer {
 		return true;
 	}
 
+	// perf:planetariumRenderGating —— 每帧渲染体(原 runRenderLoop 闭包,内容一字不动;新增静止降帧 + metrics 节流)。
+	_renderTick(){
+		if(!this.scene){
+			return;
+		}
+		const t = nowMs();
+		// A2 静止降帧:可见+激活但「未播放 / 无补间动画 / 非刚交互(settle)/ 未被显式请求」时,
+		// 渲染降到 ~10fps。静止画面在任何帧率下视觉完全一致,且把 CPU 让回主线程消除全局卡顿;
+		// 任何变更最迟 ≤PLANETARIUM_IDLE_FRAME_MS 上屏(不漏帧、不陈旧),播放/拖动/动画期间仍满帧。
+		if(this._onDemand){
+			const live = this._renderRequested
+				|| this._playing
+				|| (this.scene.animatables && this.scene.animatables.length > 0)
+				|| (t < this._settleUntil);
+			if(!live){
+				if(this._lastIdleRender && (t - this._lastIdleRender) < PLANETARIUM_IDLE_FRAME_MS){
+					return;
+				}
+			}
+			this._renderRequested = false;
+			this._lastIdleRender = t;
+		}
+		this.updateGroundScenePosition();
+		this.applyLabelVisibility();
+		this.applyGridLod();
+		this.scene.render();
+		if(this.onMetrics){
+			// B:FPS/网格调试读数节流到 ~2Hz(getFps 本就是滚动均值,2Hz 与 60Hz 读同一值类、零精度损失)。
+			if(!this._metricsThrottle || !this._lastMetricEmit || (t - this._lastMetricEmit) >= 500){
+				this._lastMetricEmit = t;
+				const fps = Math.round(this.engine.getFps());
+				this.onMetrics({
+					fps: Number.isFinite(fps) ? Math.min(240, Math.max(0, fps)) : 0,
+					meshes: this.scene.meshes.length,
+				});
+			}
+		}
+	}
+
+	_startRenderLoop(){
+		if(this._loopRunning || !this.engine){
+			return;
+		}
+		if(!this._boundRenderTick){
+			this._boundRenderTick = this._renderTick.bind(this);
+		}
+		this.engine.runRenderLoop(this._boundRenderTick);
+		this._loopRunning = true;
+	}
+
+	startRenderLoop(){
+		this._startRenderLoop();
+	}
+
+	// A1:隐藏/非激活时停渲染循环(只停「画」,scene/engine/state 全保留;恢复时 renderOnce 重绘实况)。
+	stopRenderLoop(){
+		if(!this.engine){
+			this._loopRunning = false;
+			return;
+		}
+		if(this._boundRenderTick){
+			this.engine.stopRenderLoop(this._boundRenderTick);
+		}else{
+			this.engine.stopRenderLoop();
+		}
+		this._loopRunning = false;
+	}
+
+	// 单帧硬渲染:恢复显示时立即重绘当前实况帧(无陈旧、无 A→B 跳变)。
+	renderOnce(){
+		if(!this.scene || !this.engine){
+			return;
+		}
+		this.updateGroundScenePosition();
+		this.applyLabelVisibility();
+		this.applyGridLod();
+		this.scene.render();
+		this._renderRequested = false;
+		this._lastIdleRender = nowMs();
+	}
+
+	// 显式请求下一帧满帧(场景内容变更后调用 → ≤1 帧上屏;静止降帧下仍即时可见)。
+	requestRender(){
+		this._renderRequested = true;
+	}
+
+	// 一次用户交互/相机变更 → 短窗内维持满帧(拖动顺滑 + 覆盖惯性/收尾)。
+	markCameraSettle(){
+		this._settleUntil = nowMs() + PLANETARIUM_SETTLE_MS;
+	}
+
+	// React 侧 speed 变化时同步(播放中恒满帧)。
+	setPlaying(playing){
+		this._playing = !!playing;
+		if(playing){
+			this._renderRequested = true;
+		}
+	}
+
 	dispose(){
 		this.disposed = true;
+		this._loopRunning = false;
 		window.removeEventListener('resize', this.resizeHandler);
 		if(this.wheelHandler){
 			this.canvas.removeEventListener('wheel', this.wheelHandler);
@@ -4386,7 +4493,11 @@ class PlanetariumBabylon extends Component{
 		this.renderer.onMeasure = (info)=>{ if(this._isUnmounted){ return; } this.setState({ measureInfo: info }); };
 		this.renderer.onSkyReadout = (readout)=>{ if(this._isUnmounted){ return; } this.setState({ skyReadout: readout, selected: null }); };
 		this.renderer.setMagLimit(this.state.magLimit);
+		// perf:planetariumRenderGating —— 窗口隐藏/最小化时暂停 Babylon 渲染循环(可见时一字不动);恢复即重绘实况帧。
+		this._onVisibility = ()=>{ this._applyRenderActivity(); };
+		document.addEventListener('visibilitychange', this._onVisibility);
 		this.bootstrapState();
+		this._applyRenderActivity();
 	}
 
 	componentDidUpdate(prevProps, prevState){
@@ -4416,6 +4527,8 @@ class PlanetariumBabylon extends Component{
 		}
 		if(prevState.speed !== this.state.speed){
 			this.setupPlayback();
+			// perf:planetariumRenderGating —— 播放中恒满帧;停播时回落到静止降帧。
+			if(this.renderer){ this.renderer.setPlaying(this.state.speed !== 0); }
 		}
 		if(prevState.viewMode !== this.state.viewMode && this.renderer){
 			this.renderer.setViewMode(this.state.viewMode);
@@ -4440,6 +4553,14 @@ class PlanetariumBabylon extends Component{
 			document.removeEventListener('fullscreenchange', this._onFullscreenChange);
 			this._onFullscreenChange = null;
 		}
+		if(this._onVisibility){
+			document.removeEventListener('visibilitychange', this._onVisibility);
+			this._onVisibility = null;
+		}
+		if(this._timeEditDebounce){
+			clearTimeout(this._timeEditDebounce);
+			this._timeEditDebounce = null;
+		}
 		this.pushPerfLog('release', { canvasReleased: true });
 		if(this.playTimer){
 			cancelAnimationFrame(this.playTimer);
@@ -4461,6 +4582,24 @@ class PlanetariumBabylon extends Component{
 
 	markInteraction(){
 		this.lastInteractionAt = nowMs();
+	}
+
+	// perf:planetariumRenderGating —— 依「可见 + 激活」决定渲染循环停/起。
+	// 本组件仅在天文馆为激活 tab 时挂载(切走即卸载释放),故此处实质门控的是窗口隐藏/最小化;
+	// 可见+激活时:照常满帧/降帧渲染,行为一字不动。
+	_applyRenderActivity(){
+		if(!this.renderer){
+			return;
+		}
+		const gate = planetariumRenderGatingEnabled();
+		const hidden = (typeof document !== 'undefined') && document.hidden;
+		const shouldRun = gate ? ((this.props.active !== false) && !hidden) : true;
+		if(shouldRun){
+			this.renderer.startRenderLoop();
+			this.renderer.renderOnce();
+		}else{
+			this.renderer.stopRenderLoop();
+		}
 	}
 
 	scheduleBackgroundFull(options = {}){
@@ -4747,12 +4886,27 @@ class PlanetariumBabylon extends Component{
 			try{ document.body.classList.remove('planetarium-time-editing'); }catch(e){ /* no-op */ }
 			document.removeEventListener('mousedown', this._onTimeEditorDocMouseDown, true);
 		}
+		const confirmed = !!(res && res.confirmed);
+		const fireRequest = ()=>{
+			if(this._isUnmounted){ return; }
+			this.requestState({ requestKind: 'full', reason: 'time-edit', syncLabel: '重算此时天空...' });
+		};
 		this.setState({
 			time: dt,
 			selected: null,
 			speed: 0,
-			...(res && res.confirmed ? { timeEditorOpen: false } : {}),
-		}, ()=>this.requestState({ requestKind: 'full', reason: 'time-edit', syncLabel: '重算此时天空...' }));
+			...(confirmed ? { timeEditorOpen: false } : {}),
+		}, ()=>{
+			// C 去抖:显示与外推基线已同步更新(即时实时);只把「后端整盘重算」合并 —— 连续 +/- 期间不重复打后端,
+			//   「确定」或关总开关 → 立即重算。requestState 触发时读当下 this.state.time(=最后一次 setState 的值)→
+			//   最终结果精确无误,只是省掉中间多余的来回与 syncing 闪烁(不改任何计算内容)。
+			if(this._timeEditDebounce){ clearTimeout(this._timeEditDebounce); this._timeEditDebounce = null; }
+			if(confirmed || !planetariumTimeEditDebounceEnabled()){
+				fireRequest();
+			}else{
+				this._timeEditDebounce = setTimeout(()=>{ this._timeEditDebounce = null; fireRequest(); }, 220);
+			}
+		});
 	}
 
 	// 时间编辑面板:自控开合(不用 antd Popover,避免其受控 click-outside 与嵌套 Select 下拉互相抢闭)。
