@@ -116,6 +116,9 @@ class XuanShiSrv:
                 dynasty=_str(d, "dynasty"),
                 technique=_str(d, "technique"),
                 history=_str(d, "history"),
+                dynasties=_list(d, "dynasties"),
+                techniques=_list(d, "techniques"),
+                histories=_list(d, "histories"),
                 evidence=_str(d, "evidence"),
                 page=_int(d, "page", 1),
                 page_size=_int(d, "page_size", _int(d, "pageSize", 30)),
@@ -192,6 +195,18 @@ class XuanShiSrv:
                 decade=_int(d, "decade"),
             )
             return jsonpickle.encode(res, unpicklable=False)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonpickle.encode({"err": str(e)}, unpicklable=False)
+
+    @cherrypy.expose
+    @cherrypy.tools.json_in()
+    def decade_omens(self, **kwargs):
+        """十年期 × 天象类 堆叠序列(供星象大典 echarts 堆叠面积图)。"""
+        if enable_crossdomain():
+            return ""
+        try:
+            return jsonpickle.encode(xs_celestial.decade_omens(), unpicklable=False)
         except Exception as e:
             traceback.print_exc()
             return jsonpickle.encode({"err": str(e)}, unpicklable=False)
@@ -443,6 +458,43 @@ class XuanShiSrv:
                 res = {"drilldown": xs_queries.timeline_drilldown(macro, limit=_int(d, "limit", 80))}
             else:
                 res = xs_queries.timeline()
+            return jsonpickle.encode(res, unpicklable=False)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonpickle.encode({"err": str(e)}, unpicklable=False)
+
+    # ------------------------------------------------------------
+    # facet 计数（首页多维检索：传统/朝代/术数/史书/证据 + 实时命中）
+    # ------------------------------------------------------------
+    @cherrypy.expose
+    @cherrypy.tools.json_in()
+    def events_meta(self, **kwargs):
+        """玄学万象列表页头部:统计 + 朝代游历(图标+史书细分)+ 传统切换。"""
+        if enable_crossdomain():
+            return ""
+        try:
+            d = _params()
+            res = xs_queries.events_page_meta(tradition=_str(d, "tradition"))
+            return jsonpickle.encode(res, unpicklable=False)
+        except Exception as e:
+            traceback.print_exc()
+            return jsonpickle.encode({"err": str(e)}, unpicklable=False)
+
+    @cherrypy.expose
+    @cherrypy.tools.json_in()
+    def facets(self, **kwargs):
+        if enable_crossdomain():
+            return ""
+        try:
+            d = _params()
+            res = xs_queries.facets(
+                tradition=_str(d, "tradition"),
+                q=_str(d, "q"),
+                dynasties=_list(d, "dynasty"),
+                techniques=_list(d, "technique"),
+                histories=_list(d, "history"),
+                evidence=_str(d, "evidence"),
+            )
             return jsonpickle.encode(res, unpicklable=False)
         except Exception as e:
             traceback.print_exc()

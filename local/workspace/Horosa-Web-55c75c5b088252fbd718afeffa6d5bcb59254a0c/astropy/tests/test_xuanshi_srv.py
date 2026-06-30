@@ -16,6 +16,7 @@ from astrostudy import xuanshi
 from astrostudy.xuanshi import fmt as xs_fmt
 from astrostudy.xuanshi import omen as xs_omen
 from astrostudy.xuanshi import period as xs_period
+from astrostudy.xuanshi import queries as xs_queries
 
 
 # ============================================================
@@ -196,6 +197,63 @@ def test_endpoint_events(srv):
 def test_endpoint_event_missing_returns_none(srv):
     # 不存在 id → None（非异常）。
     assert _decode(srv.event()) is None
+
+
+# ============================================================
+# 首页多维检索 facet（queries.facets + 多值 list_events）
+# ============================================================
+
+def test_facets_zhengshi_default_counts():
+    """正史空选择：总数与各 facet 计数稳定（对齐标准版首页计数）。"""
+    r = xs_queries.facets(tradition="正史")
+    assert r["totals"]["xuanxue_events"] == 1666
+    assert r["totals"]["corpus_paragraphs"] == 0
+    dyn = {o["name"]: o["count"] for o in r["options"]["dynasty"]}
+    assert len(r["options"]["dynasty"]) == 12          # 12 朝代大类
+    assert dyn["先秦两汉"] == 126 and dyn["南北朝"] == 438 and dyn["唐"] == 159
+    ev = {o["name"]: o["count"] for o in r["options"]["evidence"]}
+    assert ev["高"] == 1590 and ev["中"] == 74 and ev["低"] == 0
+    assert len(r["options"]["technique"]) == 24        # 前 24 术数
+    labels = {t["label"]: t["count"] for t in r["traditions"]}
+    assert labels["正史玄学"] == 1666 and labels["野载玄学"] == 6255
+
+
+def test_facets_switch_convention_recount():
+    """勾 唐 后：术数计数缩到唐内，但朝代各值仍是「切换计数」（宋仍显全量）。"""
+    r = xs_queries.facets(tradition="正史", dynasties=["唐"])
+    assert r["totals"]["xuanxue_events"] == 159
+    tech = {o["name"]: o["count"] for o in r["options"]["technique"]}
+    assert tech["星占"] == 15                            # 唐内星占
+    dyn = {o["name"]: o["count"] for o in r["options"]["dynasty"]}
+    assert dyn["宋"] == 124                              # 切换计数：宋仍是全量
+    # 叠加 星占 → 命中收敛
+    r2 = xs_queries.facets(tradition="正史", dynasties=["唐"], techniques=["星占"])
+    assert r2["totals"]["xuanxue_events"] == 15
+
+
+def test_facets_yezai_corpus_axis():
+    """野载传统：朝代轴换成语料分类（志怪笔记等），总数 6255。"""
+    r = xs_queries.facets(tradition="野载")
+    assert r["totals"]["xuanxue_events"] == 6255
+    dyn = {o["name"]: o["count"] for o in r["options"]["dynasty"]}
+    assert "志怪笔记" in dyn and dyn["志怪笔记"] > 0
+
+
+def test_list_events_multi_value_facets():
+    """list_events 多值（唐+宋）∪ 单值回退一致：多值给列表、缺省回落单值。"""
+    multi = xs_queries.list_events(tradition="正史", dynasties=["唐", "宋"], techniques=["星占"], page_size=5)
+    single = xs_queries.list_events(tradition="正史", dynasty="唐", technique="星占", page_size=5)
+    assert multi["total"] >= single["total"]            # 唐∪宋 ⊇ 唐
+    assert single["total"] == 15
+    # 多值优先于单值（同传同时给：用多值）
+    both = xs_queries.list_events(tradition="正史", dynasty="宋", dynasties=["唐"], technique="星占", page_size=5)
+    assert both["total"] == 15                           # 取 dynasties=['唐']
+
+
+def test_endpoint_facets(srv):
+    data = _decode(srv.facets())
+    assert data["totals"]["xuanxue_events"] == 1666     # 默认正史
+    assert {o["name"] for o in data["options"]["evidence"]} == {"高", "中", "低"}
 
 
 def test_endpoint_celestial(srv):

@@ -2,16 +2,16 @@ import React from 'react';
 import { Spin, Empty } from 'antd';
 import { fetchTimeline } from '../../services/xuanshi';
 
-// 朝代时间轴 —— 忠实源 timeline.html:编年时间轴(横轴=公元纪年,柱高∝事件数)+ 朝代×术类热力矩阵。
-const W = 820, TH = 150;
-function cellColor(n, max) {
-	if (!n || !max) { return 'transparent'; }
-	const t = Math.min(1, 0.12 + 0.88 * (n / max));
-	return `rgba(166, 61, 42, ${t.toFixed(3)})`;
-}
+// 朝代时间轴 —— 照搬 参考朝代时间轴页:顶部编年横向条带(柱按公历 span 定位、柱高∝事件数、时间刻度)
+// + 朝代×术类 堆叠条 + 图例 + 右侧钻取面板。
+const PALETTE = ['var(--vermilion)', 'var(--jade)', 'var(--gold)', '#8a7e6b', '#d99a6c', '#6c8a99', '#9a6c8a', '#6c9a73', '#a89060', '#7a8a6c', '#a07a8a', '#6c6c8a'];
+const TICKS = [-1000, -500, 0, 500, 1000, 1500];
 
 export default class XuanShiTimeline extends React.Component {
-	constructor(props) { super(props); this.state = { data: null, loading: false, err: '', selected: null }; }
+	constructor(props) {
+		super(props);
+		this.state = { data: null, loading: false, err: '', macro: null, drill: null, drillLoading: false };
+	}
 
 	componentDidMount() { this.load(); }
 
@@ -21,66 +21,139 @@ export default class XuanShiTimeline extends React.Component {
 		catch (e) { this.setState({ loading: false, err: `${e && e.message ? e.message : e}` }); }
 	}
 
+	async selectMacro(macro) {
+		if (this.state.macro === macro) { this.setState({ macro: null, drill: null }); return; }
+		this.setState({ macro, drill: null, drillLoading: true });
+		try { const r = await fetchTimeline({ macro }); this.setState({ drill: r.drilldown || [], drillLoading: false }); }
+		catch (e) { this.setState({ drillLoading: false }); }
+	}
+
 	render() {
-		const { data, loading, err, selected } = this.state;
+		const { data, loading, err, macro, drill, drillLoading } = this.state;
 		if (loading) { return <div className="xuanshi-center" style={{ minHeight: 400 }}><Spin tip="载入时间轴…" /></div>; }
 		if (err) { return <div className="xuanshi-center"><Empty description={`载入失败:${err}`} /><span className="xuanshi-link" onClick={() => this.load()}>重试</span></div>; }
 		if (!data) { return <div className="xuanshi-center"><Empty /></div>; }
-		const series = data.series || [], matrix = data.matrix || [], techs = data.top_techs || [];
-		const maxTotal = series.reduce((m, s) => Math.max(m, s.total || 0), 1);
-		const maxCell = matrix.reduce((m, row) => Math.max(m, ...techs.map((t) => row[t] || 0)), 1);
-		const span = (s) => (s.span_start == null ? '' : `${s.span_start < 0 ? '前' + (-s.span_start) : s.span_start}–${s.span_end < 0 ? '前' + (-s.span_end) : s.span_end}`);
+		const series = data.series || [];
+		const matrix = data.matrix || [];
+		const techs = data.top_techs || [];
+		const maxN = series.reduce((m, s) => Math.max(m, s.total || 0), 1);
+		const firstYear = series.length ? series[0].span_start : 0;
+		const lastYear = series.length ? series[series.length - 1].span_end : 1;
+		const totalSpan = (lastYear - firstYear) || 1;
+
 		return (
 			<div>
-				<div className="xuanshi-eyebrow">朝代时间轴</div>
-				<h2 className="xuanshi-display is-h2" style={{ marginTop: 6 }}>玄学事件 · 朝代编年</h2>
-				<div style={{ display: 'flex', gap: 14, margin: '12px 0' }}>
-					<span className="xuanshi-stat-sub">{(data.total || 0).toLocaleString()} 条 · 已归类 {(data.classified || 0).toLocaleString()} · 未归类 {(data.unclassified || 0).toLocaleString()}{selected ? ` · 选中:${selected}` : ''}</span>
-					{selected ? <span className="xuanshi-link" onClick={() => this.setState({ selected: null })}>看全部朝代</span> : null}
+				<div className="xuanshi-crumbs">
+					<span className="xuanshi-crumb" onClick={() => this.props.onHome && this.props.onHome()}>首页</span>
+					<span className="xuanshi-crumb-sep">/</span><span>图谱</span>
+					<span className="xuanshi-crumb-sep">/</span><span>朝代时间轴</span>
+				</div>
+				<h1 className="xuanshi-display is-hero" style={{ fontSize: 'clamp(24px,3vw,32px)' }}>朝代时间轴</h1>
+				<div className="xuanshi-section-sub" style={{ margin: '6px 0 0' }}>
+					<b style={{ color: 'var(--ink)' }}>{(data.total || 0).toLocaleString()}</b> 条玄学事件中,<b style={{ color: 'var(--ink)' }}>{(data.classified || 0).toLocaleString()}</b> 条已归入 <b style={{ color: 'var(--ink)' }}>{series.length}</b> 个大朝代;{(data.unclassified || 0).toLocaleString()} 条时间线索不足。点击某段直接钻取该朝代下的事件样本。
 				</div>
 
-				<div className="xuanshi-card" style={{ padding: 14, overflowX: 'auto' }}>
-					<div className="xuanshi-stat-label" style={{ textAlign: 'left', marginBottom: 8 }}>编年(朝代顺序,柱高∝事件数,点柱筛下方术类;悬停看起止)</div>
-					<svg viewBox={`0 0 ${W} ${TH + 22}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-						<line x1={10} y1={TH} x2={W - 10} y2={TH} stroke="var(--line)" strokeWidth={1} />
-						{series.map((s, i) => {
-							const slotW = (W - 20) / series.length;
-							const cx = 10 + i * slotW + slotW / 2;
-							const barW = Math.min(slotW - 8, 36);
-							const h = Math.max(2, (TH - 20) * ((s.total || 0) / maxTotal));
-							const sel = selected === s.macro;
+				{/* 顶部编年横向条带 */}
+				<div className="xuanshi-card" style={{ padding: 18, marginTop: 18 }}>
+					<div style={{ position: 'relative', height: 280, overflowX: 'auto' }}>
+						<div style={{ position: 'relative', height: '100%', minWidth: 1200 }}>
+							{/* 时间刻度 */}
+							{TICKS.map((tick) => {
+								const left = ((tick - firstYear) / totalSpan) * 100;
+								if (left < 0 || left > 100) { return null; }
+								return (
+									<div key={tick} style={{ position: 'absolute', top: 0, bottom: 0, left: `${left}%`, borderLeft: '1px solid var(--line-soft)' }}>
+										<div style={{ position: 'absolute', top: -2, left: 4, fontSize: 10, color: 'var(--ink-muted)' }}>{tick < 0 ? `前${-tick}` : (tick > 0 ? tick : '0')}</div>
+									</div>
+								);
+							})}
+							{/* 朝代条 */}
+							{series.map((s) => {
+								const left = ((s.span_start - firstYear) / totalSpan) * 100;
+								const width = ((s.span_end - s.span_start) / totalSpan) * 100;
+								const height = Math.round(((s.total || 0) / maxN) * 200);
+								const isActive = macro === s.macro;
+								return (
+									<div key={s.macro} className="group" title={`${s.macro}(${s.span_start}—${s.span_end}) ${s.total} 条`}
+										onClick={() => this.selectMacro(s.macro)}
+										style={{ position: 'absolute', bottom: 48, left: `${left}%`, width: `calc(${width}% - 2px)`, height, cursor: 'pointer' }}>
+										<div style={{ height: '100%', borderRadius: '6px 6px 0 0', background: isActive ? 'var(--vermilion)' : 'linear-gradient(180deg, var(--vermilion-soft), var(--vermilion))', border: `1px solid ${isActive ? 'var(--vermilion)' : 'var(--vermilion-soft)'}` }}>
+											<div style={{ fontSize: 10, color: 'var(--paper-card)', textAlign: 'center', paddingTop: 2, overflow: 'hidden', whiteSpace: 'nowrap' }}>{s.total}</div>
+										</div>
+										<div style={{ fontFamily: 'var(--xs-serif)', fontSize: 12, color: isActive ? 'var(--vermilion)' : 'var(--ink-soft)', marginTop: 4, textAlign: 'center', whiteSpace: 'nowrap' }}>{s.macro}</div>
+										<div style={{ fontSize: 9, color: 'var(--ink-muted)', textAlign: 'center' }}>{s.span_start}–{s.span_end}</div>
+									</div>
+								);
+							})}
+						</div>
+					</div>
+					<div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-muted)', textAlign: 'center' }}>横坐标按公历,纵向高度=事件数;点击柱进入该朝代的事件样本。</div>
+				</div>
+
+				<div className="xuanshi-tl-grid">
+					{/* 左:朝代×术类 堆叠条 */}
+					<div className="xuanshi-card" style={{ padding: 18 }}>
+						<h2 className="xuanshi-display is-h2" style={{ fontSize: 17, margin: '0 0 14px' }}>朝代 × 术类</h2>
+						{matrix.map((row) => {
+							const rowTotal = techs.reduce((acc, t) => acc + (row[t] || 0), 0) + (row['其他'] || 0);
 							return (
-								<g key={i} style={{ cursor: 'pointer' }} onClick={() => this.setState({ selected: sel ? null : s.macro })}>
-									<title>{s.macro} {span(s)}:{s.total} 条</title>
-									<rect x={cx - barW / 2} y={TH - h} width={barW} height={h} fill="var(--vermilion)" fillOpacity={sel ? 0.92 : 0.5} rx={2} />
-									<text x={cx} y={TH + 14} textAnchor="middle" style={{ fontSize: 10, fontWeight: 400, fill: 'var(--ink-muted)', fontFamily: 'var(--xs-serif)' }}>{s.macro}</text>
-									{h > 12 ? <text x={cx} y={TH - h - 3} textAnchor="middle" style={{ fontSize: 9, fontWeight: 400, fill: 'var(--ink-soft)' }}>{s.total}</text> : null}
-								</g>
+								<div key={row.macro} style={{ marginBottom: 12 }}>
+									<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+										<span className="xuanshi-link" style={{ fontFamily: 'var(--xs-serif)', fontSize: 13, color: 'var(--ink)' }} onClick={() => this.selectMacro(row.macro)}>{row.macro}</span>
+										<span className="xuanshi-stat-sub" style={{ fontVariantNumeric: 'tabular-nums' }}>{rowTotal} 行</span>
+									</div>
+									<div style={{ display: 'flex', height: 12, borderRadius: 4, overflow: 'hidden', border: '1px solid var(--line-soft)' }}>
+										{techs.map((t, ti) => {
+											const v = row[t] || 0;
+											if (!v) { return null; }
+											return <div key={t} title={`${t} · ${v}`} style={{ width: `${(v / rowTotal * 100).toFixed(2)}%`, background: PALETTE[ti % 12] }} />;
+										})}
+										{row['其他'] ? <div title={`其他 · ${row['其他']}`} style={{ width: `${(row['其他'] / rowTotal * 100).toFixed(2)}%`, background: 'var(--line)' }} /> : null}
+									</div>
+								</div>
 							);
 						})}
-					</svg>
-				</div>
-
-				<div className="xuanshi-card" style={{ marginTop: 14, padding: 14, overflowX: 'auto' }}>
-					<div className="xuanshi-stat-label" style={{ textAlign: 'left', marginBottom: 8 }}>朝代 × 术类 热力矩阵</div>
-					<table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
-						<thead>
-							<tr>
-								<th style={{ textAlign: 'left', padding: '4px 8px', color: 'var(--ink-muted)', fontWeight: 500 }}>朝代</th>
-								{techs.map((t) => <th key={t} style={{ padding: '4px 5px', color: 'var(--ink-muted)', fontWeight: 500, whiteSpace: 'nowrap', writingMode: 'vertical-rl', height: 56 }}>{t}</th>)}
-							</tr>
-						</thead>
-						<tbody>
-							{matrix.filter((row) => !selected || row.macro === selected).map((row, i) => (
-								<tr key={i}>
-									<td style={{ padding: '3px 8px', color: 'var(--ink-soft)', whiteSpace: 'nowrap' }}>{row.macro}</td>
-									{techs.map((t) => (
-										<td key={t} title={`${row.macro}·${t}:${row[t] || 0}`} style={{ textAlign: 'center', padding: '3px 5px', minWidth: 30, background: cellColor(row[t] || 0, maxCell), color: (row[t] || 0) / maxCell > 0.5 ? '#fff7ef' : 'var(--ink-soft)', borderRadius: 3 }}>{row[t] || ''}</td>
-									))}
-								</tr>
+						<div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16, fontSize: 11 }}>
+							{techs.map((t, ti) => (
+								<span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--ink-soft)' }}>
+									<span style={{ width: 10, height: 10, borderRadius: 2, background: PALETTE[ti % 12] }} />{t}
+								</span>
 							))}
-						</tbody>
-					</table>
+						</div>
+					</div>
+
+					{/* 右:钻取面板 */}
+					<div>
+						{macro ? (
+							<>
+								<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
+									<h2 className="xuanshi-display is-h2" style={{ fontSize: 17, margin: 0 }}>钻取:{macro}</h2>
+									<div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+										{series.map((s) => <span key={s.macro} className={`xuanshi-chip ${s.macro === macro ? 'is-vermilion' : 'is-ink'}`} style={{ cursor: 'pointer' }} onClick={() => this.selectMacro(s.macro)}>{s.macro}</span>)}
+									</div>
+								</div>
+								{drillLoading ? <div className="xuanshi-center" style={{ minHeight: 120 }}><Spin tip="载入…" /></div> : (drill && drill.length) ? (
+									<>
+										<div className="xuanshi-evlist">
+											{drill.map((r) => (
+												<div className="xuanshi-evrow" key={r.event_id} onClick={() => this.props.onOpenEvent && this.props.onOpenEvent(r.event_id)}>
+													<div className="xuanshi-evrow-chips">
+														{r.tradition ? <span className="xuanshi-chip is-jade">{r.tradition}</span> : null}
+														{r.history ? <span className="xuanshi-chip is-ink">《{r.history}》{r.volume_no ? `卷${r.volume_no}` : ''}</span> : null}
+														{r.period ? <span className="xuanshi-chip">{r.period}</span> : null}
+														{r.evidence ? <span className={`xuanshi-chip ${r.evidence === '高' ? 'is-gold' : 'is-ink'}`}>证 {r.evidence}</span> : null}
+														{r.techniques ? <span className="xuanshi-evrow-id">{`${r.techniques}`.split(/[;,、，]/)[0]}</span> : null}
+													</div>
+													<div className="xuanshi-evrow-title" style={{ whiteSpace: 'normal' }}>{r.title || r.title_field || '—'}</div>
+												</div>
+											))}
+										</div>
+										<div className="xuanshi-stat-sub" style={{ marginTop: 8, fontSize: 12 }}>前 {drill.length} 条;可从事件页继续查看原文、译文与相关条目。</div>
+									</>
+								) : <div className="xuanshi-card" style={{ color: 'var(--ink-muted)' }}>该朝代下暂无可抽样的行。</div>}
+							</>
+						) : <div className="xuanshi-card" style={{ color: 'var(--ink-muted)', padding: 24 }}>点击左侧任一朝代柱,或在朝代标签上点击,进入该朝代的事件样本。</div>}
+					</div>
 				</div>
 			</div>
 		);

@@ -1,8 +1,12 @@
 import React from 'react';
 import { Spin, Empty } from 'antd';
 import { fetchTechniques, fetchDynasties, fetchCelestialTerms } from '../../services/xuanshi';
+import XuanShiStar from './XuanShiStar';
 
-// 词条百科 —— 忠实源 technique.html / dynasty.html / 天象词条:三类(术数12/朝代22/天象14)切换 + 词条网格 + body_html prose 详情。
+// 词条分类 → 收藏 kind
+const CAT_KIND = { techniques: 'technique', dynasties: 'dynasty', terms: 'celestial_term' };
+
+// 词条百科 —— 忠实源 参考词条页 / 天象词条:三类(术数12/朝代22/天象14)切换 + 词条网格 + body_html prose 详情。
 // 三端点 list 项已含 body_html,直接渲染(无需额外详情拉取);body 走 .xuanshi-prose 成熟 markdown 排印。
 function spanDisp(s, e) {
 	if (s == null) { return ''; }
@@ -22,19 +26,30 @@ export default class XuanShiEncyclopedia extends React.Component {
 		this.state = { cat: f.cat || 'techniques', data: {}, loading: false, err: '', selected: null };
 	}
 
-	componentDidMount() { this.load(this.state.cat); }
+	componentDidMount() {
+		// 案头·私藏点开词条 → 切到对应分类 + 自动打开该词条详情
+		const oe = this.props.openEncEntry;
+		if (oe && oe.cat) { this.setState({ cat: oe.cat }, () => this.load(oe.cat, oe.slug)); }
+		else { this.load(this.state.cat); }
+	}
 
 	persist() { if (this.props.onPersist) { this.props.onPersist('encyclopedia', { cat: this.state.cat }); } }
 
-	async load(cat) {
-		if (this.state.data[cat]) { return; }
-		this.setState({ loading: true, err: '' });
-		try {
-			const def = CATS.find((c) => c.key === cat);
-			const r = await def.fetch();
-			const list = Array.isArray(r) ? r : (r.items || []);
-			this.setState({ data: { ...this.state.data, [cat]: list }, loading: false });
-		} catch (e) { this.setState({ loading: false, err: `${e && e.message ? e.message : e}` }); }
+	async load(cat, openSlug) {
+		let list = this.state.data[cat];
+		if (!list) {
+			this.setState({ loading: true, err: '' });
+			try {
+				const def = CATS.find((c) => c.key === cat);
+				const r = await def.fetch();
+				list = Array.isArray(r) ? r : (r.items || []);
+				this.setState({ data: { ...this.state.data, [cat]: list }, loading: false });
+			} catch (e) { this.setState({ loading: false, err: `${e && e.message ? e.message : e}` }); return; }
+		}
+		if (openSlug && list) {
+			const entry = list.find((m) => String(m.slug) === String(openSlug));
+			if (entry) { this.setState({ selected: entry }); }
+		}
 	}
 
 	setCat(cat) { this.setState({ cat, selected: null }, () => { this.load(cat); this.persist(); }); }
@@ -45,7 +60,8 @@ export default class XuanShiEncyclopedia extends React.Component {
 				<span className="xuanshi-link" onClick={() => this.setState({ selected: null })}>← 返回词条</span>
 				<div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '14px 0 6px' }}>
 					<span className="xuanshi-seal">{(d.name || '·')[0]}</span>
-					<h2 className="xuanshi-display is-h2">{d.name}</h2>
+					<h2 className="xuanshi-display is-h2" style={{ flex: 1, minWidth: 0 }}>{d.name}</h2>
+					<XuanShiStar item={{ kind: CAT_KIND[this.state.cat] || 'technique', ref: d.slug, title: d.name, subtitle: d.category || '' }} />
 				</div>
 				<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
 					{d.category ? <span className="xuanshi-chip is-vermilion">{d.category}</span> : null}

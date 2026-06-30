@@ -2,7 +2,7 @@ cff-version: 1.2.0
 title: Horosa Web App Comprehensively Improved Windows
 message: If you use this repository in academic or technical work, please cite it.
 type: software
-version: 3.0.0
+version: 3.0.1
 date-released: 2026-06-30
 authors:
   - given-names: Horace
@@ -12,8 +12,15 @@ repository-code: https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensivel
 url: https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows
 license: AGPL-3.0-only
 abstract: >-
-  Horosa for Windows v3.0.0 beta is a local-first metaphysics workstation that aligns the
-  latest Mac-side work. This release adds a new Xuanxue History module (a standalone tools
+  Horosa for Windows v3.0.1 beta is a local-first metaphysics workstation that aligns the
+  latest Mac-side work. This release deepens the Xuanxue History module — multi-dimensional
+  faceted search (tradition / dynasty / method / history) with live counts, an astronomical
+  compendium (ten-year celestial-density stacks and a dynasty-by-phenomenon matrix), a
+  year-by-year celestial micro-chronology with original-text and vernacular previews, a
+  geographic map (dynasty heatmap + city ranking), richly-carded figures and phenomena with
+  dynasty-colored tags, and a desk of bookmarks and search history persisted across restarts —
+  and makes the planetarium time editable (click the time to jump to any moment, recomputing
+  the whole sky and chart positions live). It builds on the v3.0.0 Xuanxue History module (a standalone tools
   page compiled from public-domain classics — figures, stories, technique lineages, and
   celestial-event records — with an offline historical map, a force-directed
   figure-relationship graph, and a chronological timeline, linked to charting); broad

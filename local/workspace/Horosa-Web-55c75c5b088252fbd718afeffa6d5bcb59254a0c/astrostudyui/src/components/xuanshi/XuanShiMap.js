@@ -1,126 +1,194 @@
 import React from 'react';
-import { Spin, Empty, Input } from 'antd';
-import * as d3 from 'd3';
+import { Spin, Empty } from 'antd';
+import * as echarts from 'echarts';
 import chinaGeo from '../../assets/china.geo.json';
 import { fetchMap } from '../../services/xuanshi';
 
-// 玄学地图 —— 忠实源 map.html:中国底图(宣纸×墨)+ 古都钉点(朱砂,半径 ∝ 活动量)+ 点击看古今名。
-// china.geo.json = GeoJSON FeatureCollection(36 省 Polygon),d3.geoPath 直接渲染;period 为自由文本(593 值)→ 搜索过滤。
-const W = 820, H = 620;
+// 玄学地图 —— 对齐参考地理地图页:echarts 中国底图(宣纸×墨,始终渲染)+ 古都钉点(朱砂 effectScatter,
+// 半径 ∝ 活动量)+ 朝代游历 chips + 右栏「城市榜」。底图常驻:某朝代 0 钉点时也显示地图、仅无散点(非空白)。
+const MAP_MACROS = ['西周', '春秋', '战国', '秦', '西汉', '新莽', '东汉', '三国', '西晋', '东晋', '十六国', '南朝', '北朝', '隋', '唐', '五代', '北宋', '南宋', '辽', '金', '西夏', '元', '明'];
+
+let _mapRegistered = false;
+function ensureChinaRegistered() {
+	if (_mapRegistered) { return true; }
+	try {
+		const CHINA = (chinaGeo && chinaGeo.features) ? chinaGeo : ((chinaGeo && chinaGeo.default) || chinaGeo);
+		if (!CHINA || !CHINA.features) { return false; }
+		echarts.registerMap('china', CHINA);
+		_mapRegistered = true;
+		return true;
+	} catch (e) { return false; }
+}
+
+function isDarkAppearance() {
+	try { return document.documentElement.getAttribute('data-horosa-appearance') === 'dark'; } catch (e) { return false; }
+}
 
 export default class XuanShiMap extends React.Component {
 	constructor(props) {
 		super(props);
 		const f = (props.ui && props.ui.map) || {};
 		this.state = { period: f.period || '', points: [], total: 0, loading: false, err: '', selected: null };
-		// 投影 + 底图路径(只算一次);chinaGeo 可能被打包成 .default
-		const CHINA = (chinaGeo && chinaGeo.features) ? chinaGeo : ((chinaGeo && chinaGeo.default) || chinaGeo);
-		try {
-			// 固定中国 mercator 投影(fitSize 对该 geojson 的 geoBounds 异常会压扁,改手动)
-			this.projection = d3.geoMercator().center([104, 37.5]).scale(720).translate([W / 2, H / 2]);
-			const proj = this.projection;
-			// 手动投影建平面路径(不用 d3.geoPath:该 geojson 环绕方向不合 RFC7946,geoPath 按球面取补集→整省翻转/溢出、西藏等被误删)
-			const ringPath = (ring) => {
-				let s = '', started = false;
-				for (const c of ring) {
-					const p = proj(c);
-					if (!p || isNaN(p[0]) || isNaN(p[1])) { continue; }
-					s += (started ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1);
-					started = true;
-				}
-				return started ? s + 'Z' : '';
-			};
-			const featPath = (f) => {
-				const g = f.geometry; if (!g) { return ''; }
-				if (g.type === 'Polygon') { return g.coordinates.map(ringPath).join(''); }
-				if (g.type === 'MultiPolygon') { return g.coordinates.map((poly) => poly.map(ringPath).join('')).join(''); }
-				return '';
-			};
-			this.basePaths = ((CHINA && CHINA.features) || []).map((f, i) => ({ d: featPath(f), key: (f.properties && f.properties.code) || f.id || i })).filter((p) => p.d);
-		} catch (e) {
-			this.projection = null; this.basePaths = []; this._geoErr = `${e && e.message ? e.message : e}`;
-		}
+		this._mapEl = React.createRef();
+		this._chart = null;
+		this._geoOk = ensureChinaRegistered();
+		this._onResize = () => { if (this._chart) { this._chart.resize(); } };
 	}
 
-	componentDidMount() { this.load(); }
+	componentDidMount() {
+		this.load();
+		window.addEventListener('resize', this._onResize);
+		// 主题切换 → 重渲底图配色(参考用 reload,这里就地重渲更顺滑)
+		try {
+			this._themeObs = new MutationObserver(() => this.renderChart());
+			this._themeObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-horosa-appearance'] });
+		} catch (e) { /* noop */ }
+	}
+
+	componentWillUnmount() {
+		window.removeEventListener('resize', this._onResize);
+		if (this._themeObs) { this._themeObs.disconnect(); }
+		if (this._chart) { this._chart.dispose(); this._chart = null; }
+	}
 
 	persist() { if (this.props.onPersist) { this.props.onPersist('map', { period: this.state.period }); } }
 
 	async load() {
 		this.setState({ loading: true, err: '' });
 		try {
+			// 与参考 app 完全一致:直接按所选 period 过滤(后端 by_period.get(period));
+			// 细朝代(西周/北宋…)不在底库桶键中即返回空,与 app 逐点一致 —— 但底图仍常驻显示。
 			const r = await fetchMap(this.state.period || undefined);
-			this.setState({ points: r.points || [], total: r.total || 0, loading: false });
+			this.setState({ points: r.points || [], total: r.total || 0, loading: false }, () => this.renderChart());
 		} catch (e) { this.setState({ loading: false, err: `${e && e.message ? e.message : e}` }); }
 		this.persist();
 	}
 
 	setPeriod(period) { this.setState({ period, selected: null }, () => this.load()); }
 
+	// 始终渲染中国底图(geo) + 钉点散点(effectScatter);0 钉点时 series.data 为空、底图照常。
+	renderChart() {
+		if (!this._geoOk || !this._mapEl.current) { return; }
+		const el = this._mapEl.current;
+		requestAnimationFrame(() => {
+			if (!this._mapEl.current) { return; }
+			if (!this._chart) {
+				this._chart = echarts.init(el, null, { renderer: 'canvas' });
+				this._chart.on('click', (params) => {
+					const d = params && params.data;
+					if (d && d.modern) { this.setState({ selected: (this.state.points || []).find((p) => p.modern === d.modern) || null }); }
+				});
+			}
+			const isDark = isDarkAppearance();
+			const POINTS = this.state.points || [];
+			const max = Math.max.apply(null, POINTS.map((p) => p.count || 0).concat([1]));
+			const data = POINTS.map((p) => ({ name: p.modern, modern: p.modern, value: [p.lng, p.lat, p.count], ancient: p.ancient_names }));
+			this._chart.setOption({
+				backgroundColor: 'transparent',
+				tooltip: {
+					trigger: 'item',
+					formatter: (params) => {
+						const d = params.data;
+						if (!d) { return params.name; }
+						return `<div style="font-weight:600">${d.name}</div>`
+							+ `<div style="opacity:.7">古名：${(d.ancient || []).join('、')}</div>`
+							+ `<div>${d.value[2]} 个事件</div>`;
+					},
+				},
+				geo: {
+					map: 'china', roam: true, zoom: 1.15, center: [110, 35],
+					itemStyle: {
+						areaColor: isDark ? '#1f1a13' : '#f3ecdc',
+						borderColor: isDark ? '#3a3225' : '#cfc4a8',
+						borderWidth: 0.5,
+					},
+					emphasis: {
+						itemStyle: { areaColor: isDark ? '#2a221a' : '#ebe2c8' },
+						label: { color: isDark ? '#efe6d2' : '#1c1611' },
+					},
+				},
+				series: [{
+					type: 'effectScatter', coordinateSystem: 'geo', data,
+					symbolSize: (val) => 6 + Math.sqrt((val[2] || 0) / max) * 32,
+					rippleEffect: { brushType: 'stroke', scale: 2.5 },
+					itemStyle: { color: 'rgba(166, 61, 42, 0.85)', shadowBlur: 8, shadowColor: 'rgba(166, 61, 42, 0.4)' },
+					emphasis: { scale: 1.4 },
+					label: {
+						show: true, position: 'right', formatter: '{b}',
+						color: isDark ? '#efe6d2' : '#1c1611', fontFamily: '"Noto Serif SC", serif', fontSize: 11,
+					},
+				}],
+			}, true);
+			setTimeout(() => { if (this._chart) { this._chart.resize(); } }, 100);
+		});
+	}
+
 	render() {
-		const { points, total, loading, err, selected, period } = this.state;
-		const maxCount = points.reduce((m, p) => Math.max(m, p.count || 0), 1);
-		const radius = (c) => 3 + 17 * Math.sqrt((c || 0) / maxCount);
+		const { points, loading, err, selected, period } = this.state;
+		const pinCount = points.reduce((s, p) => s + (p.count || 0), 0);
+		const ranked = points.slice().sort((a, b) => (b.count || 0) - (a.count || 0));
 		return (
 			<div>
-				<div className="xuanshi-eyebrow">玄学地图</div>
-				<h2 className="xuanshi-display is-h2" style={{ marginTop: 6 }}>古都钉点 · 活动中心</h2>
-				<div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', margin: '14px 0' }}>
-					<Input.Search placeholder="朝代 / 时期(如 唐 · 西汉武帝),空=全部" allowClear size="small" style={{ width: 280 }}
-						defaultValue={period} onSearch={(v) => this.setPeriod(v || '')} />
-					<span className="xuanshi-stat-sub" style={{ marginLeft: 'auto' }}>{points.length} 处钉点 · {(total || 0).toLocaleString()} 条记载</span>
+				{/* 面包屑 + 标题 + 描述 */}
+				<div className="xuanshi-crumbs">
+					<span className="xuanshi-crumb" onClick={() => this.props.onHome && this.props.onHome()}>首页</span>
+					<span className="xuanshi-crumb-sep">/</span><span>地理地图</span>
 				</div>
+				<h1 className="xuanshi-display is-hero" style={{ fontSize: 'clamp(26px,3.4vw,38px)' }}>地理地图</h1>
+				<div className="xuanshi-section-sub" style={{ margin: '8px 0 14px' }}>
+					把研究行的 region/place 钉到中国地图。<b style={{ color: 'var(--ink)' }}>{points.length}</b> 个城市 · <b style={{ color: 'var(--ink)' }}>{pinCount.toLocaleString()}</b> 个事件钉点。
+				</div>
+
+				{/* 朝代游历 chips */}
+				<div className="xuanshi-facet-chips" style={{ marginBottom: 16 }}>
+					<span className={`xuanshi-fchip${!period ? ' is-active' : ''}`} onClick={() => this.setPeriod('')}><span className="xuanshi-fchip-label">全部朝代</span></span>
+					{MAP_MACROS.map((m) => (
+						<span key={m} className={`xuanshi-fchip${period === m ? ' is-active' : ''}`} onClick={() => this.setPeriod(m)}><span className="xuanshi-fchip-label">{m}</span></span>
+					))}
+				</div>
+
 				{err ? (
 					<div className="xuanshi-center"><Empty description={`载入失败:${err}`} /><span className="xuanshi-link" onClick={() => this.load()}>重试</span></div>
 				) : (
-					<div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-						<div className="xuanshi-card" style={{ flex: '1 1 560px', padding: 10, minWidth: 0 }}>
-							{loading ? <div className="xuanshi-center" style={{ minHeight: 380 }}><Spin tip="载入舆图…" /></div> : !points.length ? (
-								<div className="xuanshi-center" style={{ minHeight: 380 }}><Empty description={period ? `「${period}」无钉点` : '无数据'} /></div>
-							) : !this.projection ? (
-								<div className="xuanshi-center" style={{ minHeight: 380 }}><Empty description={`底图载入失败:${this._geoErr || ''}`} /></div>
-							) : (
-								<svg viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }}>
-									{this.basePaths.map((p) => <path key={p.key} d={p.d} fill="var(--paper-soft)" fillRule="evenodd" stroke="var(--ink-soft)" strokeWidth={0.7} strokeOpacity={0.85} />)}
-									{points.map((p, i) => {
-										const xy = this.projection([p.lng, p.lat]);
-										if (!xy || isNaN(xy[0])) { return null; }
-										const sel = selected && selected.modern === p.modern;
-										return (
-											<g key={i} style={{ cursor: 'pointer' }} onClick={() => this.setState({ selected: p })}>
-												<circle cx={xy[0]} cy={xy[1]} r={radius(p.count)} fill="var(--vermilion)" fillOpacity={sel ? 0.92 : 0.5} stroke="#fff7ef" strokeWidth={sel ? 1.6 : 0.5} />
-												{p.count >= maxCount * 0.28 ? <text x={xy[0]} y={xy[1] - radius(p.count) - 3} textAnchor="middle" style={{ fontSize: 11, fill: 'var(--ink-soft)', fontFamily: 'var(--xs-serif)' }}>{p.modern}</text> : null}
-												<title>{p.modern}:{p.count}</title>
-											</g>
-										);
-									})}
-								</svg>
-							)}
+					<div className="xuanshi-map-grid">
+						<div className="xuanshi-card" style={{ padding: 10, minWidth: 0, position: 'relative' }}>
+							{/* echarts 中国底图常驻容器(始终挂载,ref 稳定) */}
+							<div ref={this._mapEl} style={{ width: '100%', height: '68vh', minHeight: 380 }} />
+							{/* 叠加层:载入中 / 底图失败 / 0 钉点提示(均不替换底图) */}
+							{loading ? (
+								<div className="xuanshi-center" style={{ position: 'absolute', inset: 0, background: 'var(--paper-card)', opacity: 0.85 }}><Spin tip="载入舆图…" /></div>
+							) : null}
+							{!loading && !this._geoOk ? (
+								<div className="xuanshi-center" style={{ position: 'absolute', inset: 0 }}><Empty description="中国底图载入失败" /></div>
+							) : null}
+							{!loading && this._geoOk && period && !points.length ? (
+								<div className="xuanshi-chip is-ink" style={{ position: 'absolute', top: 16, left: 16 }}>「{period}」该朝代暂无定位钉点</div>
+							) : null}
 						</div>
-						<div style={{ flex: '0 0 248px', minWidth: 0 }}>
-							{selected ? (
-								<div className="xuanshi-card">
-									<div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
-										<span className="xuanshi-seal">{(selected.modern || '·')[0]}</span>
-										<span className="xuanshi-display is-h2" style={{ fontSize: 20 }}>{selected.modern}</span>
-									</div>
-									<div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-										<span className="xuanshi-chip is-vermilion">{selected.count} 条记载</span>
-										<span className="xuanshi-chip is-ink">{(selected.lng || 0).toFixed(2)}, {(selected.lat || 0).toFixed(2)}</span>
-									</div>
-									{(selected.ancient_names || []).length ? (
-										<div>
-											<div className="xuanshi-stat-label" style={{ textAlign: 'left' }}>古名 / 别称({(selected.ancient_names || []).length})</div>
-											<div style={{ marginTop: 7, maxHeight: 300, overflowY: 'auto', display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-												{(selected.ancient_names || []).slice(0, 80).map((n, i) => <span className="xuanshi-chip" key={i} style={{ fontSize: 10.5 }}>{n}</span>)}
-											</div>
+						{/* 城市榜 */}
+						<aside className="xuanshi-card xuanshi-citylist">
+							<div className="xuanshi-stat-label" style={{ textAlign: 'left', marginBottom: 12 }}>城市榜（{points.length}）</div>
+							{!points.length ? (
+								<div className="xuanshi-stat-sub" style={{ fontSize: 12 }}>{period ? `「${period}」无定位城市` : '无数据'}</div>
+							) : ranked.slice(0, 50).map((p, i) => {
+								const sel = selected && selected.modern === p.modern;
+								const byHist = p.by_history || {};
+								return (
+									<div key={i} className={`xuanshi-cityrow${sel ? ' is-active' : ''}`} onClick={() => this.setState({ selected: p })}>
+										<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+											<span className="xuanshi-display" style={{ fontSize: 15, color: 'var(--ink)' }}>{p.modern}</span>
+											<span className="xuanshi-stat-sub" style={{ fontVariantNumeric: 'tabular-nums' }}>{p.count}</span>
 										</div>
-									) : null}
-								</div>
-							) : (
-								<div className="xuanshi-hint">点地图上的钉点,看该地古今名与活动量。圆越大,该地玄学 / 天象记载越多。搜朝代可看活动中心迁移。</div>
-							)}
-						</div>
+										{(p.ancient_names || []).length ? <div className="xuanshi-stat-sub" style={{ fontSize: 11, marginTop: 2, lineHeight: 1.5 }}>{(p.ancient_names || []).join('、')}</div> : null}
+										{Object.keys(byHist).length ? (
+											<div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+												{Object.entries(byHist).map(([h, n]) => <span key={h} className="xuanshi-chip" style={{ fontSize: 10 }}>{h} {n}</span>)}
+											</div>
+										) : null}
+									</div>
+								);
+							})}
+						</aside>
 					</div>
 				)}
 			</div>
