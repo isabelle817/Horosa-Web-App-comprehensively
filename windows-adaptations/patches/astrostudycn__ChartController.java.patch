@@ -1,0 +1,64 @@
+diff --git a/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java b/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java
+index 81694d5..fc77ea7 100644
+--- a/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java
++++ b/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java
+@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
+ import org.springframework.web.bind.annotation.ResponseBody;
+ 
+ import boundless.exception.ErrorCodeException;
++import boundless.log.AppLoggers;
++import boundless.log.QueueLog;
+ import boundless.spring.help.interceptor.TransData;
+ import boundless.utility.ConvertUtility;
+ import boundless.utility.JsonUtility;
+@@ -33,6 +35,11 @@ public class ChartController {
+ 	// 不覆盖"算法升级但接线不变"这一类陈旧场景,故另立运行时版本闸。
+ 	private static final String RUNTIME_VERSION = "3.0.1-runtime1";
+ 
++	// v3.0.1 perf B0:/chart 逐段计时标记(也用作重建 jar 的存在性哨兵)。纯观测——只在 perf 日志打
++	// 各段耗时(Python 底盘 / 八字农历 / 盘装配 / 行星预测 / 推运同步),不改任何计算与返回值,便于在
++	// 真机看清「单盘 2-3s」的真实构成、指导后续按热点优化(功能零影响)。
++	private static final String CHART_PERF_SEG_REV = "chart_perf_seg_v1";
++
+ 	private static final int SU28_MODE_ZHENG_SIDEREAL = 4;
+ 	private static final double ZHENG_AYANAMSHA_BASE_DEGREE = 4.0;
+ 	private static final double ZHENG_AYANAMSHA_BASE_YEAR = 1300.0;
+@@ -55,6 +62,7 @@ public class ChartController {
+ 		keyparams.remove("gpsLat");
+ 		keyparams.remove("gpsLon");
+ 		Object obj = ParamHashCacheHelper.get("/chart", keyparams, (args)->{
++			long _pt0 = System.currentTimeMillis();
+ 			Map<String, Object> astroArgs = args;
+ 			if(ConvertUtility.getValueAsInt(args.get("doubingSu28"), 0) == SU28_MODE_ZHENG_SIDEREAL) {
+ 				astroArgs = new HashMap<String, Object>();
+@@ -63,6 +71,7 @@ public class ChartController {
+ 				astroArgs.put("guolaoZhengSidereal", 1);
+ 			}
+ 			Map<String, Object> res = AstroHelper.getChart(astroArgs);
++			long _ptPy = System.currentTimeMillis();
+ 			Map<String, Object> reqparams = (Map<String, Object>) res.get("params");
+ 			if(reqparams != null) {
+ 				reqparams.put("doubingSu28", args.get("doubingSu28"));
+@@ -94,11 +103,20 @@ public class ChartController {
+ 				applyZhengSiderealSu28(chart, args);
+ 				chart.put("nongli", map);
+ 			}else {
+-				res.put("nongli", map);					
++				res.put("nongli", map);
+ 			}
+-			
++			long _ptBz = System.currentTimeMillis();
++
+ 			PlanetSignPredictHelper.predictPlanetSign(res);
++			long _ptSign = System.currentTimeMillis();
+ 			syncPredictiveMetaAndRows(res, args);
++			long _ptPd = System.currentTimeMillis();
++			// B0(写 perf/perf.log):/chart 逐段耗时,纯观测、不改结果与控制流。让真机一眼看清「单盘 2-3s」
++			// 的构成(Python 底盘 / 八字农历+装配 / 行星预测 / 推运同步),据此按热点做后续优化。
++			// CHART_PERF_SEG_REV 兼作重建 jar 的存在性哨兵标记。
++			QueueLog.debug(AppLoggers.Performance,
++				"/chart seg ms python={} baziAssemble={} predictSign={} predSync={} total={} rev={}",
++				(_ptPy - _pt0), (_ptBz - _ptPy), (_ptSign - _ptBz), (_ptPd - _ptSign), (_ptPd - _pt0), CHART_PERF_SEG_REV);
+ 			return res;
+ 		});
+ 		

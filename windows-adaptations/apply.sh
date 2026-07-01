@@ -74,4 +74,14 @@ apply_patch "perf:planetariumRenderGating" astrostudyui/src/components/planetari
 apply_patch "./echartsCore"                astrostudyui/src/components/xuanshi/XuanShiCelestial.js       src__components__xuanshi__XuanShiCelestial.js.patch
 apply_patch "./echartsCore"                astrostudyui/src/components/xuanshi/XuanShiMap.js             src__components__xuanshi__XuanShiMap.js.patch
 
+echo "== 8. v3.0.1 perf round-2 (交互/切技法;纯前端结果缓存 + 后端逐段计时;均带 kill-switch、功能零降级) =="
+# 前端:技法结果缓存开关(techniqueResultCacheEnabled)——须先应用上面的 planetarium perfFlags 补丁(本补丁上下文含其行)。
+apply_patch techniqueResultCacheEnabled    astrostudyui/src/utils/perfFlags.js                          src__utils__perfFlags.techniqueCache.js.patch
+# 前端:紫微本盘 /ziwei/birth 走确定性缓存(cachedPost),重复/来回切秒回。
+apply_patch techniqueResultCacheEnabled    astrostudyui/src/components/ziwei/ZiWeiMain.js               src__components__ziwei__ZiWeiMain.js.patch
+echo "== 9. backend perf: /chart 逐段计时(B0,纯观测日志、不改结果)— REQUIRES a jar rebuild =="
+apply_patch CHART_PERF_SEG_REV             astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java astrostudycn__ChartController.java.patch
+echo "   ^^ astrostudycn is BACKEND Java. After this patch you MUST rebuild astrostudyboot.jar (SKILL gotcha #5):"
+echo "      astrostudycn install -> astrostudyboot clean package, then copy target/astrostudyboot.jar to bundle."
+
 echo "== done. Verify: npm run selfcheck (windows-ahead / perf sentinels must all pass). =="
