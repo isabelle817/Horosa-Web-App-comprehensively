@@ -23,6 +23,7 @@ class YanqinHelpDoc extends Component{
 								<li style={li}>左栏可调<b>性别</b>与<b>入式历法</b>(见「排盘设置」),改任一项即重排。</li>
 								<li style={li}>中央十二宫格显示各宫所落星禽,角标「命 / 身 / 胎」标出三宫所在。</li>
 								<li style={li}>右栏分页查看概览、宫位、星禽、吞啖四类细目。</li>
+								<li style={li}>右栏末页<b>「演法」</b>另起 起禽 / 择日 / 占卜 / 投胎 / 三世 五个子页签,自带日期 / 时辰 / 流派选择,与主命盘独立(排四禽、择吉日、占一事、投胎度数、三世相)。</li>
 							</ul>
 							<p style={{ ...p, color: MUTED }}>本页起盘只用时间与历法设置,不取地点经纬。</p>
 						</div>
@@ -70,6 +71,8 @@ class YanqinHelpDoc extends Component{
 								{kv('二十八宿禽', '各宿对应星禽及其正像、属性')}</div>
 							<div style={card}><div style={ct}>吞啖</div>
 								{kv('合战', '星禽之间的吞啖、合战关系,据此判强弱吉凶')}</div>
+							<div style={card}><div style={ct}>演法</div>
+								{kv('起禽 / 择日 / 占卜 / 投胎 / 三世', '独立子页签:四禽起例与日禽定局、二十八宿值日吉凶歌择吉、仿大六壬三传四课占一事(体用我彼随流派反转、锁泊十二宫)、投胎度数十二禽兽、三世相;自带日期 / 时辰 / 流派选择,与主命盘独立')}</div>
 							<p style={{ ...p, color: MUTED }}>右栏当前所见即 AI 分析挂载与导出内容,所见即所得。</p>
 						</div>
 					</TabPane>

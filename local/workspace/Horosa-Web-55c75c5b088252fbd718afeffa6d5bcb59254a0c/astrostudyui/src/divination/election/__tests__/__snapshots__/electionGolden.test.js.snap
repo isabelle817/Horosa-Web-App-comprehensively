@@ -1,0 +1,1206 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`election golden(默认路径零回归锚) AI 快照文本逐字锚 1`] = `
+"[起盘信息]
+用事类型：结婚/订婚
+起盘时刻：戴戒指 + 互相宣示成为夫妻（西式/公证，误差<10分钟）；中式：迎娶入门 / 宴客放鞭炮（最迟不晚于宴客之中）。
+[总评]
+28/100　不宜（含红线）
+结婚/订婚择日：不宜（含红线）（28 分）。主要代价：水星 逆行（按用事性质决定是否必避）、火星 凶星临角宫且无援。
+没有完美的择日盘：本结果是在你给定时间窗内、以消去法挑出的较优解，仅供参考。择日是助力/润滑油，能强化本命吉兆、缓和（不能完全化解）凶兆——事在人为 + 本命盘 > 择日盘。
+[红线]
+- [high] 水星 逆行（按用事性质决定是否必避）
+- [high] 火星 凶星临角宫且无援
+[分项]
+月亮（第一考量）（64/100）
+  · 月盈（增光）：宜建造/求取/创业；行度上偏慢（找回类难抓）
+命主星（第二考量）（54/100）
+  · 命主星 火星 落陷/弱
+  · 命主星入角宫
+命度/上升（第三考量）（72/100）
+  · 命宫三方四正(cardinal)匹配本用事偏好
+徵象星（自然+宫主）（48/100）
+  · 自然徵象星 金星 受剋(-1)
+  · 自然徵象星 月亮 有力(+3)
+  · 7宫主 金星 受剋
+  · 5宫主 太阳 受剋
+角宫吉凶分布（纳吉排凶）（48/100）
+  · 凶星 火星 受剋入角宫
+用事宫本身（60/100）
+太阳（54/100）
+  · 太阳落 12 宫（出版/魅力类用事尤忌）
+凶星处理（62/100）
+相位格局（60/100）
+  · 星聚 双鱼（太阳·水星·土星，能量集中）
+接纳 / 日月中点（60/100）
+恒星会合（84/100）
+  · 命度 会合吉恒星 壁宿二（演艺/艺术名声·独立·声誉）
+  · 天顶 会合吉恒星 织女星（幸运/成功/财富/口才）
+宗派（昼夜派）（42/100）
+  · 昼盘：得派吉星为木星（首席吉星），离派凶星为火星（凶性最烈）
+  · 离派凶星 火星 临角宫：本盘最烈之凶落显位
+月相机制（传光·收光·围攻）（36/100）
+  · 传光：月离 火星（0°）转而入相 土星（120°，差 1.5°）——将前者之事引渡给后者，所托非人
+  · 光线围攻：月亮 离一凶复入一凶（火/土前后夹击），腹背受敌
+行星时（时主/日主）（78/100）
+  · 现值 金星 之时、土星 之日；此时主题：妻子/女人烦恼 / 女装/装饰 / 新原因/未果友谊
+  · 用事星 金星 正当其时（首选:择事项主星之行星时）
+  · 时主 金星 临角宫
+月宿（西方28宿）（78/100）
+  · 月在第 8 宿 Alnaza（鬼宿 Praesepe）：爱、友谊、社交。用途：爱、友谊、旅伴情谊
+  · 本宿正宜此用事（速查·爱/婚姻集）
+  · 月增光、免燃烧而入吉宿：可乘其力
+映点（隐合/隐冲）（54/100）
+  · 反映点隐冲：金星 反映点（335.0°）冲 土星（差 0.5°）——如暗中对分
+恒星交映（parans）（6/100）
+  · 角宿一 升 与 金星 落 交映（差 0.4 分钟）——成功/幸运/财富/繁荣
+  · 室宿二 中天 与 月亮 升 交映（差 0.7 分钟）——困难/意外/失败/阻挠；凶星交映日/月/用事星须防
+  · 心宿二 落 与 木星 升 交映（差 3.7 分钟）——暴力/冲突/自信/独断(皇室星)（事业开创可用，婚姻勿用）
+  · 东次将 升 与 月亮 中天 交映（差 3.8 分钟）——困难/不幸/障碍/失望(寡居星)；凶星交映日/月/用事星须防
+  · 织女星 中天 与 火星 天底 交映（差 5.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）
+  · 角宿一 落 与 火星 天底 交映（差 5.6 分钟）——成功/幸运/财富/繁荣
+  · 毕宿五 落 与 太阳 天底 交映（差 6.2 分钟）——爆发/冲动/刑伤/精力/开创；凶星交映日/月/用事星须防（除非刻意取火星之力，否则避）
+  · 北落师门 中天 与 月亮 升 交映（差 6.6 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）
+  · 北落师门 升 与 金星 升 交映（差 6.7 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）
+  · 毕宿五 落 与 木星 落 交映（差 7.5 分钟）——爆发/冲动/刑伤/精力/开创（除非刻意取火星之力，否则避）
+  · 织女星 中天 与 月亮 天底 交映（差 7.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）
+  · 昴宿六 中天 与 土星 落 交映（差 7.7 分钟）——同情/感伤/失望
+可判性（盘之可靠）（68/100）
+  · 上升定位星与时主星同性质/同宗派 → 适合判断。
+胜利星（Almuten Figuris）（78/100）
+  · 胜利星（Almuten Figuris）：月亮（20 分；按四命点计，事盘无产前朔望）
+  · 胜利星 月亮 在盘中有力顺行——全盘有主心骨
+  · 胜利星 月亮 临角宫
+  · 次位：火星(17)、木星(16)
+[用事专属]
+（满足 7/11）
+- ✗ 宜：日月吉相（个性融洽）
+- ✗ 宜：金月吉相（感情融洽）
+- ✗ 宜：命主-7宫主吉相（关系长久）
+- ✓ 宜：金星入 1/7 宫（爱情和谐）
+- ✓ 忌：金星不逆行
+- ✗ 忌：水星不逆行
+- ✓ 忌：月不落天蝎
+- ✓ 忌：月不在 29°
+- ✓ 忌：土星不临角宫
+- ✓ 忌：天王不在 1/7 宫
+- ✓ 忌：火星不在 1/7 宫
+注：固定宫坐命象征长久；婚姻两造合盘 > 择日盘。
+[应期]
+- 月亮 120° 土星（误差 1.5°，越紧越近发动）
+- 月亮 0° 火星（误差 3.0°，越紧越近发动）
+[建议]
+- 本盘无明显红线，可在窗口内据各分项进一步择优；最终以消去法对多个候选并排比较。"
+`;
+
+exports[`election golden(默认路径零回归锚) marriage 默认报告逐字锚 1`] = `
+Object {
+  "base": 58,
+  "castMoment": "戴戒指 + 互相宣示成为夫妻（西式/公证，误差<10分钟）；中式：迎娶入门 / 宴客放鞭炮（最迟不晚于宴客之中）。",
+  "crisis": null,
+  "hard_flags": Array [
+    Object {
+      "factor": "mercury",
+      "id": "mercury_retro",
+      "message": "水星 逆行（按用事性质决定是否必避）",
+      "severity": "high",
+    },
+    Object {
+      "factor": "mars",
+      "id": "malefic_on_angle",
+      "message": "火星 凶星临角宫且无援",
+      "severity": "high",
+    },
+  ],
+  "mundane": null,
+  "natal": null,
+  "overall": Object {
+    "grade": "disqualified",
+    "gradeCn": "不宜（含红线）",
+    "headline": "结婚/订婚择日：不宜（含红线）（28 分）。主要代价：水星 逆行（按用事性质决定是否必避）、火星 凶星临角宫且无援。",
+    "no_perfect_chart_note": "没有完美的择日盘：本结果是在你给定时间窗内、以消去法挑出的较优解，仅供参考。择日是助力/润滑油，能强化本命吉兆、缓和（不能完全化解）凶兆——事在人为 + 本命盘 > 择日盘。",
+    "score": 28,
+  },
+  "penalty": 30,
+  "recommendations": Array [
+    "本盘无明显红线，可在窗口内据各分项进一步择优；最终以消去法对多个候选并排比较。",
+  ],
+  "sections": Array [
+    Object {
+      "detail_md": "月落 巨蟹，盈。",
+      "findings": Array [
+        Object {
+          "key": "waxing",
+          "message": "月盈（增光）：宜建造/求取/创业；行度上偏慢（找回类难抓）",
+          "polarity": "neutral",
+          "text_zh": "月盈（增光）：宜建造/求取/创业；行度上偏慢（找回类难抓）",
+          "weight": 1,
+        },
+      ],
+      "key": "moon",
+      "score": 64,
+      "title": "月亮（第一考量）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "命主星 = 火星",
+      "findings": Array [
+        Object {
+          "message": "命主星 火星 落陷/弱",
+          "polarity": "negative",
+          "text_zh": "命主星 火星 落陷/弱",
+          "weight": 2,
+        },
+        Object {
+          "message": "命主星入角宫",
+          "polarity": "positive",
+          "text_zh": "命主星入角宫",
+          "weight": 1,
+        },
+      ],
+      "key": "asc_ruler",
+      "score": 54,
+      "title": "命主星（第二考量）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "上升 白羊 15.0°",
+      "findings": Array [
+        Object {
+          "message": "命宫三方四正(cardinal)匹配本用事偏好",
+          "polarity": "positive",
+          "text_zh": "命宫三方四正(cardinal)匹配本用事偏好",
+          "weight": 2,
+        },
+      ],
+      "key": "ascendant",
+      "score": 72,
+      "title": "命度/上升（第三考量）",
+      "verdict": "good",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [
+        Object {
+          "message": "自然徵象星 金星 受剋(-1)",
+          "polarity": "negative",
+          "text_zh": "自然徵象星 金星 受剋(-1)",
+          "weight": 2,
+        },
+        Object {
+          "message": "自然徵象星 月亮 有力(+3)",
+          "polarity": "positive",
+          "text_zh": "自然徵象星 月亮 有力(+3)",
+          "weight": 2,
+        },
+        Object {
+          "message": "7宫主 金星 受剋",
+          "polarity": "negative",
+          "text_zh": "7宫主 金星 受剋",
+          "weight": 1,
+        },
+        Object {
+          "message": "5宫主 太阳 受剋",
+          "polarity": "negative",
+          "text_zh": "5宫主 太阳 受剋",
+          "weight": 1,
+        },
+      ],
+      "key": "topic_significators",
+      "score": 48,
+      "title": "徵象星（自然+宫主）",
+      "verdict": "caution",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [
+        Object {
+          "message": "凶星 火星 受剋入角宫",
+          "polarity": "negative",
+          "text_zh": "凶星 火星 受剋入角宫",
+          "weight": 2,
+        },
+      ],
+      "key": "angles",
+      "score": 48,
+      "title": "角宫吉凶分布（纳吉排凶）",
+      "verdict": "caution",
+    },
+    Object {
+      "detail_md": "用事宫 = 7 宫",
+      "findings": Array [],
+      "key": "topic_house",
+      "score": 60,
+      "title": "用事宫本身",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [
+        Object {
+          "message": "太阳落 12 宫（出版/魅力类用事尤忌）",
+          "polarity": "negative",
+          "text_zh": "太阳落 12 宫（出版/魅力类用事尤忌）",
+          "weight": 1,
+        },
+      ],
+      "key": "sun",
+      "score": 54,
+      "title": "太阳",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [],
+      "key": "malefic_handling",
+      "score": 62,
+      "title": "凶星处理",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "大三角 / 风筝 / 三刑会沖 / 大十字 / 星聚",
+      "findings": Array [
+        Object {
+          "message": "星聚 双鱼（太阳·水星·土星，能量集中）",
+          "polarity": "neutral",
+          "text_zh": "星聚 双鱼（太阳·水星·土星，能量集中）",
+          "weight": 1,
+        },
+      ],
+      "key": "aspect_patterns",
+      "score": 60,
+      "title": "相位格局",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "强接纳救援 + 吉凶星合日月中点（≤1.5°）",
+      "findings": Array [],
+      "key": "reception_fixedstar_midpoint",
+      "score": 60,
+      "title": "接纳 / 日月中点",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "≤1° 会合关键点才计（岁差修正至 2025 年）",
+      "findings": Array [
+        Object {
+          "message": "命度 会合吉恒星 壁宿二（演艺/艺术名声·独立·声誉）",
+          "polarity": "positive",
+          "text_zh": "命度 会合吉恒星 壁宿二（演艺/艺术名声·独立·声誉）",
+          "weight": 2,
+        },
+        Object {
+          "message": "天顶 会合吉恒星 织女星（幸运/成功/财富/口才）",
+          "polarity": "positive",
+          "text_zh": "天顶 会合吉恒星 织女星（幸运/成功/财富/口才）",
+          "weight": 2,
+        },
+      ],
+      "key": "fixed_stars",
+      "score": 84,
+      "title": "恒星会合",
+      "verdict": "good",
+    },
+    Object {
+      "detail_md": "昼盘。得时=宗派+半球+阴阳座三合；喜乐宫=水1月3金5火6日9木11土12。",
+      "findings": Array [
+        Object {
+          "message": "昼盘：得派吉星为木星（首席吉星），离派凶星为火星（凶性最烈）",
+          "polarity": "neutral",
+          "text_zh": "昼盘：得派吉星为木星（首席吉星），离派凶星为火星（凶性最烈）",
+          "weight": 1,
+        },
+        Object {
+          "message": "离派凶星 火星 临角宫：本盘最烈之凶落显位",
+          "polarity": "negative",
+          "text_zh": "离派凶星 火星 临角宫：本盘最烈之凶落显位",
+          "weight": 3,
+        },
+      ],
+      "key": "sect",
+      "score": 42,
+      "title": "宗派（昼夜派）",
+      "verdict": "caution",
+    },
+    Object {
+      "detail_md": "中世纪择日核心:月为万事之引线;凡涉先后成相者按现盘入相差推断。",
+      "findings": Array [
+        Object {
+          "message": "传光：月离 火星（0°）转而入相 土星（120°，差 1.5°）——将前者之事引渡给后者，所托非人",
+          "polarity": "negative",
+          "text_zh": "传光：月离 火星（0°）转而入相 土星（120°，差 1.5°）——将前者之事引渡给后者，所托非人",
+          "weight": 2,
+        },
+        Object {
+          "message": "光线围攻：月亮 离一凶复入一凶（火/土前后夹击），腹背受敌",
+          "polarity": "negative",
+          "text_zh": "光线围攻：月亮 离一凶复入一凶（火/土前后夹击），腹背受敌",
+          "weight": 2,
+        },
+      ],
+      "key": "moon_mechanics",
+      "score": 36,
+      "title": "月相机制（传光·收光·围攻）",
+      "verdict": "bad",
+    },
+    Object {
+      "detail_md": "值日星序:日月火水木金土(周日起);行星时按迦勒底序自日出轮转。",
+      "findings": Array [
+        Object {
+          "message": "现值 金星 之时、土星 之日；此时主题：妻子/女人烦恼 / 女装/装饰 / 新原因/未果友谊",
+          "polarity": "neutral",
+          "text_zh": "现值 金星 之时、土星 之日；此时主题：妻子/女人烦恼 / 女装/装饰 / 新原因/未果友谊",
+          "weight": 1,
+        },
+        Object {
+          "message": "用事星 金星 正当其时（首选:择事项主星之行星时）",
+          "polarity": "positive",
+          "text_zh": "用事星 金星 正当其时（首选:择事项主星之行星时）",
+          "weight": 2,
+        },
+        Object {
+          "message": "时主 金星 临角宫",
+          "polarity": "positive",
+          "text_zh": "时主 金星 临角宫",
+          "weight": 1,
+        },
+      ],
+      "key": "planetary_hours",
+      "score": 78,
+      "title": "行星时（时主/日主）",
+      "verdict": "good",
+    },
+    Object {
+      "detail_md": "Agrippa 白羊0°均分 12°51′26″/宿；通则:择月入所选宿、增光不受克、不空亡。",
+      "findings": Array [
+        Object {
+          "message": "月在第 8 宿 Alnaza（鬼宿 Praesepe）：爱、友谊、社交。用途：爱、友谊、旅伴情谊",
+          "polarity": "neutral",
+          "text_zh": "月在第 8 宿 Alnaza（鬼宿 Praesepe）：爱、友谊、社交。用途：爱、友谊、旅伴情谊",
+          "weight": 1,
+        },
+        Object {
+          "message": "本宿正宜此用事（速查·爱/婚姻集）",
+          "polarity": "positive",
+          "text_zh": "本宿正宜此用事（速查·爱/婚姻集）",
+          "weight": 2,
+        },
+        Object {
+          "message": "月增光、免燃烧而入吉宿：可乘其力",
+          "polarity": "positive",
+          "text_zh": "月增光、免燃烧而入吉宿：可乘其力",
+          "weight": 1,
+        },
+      ],
+      "key": "mansions",
+      "score": 78,
+      "title": "月宿（西方28宿）",
+      "verdict": "good",
+    },
+    Object {
+      "detail_md": "映点=关于巨蟹0°—摩羯0°轴对称;反映点=关于白羊0°—天秤0°轴。仅 ≤1° 计。",
+      "findings": Array [
+        Object {
+          "message": "反映点隐冲：金星 反映点（335.0°）冲 土星（差 0.5°）——如暗中对分",
+          "polarity": "negative",
+          "text_zh": "反映点隐冲：金星 反映点（335.0°）冲 土星（差 0.5°）——如暗中对分",
+          "weight": 1,
+        },
+      ],
+      "key": "antiscia",
+      "score": 54,
+      "title": "映点（隐合/隐冲）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "固定地点:恒星与七曜四轴（升/中天/落/天底）恒星时差 ≤8 分钟判交映;行星按黄纬≈0 近似;主用 10 星。",
+      "findings": Array [
+        Object {
+          "message": "角宿一 升 与 金星 落 交映（差 0.4 分钟）——成功/幸运/财富/繁荣",
+          "polarity": "positive",
+          "text_zh": "角宿一 升 与 金星 落 交映（差 0.4 分钟）——成功/幸运/财富/繁荣",
+          "weight": 1,
+        },
+        Object {
+          "message": "室宿二 中天 与 月亮 升 交映（差 0.7 分钟）——困难/意外/失败/阻挠；凶星交映日/月/用事星须防",
+          "polarity": "negative",
+          "text_zh": "室宿二 中天 与 月亮 升 交映（差 0.7 分钟）——困难/意外/失败/阻挠；凶星交映日/月/用事星须防",
+          "weight": 2,
+        },
+        Object {
+          "message": "心宿二 落 与 木星 升 交映（差 3.7 分钟）——暴力/冲突/自信/独断(皇室星)（事业开创可用，婚姻勿用）",
+          "polarity": "neutral",
+          "text_zh": "心宿二 落 与 木星 升 交映（差 3.7 分钟）——暴力/冲突/自信/独断(皇室星)（事业开创可用，婚姻勿用）",
+          "weight": 1,
+        },
+        Object {
+          "message": "东次将 升 与 月亮 中天 交映（差 3.8 分钟）——困难/不幸/障碍/失望(寡居星)；凶星交映日/月/用事星须防",
+          "polarity": "negative",
+          "text_zh": "东次将 升 与 月亮 中天 交映（差 3.8 分钟）——困难/不幸/障碍/失望(寡居星)；凶星交映日/月/用事星须防",
+          "weight": 2,
+        },
+        Object {
+          "message": "织女星 中天 与 火星 天底 交映（差 5.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "polarity": "neutral",
+          "text_zh": "织女星 中天 与 火星 天底 交映（差 5.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "weight": 1,
+        },
+        Object {
+          "message": "角宿一 落 与 火星 天底 交映（差 5.6 分钟）——成功/幸运/财富/繁荣",
+          "polarity": "neutral",
+          "text_zh": "角宿一 落 与 火星 天底 交映（差 5.6 分钟）——成功/幸运/财富/繁荣",
+          "weight": 1,
+        },
+        Object {
+          "message": "毕宿五 落 与 太阳 天底 交映（差 6.2 分钟）——爆发/冲动/刑伤/精力/开创；凶星交映日/月/用事星须防（除非刻意取火星之力，否则避）",
+          "polarity": "negative",
+          "text_zh": "毕宿五 落 与 太阳 天底 交映（差 6.2 分钟）——爆发/冲动/刑伤/精力/开创；凶星交映日/月/用事星须防（除非刻意取火星之力，否则避）",
+          "weight": 2,
+        },
+        Object {
+          "message": "北落师门 中天 与 月亮 升 交映（差 6.6 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）",
+          "polarity": "negative",
+          "text_zh": "北落师门 中天 与 月亮 升 交映（差 6.6 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）",
+          "weight": 2,
+        },
+        Object {
+          "message": "北落师门 升 与 金星 升 交映（差 6.7 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）",
+          "polarity": "negative",
+          "text_zh": "北落师门 升 与 金星 升 交映（差 6.7 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）",
+          "weight": 2,
+        },
+        Object {
+          "message": "毕宿五 落 与 木星 落 交映（差 7.5 分钟）——爆发/冲动/刑伤/精力/开创（除非刻意取火星之力，否则避）",
+          "polarity": "neutral",
+          "text_zh": "毕宿五 落 与 木星 落 交映（差 7.5 分钟）——爆发/冲动/刑伤/精力/开创（除非刻意取火星之力，否则避）",
+          "weight": 1,
+        },
+        Object {
+          "message": "织女星 中天 与 月亮 天底 交映（差 7.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "polarity": "neutral",
+          "text_zh": "织女星 中天 与 月亮 天底 交映（差 7.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "weight": 1,
+        },
+        Object {
+          "message": "昴宿六 中天 与 土星 落 交映（差 7.7 分钟）——同情/感伤/失望",
+          "polarity": "neutral",
+          "text_zh": "昴宿六 中天 与 土星 落 交映（差 7.7 分钟）——同情/感伤/失望",
+          "weight": 1,
+        },
+      ],
+      "key": "parans",
+      "score": 6,
+      "title": "恒星交映（parans）",
+      "verdict": "bad",
+    },
+    Object {
+      "detail_md": "命度过早/过晚、月空/月燃、土星落一宫等——提示这一时刻的盘是否「可托付判断」,警告不阻断。",
+      "findings": Array [
+        Object {
+          "message": "上升定位星与时主星同性质/同宗派 → 适合判断。",
+          "polarity": "positive",
+          "text_zh": "上升定位星与时主星同性质/同宗派 → 适合判断。",
+          "weight": 1,
+        },
+      ],
+      "key": "radicality",
+      "score": 68,
+      "title": "可判性（盘之可靠）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "命点(日/月/命度/幸运点)所在处五尊贵主星计分:庙5旺4三分3界2面1,总分最高者为全盘胜利星。",
+      "findings": Array [
+        Object {
+          "message": "胜利星（Almuten Figuris）：月亮（20 分；按四命点计，事盘无产前朔望）",
+          "polarity": "neutral",
+          "text_zh": "胜利星（Almuten Figuris）：月亮（20 分；按四命点计，事盘无产前朔望）",
+          "weight": 1,
+        },
+        Object {
+          "message": "胜利星 月亮 在盘中有力顺行——全盘有主心骨",
+          "polarity": "positive",
+          "text_zh": "胜利星 月亮 在盘中有力顺行——全盘有主心骨",
+          "weight": 2,
+        },
+        Object {
+          "message": "胜利星 月亮 临角宫",
+          "polarity": "positive",
+          "text_zh": "胜利星 月亮 临角宫",
+          "weight": 1,
+        },
+        Object {
+          "message": "次位：火星(17)、木星(16)",
+          "polarity": "neutral",
+          "text_zh": "次位：火星(17)、木星(16)",
+          "weight": 1,
+        },
+      ],
+      "key": "almuten",
+      "score": 78,
+      "title": "胜利星（Almuten Figuris）",
+      "verdict": "good",
+    },
+  ],
+  "timing": Array [
+    Object {
+      "angle": 120,
+      "orb": 1.5,
+      "otherCn": "土星",
+    },
+    Object {
+      "angle": 0,
+      "orb": 3,
+      "otherCn": "火星",
+    },
+  ],
+  "topic": Object {
+    "cn": "结婚/订婚",
+    "key_houses": Array [
+      7,
+      5,
+    ],
+    "moon_phase_pref": "waxing",
+    "must_avoid": Array [
+      "venus_retro",
+      "mercury_retro",
+      "moon_in_scorpio",
+      "moon_29deg",
+      "saturn_on_angle_1_7",
+      "uranus_on_angle_1_7",
+      "mars_in_1_or_7",
+    ],
+    "must_have": Array [
+      "sun_moon_good_aspect",
+      "venus_moon_good_aspect",
+      "l1_l7_good_aspect",
+      "venus_in_1_or_7",
+    ],
+    "natural_significators": Array [
+      "venus",
+      "moon",
+    ],
+    "notes": "固定宫坐命象征长久；婚姻两造合盘 > 择日盘。",
+    "preferred_asc_modality": Array [
+      "fixed",
+      "cardinal",
+    ],
+    "preferred_asc_signs": Array [
+      "leo",
+      "aquarius",
+      "taurus",
+      "scorpio",
+      "libra",
+      "cancer",
+      "capricorn",
+      "aries",
+    ],
+    "special_aspect": "Moon conj/trine/sextile Venus",
+    "topic_id": "marriage",
+  },
+  "topicPack": Object {
+    "items": Array [
+      Object {
+        "code": "sun_moon_good_aspect",
+        "kind": "have",
+        "label": "日月吉相（个性融洽）",
+        "pass": false,
+      },
+      Object {
+        "code": "venus_moon_good_aspect",
+        "kind": "have",
+        "label": "金月吉相（感情融洽）",
+        "pass": false,
+      },
+      Object {
+        "code": "l1_l7_good_aspect",
+        "kind": "have",
+        "label": "命主-7宫主吉相（关系长久）",
+        "pass": false,
+      },
+      Object {
+        "code": "venus_in_1_or_7",
+        "kind": "have",
+        "label": "金星入 1/7 宫（爱情和谐）",
+        "pass": true,
+      },
+      Object {
+        "code": "venus_retro",
+        "kind": "avoid",
+        "label": "金星不逆行",
+        "pass": true,
+      },
+      Object {
+        "code": "mercury_retro",
+        "kind": "avoid",
+        "label": "水星不逆行",
+        "pass": false,
+      },
+      Object {
+        "code": "moon_in_scorpio",
+        "kind": "avoid",
+        "label": "月不落天蝎",
+        "pass": true,
+      },
+      Object {
+        "code": "moon_29deg",
+        "kind": "avoid",
+        "label": "月不在 29°",
+        "pass": true,
+      },
+      Object {
+        "code": "saturn_on_angle_1_7",
+        "kind": "avoid",
+        "label": "土星不临角宫",
+        "pass": true,
+      },
+      Object {
+        "code": "uranus_on_angle_1_7",
+        "kind": "avoid",
+        "label": "天王不在 1/7 宫",
+        "pass": true,
+      },
+      Object {
+        "code": "mars_in_1_or_7",
+        "kind": "avoid",
+        "label": "火星不在 1/7 宫",
+        "pass": true,
+      },
+    ],
+    "notes": "固定宫坐命象征长久；婚姻两造合盘 > 择日盘。",
+    "passed": 7,
+    "total": 11,
+  },
+  "westSchool": Object {
+    "cn": "现代主流",
+    "id": "modern_main",
+  },
+}
+`;
+
+exports[`election golden(默认路径零回归锚) surgery 默认报告逐字锚(第二用事,保护 must_avoid/skip 路径) 1`] = `
+Object {
+  "base": 56,
+  "castMoment": "第一刀（开始动刀）。难点：需医师配合。",
+  "crisis": null,
+  "hard_flags": Array [
+    Object {
+      "factor": "mercury",
+      "id": "mercury_retro",
+      "message": "水星 逆行（按用事性质决定是否必避）",
+      "severity": "high",
+    },
+    Object {
+      "factor": "mars",
+      "id": "malefic_on_angle",
+      "message": "火星 凶星临角宫且无援",
+      "severity": "high",
+    },
+  ],
+  "mundane": null,
+  "natal": null,
+  "overall": Object {
+    "grade": "disqualified",
+    "gradeCn": "不宜（含红线）",
+    "headline": "手术择日：不宜（含红线）（26 分）。主要代价：水星 逆行（按用事性质决定是否必避）、火星 凶星临角宫且无援。",
+    "no_perfect_chart_note": "没有完美的择日盘：本结果是在你给定时间窗内、以消去法挑出的较优解，仅供参考。择日是助力/润滑油，能强化本命吉兆、缓和（不能完全化解）凶兆——事在人为 + 本命盘 > 择日盘。",
+    "score": 26,
+  },
+  "penalty": 30,
+  "recommendations": Array [
+    "本盘无明显红线，可在窗口内据各分项进一步择优；最终以消去法对多个候选并排比较。",
+  ],
+  "sections": Array [
+    Object {
+      "detail_md": "月落 巨蟹，盈。",
+      "findings": Array [
+        Object {
+          "key": "waxing",
+          "message": "月盈（增光）：宜建造/求取/创业；行度上偏慢（找回类难抓）",
+          "polarity": "neutral",
+          "text_zh": "月盈（增光）：宜建造/求取/创业；行度上偏慢（找回类难抓）",
+          "weight": 1,
+        },
+      ],
+      "key": "moon",
+      "score": 64,
+      "title": "月亮（第一考量）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "命主星 = 火星",
+      "findings": Array [
+        Object {
+          "message": "命主星 火星 落陷/弱",
+          "polarity": "negative",
+          "text_zh": "命主星 火星 落陷/弱",
+          "weight": 2,
+        },
+        Object {
+          "message": "命主星入角宫",
+          "polarity": "positive",
+          "text_zh": "命主星入角宫",
+          "weight": 1,
+        },
+      ],
+      "key": "asc_ruler",
+      "score": 54,
+      "title": "命主星（第二考量）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "上升 白羊 15.0°",
+      "findings": Array [],
+      "key": "ascendant",
+      "score": 60,
+      "title": "命度/上升（第三考量）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [
+        Object {
+          "message": "自然徵象星 火星 受剋(-1)",
+          "polarity": "negative",
+          "text_zh": "自然徵象星 火星 受剋(-1)",
+          "weight": 2,
+        },
+        Object {
+          "message": "8宫主 火星 受剋",
+          "polarity": "negative",
+          "text_zh": "8宫主 火星 受剋",
+          "weight": 1,
+        },
+      ],
+      "key": "topic_significators",
+      "score": 42,
+      "title": "徵象星（自然+宫主）",
+      "verdict": "caution",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [
+        Object {
+          "message": "凶星 火星 受剋入角宫",
+          "polarity": "negative",
+          "text_zh": "凶星 火星 受剋入角宫",
+          "weight": 2,
+        },
+      ],
+      "key": "angles",
+      "score": 48,
+      "title": "角宫吉凶分布（纳吉排凶）",
+      "verdict": "caution",
+    },
+    Object {
+      "detail_md": "用事宫 = 8 宫",
+      "findings": Array [],
+      "key": "topic_house",
+      "score": 60,
+      "title": "用事宫本身",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [
+        Object {
+          "message": "太阳落 12 宫（出版/魅力类用事尤忌）",
+          "polarity": "negative",
+          "text_zh": "太阳落 12 宫（出版/魅力类用事尤忌）",
+          "weight": 1,
+        },
+      ],
+      "key": "sun",
+      "score": 54,
+      "title": "太阳",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "",
+      "findings": Array [],
+      "key": "malefic_handling",
+      "score": 62,
+      "title": "凶星处理",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "大三角 / 风筝 / 三刑会沖 / 大十字 / 星聚",
+      "findings": Array [
+        Object {
+          "message": "星聚 双鱼（太阳·水星·土星，能量集中）",
+          "polarity": "neutral",
+          "text_zh": "星聚 双鱼（太阳·水星·土星，能量集中）",
+          "weight": 1,
+        },
+      ],
+      "key": "aspect_patterns",
+      "score": 60,
+      "title": "相位格局",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "强接纳救援 + 吉凶星合日月中点（≤1.5°）",
+      "findings": Array [],
+      "key": "reception_fixedstar_midpoint",
+      "score": 60,
+      "title": "接纳 / 日月中点",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "≤1° 会合关键点才计（岁差修正至 2025 年）",
+      "findings": Array [
+        Object {
+          "message": "命度 会合吉恒星 壁宿二（演艺/艺术名声·独立·声誉）",
+          "polarity": "positive",
+          "text_zh": "命度 会合吉恒星 壁宿二（演艺/艺术名声·独立·声誉）",
+          "weight": 2,
+        },
+        Object {
+          "message": "天顶 会合吉恒星 织女星（幸运/成功/财富/口才）",
+          "polarity": "positive",
+          "text_zh": "天顶 会合吉恒星 织女星（幸运/成功/财富/口才）",
+          "weight": 2,
+        },
+      ],
+      "key": "fixed_stars",
+      "score": 84,
+      "title": "恒星会合",
+      "verdict": "good",
+    },
+    Object {
+      "detail_md": "昼盘。得时=宗派+半球+阴阳座三合；喜乐宫=水1月3金5火6日9木11土12。",
+      "findings": Array [
+        Object {
+          "message": "昼盘：得派吉星为木星（首席吉星），离派凶星为火星（凶性最烈）",
+          "polarity": "neutral",
+          "text_zh": "昼盘：得派吉星为木星（首席吉星），离派凶星为火星（凶性最烈）",
+          "weight": 1,
+        },
+        Object {
+          "message": "离派凶星 火星 临角宫：本盘最烈之凶落显位",
+          "polarity": "negative",
+          "text_zh": "离派凶星 火星 临角宫：本盘最烈之凶落显位",
+          "weight": 3,
+        },
+      ],
+      "key": "sect",
+      "score": 42,
+      "title": "宗派（昼夜派）",
+      "verdict": "caution",
+    },
+    Object {
+      "detail_md": "中世纪择日核心:月为万事之引线;凡涉先后成相者按现盘入相差推断。",
+      "findings": Array [
+        Object {
+          "message": "传光：月离 火星（0°）转而入相 土星（120°，差 1.5°）——将前者之事引渡给后者，所托非人",
+          "polarity": "negative",
+          "text_zh": "传光：月离 火星（0°）转而入相 土星（120°，差 1.5°）——将前者之事引渡给后者，所托非人",
+          "weight": 2,
+        },
+        Object {
+          "message": "光线围攻：月亮 离一凶复入一凶（火/土前后夹击），腹背受敌",
+          "polarity": "negative",
+          "text_zh": "光线围攻：月亮 离一凶复入一凶（火/土前后夹击），腹背受敌",
+          "weight": 2,
+        },
+      ],
+      "key": "moon_mechanics",
+      "score": 36,
+      "title": "月相机制（传光·收光·围攻）",
+      "verdict": "bad",
+    },
+    Object {
+      "detail_md": "值日星序:日月火水木金土(周日起);行星时按迦勒底序自日出轮转。",
+      "findings": Array [
+        Object {
+          "message": "现值 金星 之时、土星 之日；此时主题：妻子/女人烦恼 / 女装/装饰 / 新原因/未果友谊",
+          "polarity": "neutral",
+          "text_zh": "现值 金星 之时、土星 之日；此时主题：妻子/女人烦恼 / 女装/装饰 / 新原因/未果友谊",
+          "weight": 1,
+        },
+        Object {
+          "message": "时主 金星 临角宫",
+          "polarity": "positive",
+          "text_zh": "时主 金星 临角宫",
+          "weight": 1,
+        },
+      ],
+      "key": "planetary_hours",
+      "score": 66,
+      "title": "行星时（时主/日主）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "Agrippa 白羊0°均分 12°51′26″/宿；通则:择月入所选宿、增光不受克、不空亡。",
+      "findings": Array [
+        Object {
+          "message": "月在第 8 宿 Alnaza（鬼宿 Praesepe）：爱、友谊、社交。用途：爱、友谊、旅伴情谊",
+          "polarity": "neutral",
+          "text_zh": "月在第 8 宿 Alnaza（鬼宿 Praesepe）：爱、友谊、社交。用途：爱、友谊、旅伴情谊",
+          "weight": 1,
+        },
+        Object {
+          "message": "月增光、免燃烧而入吉宿：可乘其力",
+          "polarity": "positive",
+          "text_zh": "月增光、免燃烧而入吉宿：可乘其力",
+          "weight": 1,
+        },
+      ],
+      "key": "mansions",
+      "score": 66,
+      "title": "月宿（西方28宿）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "映点=关于巨蟹0°—摩羯0°轴对称;反映点=关于白羊0°—天秤0°轴。仅 ≤1° 计。",
+      "findings": Array [
+        Object {
+          "message": "反映点隐冲：金星 反映点（335.0°）冲 土星（差 0.5°）——如暗中对分",
+          "polarity": "negative",
+          "text_zh": "反映点隐冲：金星 反映点（335.0°）冲 土星（差 0.5°）——如暗中对分",
+          "weight": 1,
+        },
+      ],
+      "key": "antiscia",
+      "score": 54,
+      "title": "映点（隐合/隐冲）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "固定地点:恒星与七曜四轴（升/中天/落/天底）恒星时差 ≤8 分钟判交映;行星按黄纬≈0 近似;主用 10 星。",
+      "findings": Array [
+        Object {
+          "message": "角宿一 升 与 金星 落 交映（差 0.4 分钟）——成功/幸运/财富/繁荣",
+          "polarity": "neutral",
+          "text_zh": "角宿一 升 与 金星 落 交映（差 0.4 分钟）——成功/幸运/财富/繁荣",
+          "weight": 1,
+        },
+        Object {
+          "message": "室宿二 中天 与 月亮 升 交映（差 0.7 分钟）——困难/意外/失败/阻挠；凶星交映日/月/用事星须防",
+          "polarity": "negative",
+          "text_zh": "室宿二 中天 与 月亮 升 交映（差 0.7 分钟）——困难/意外/失败/阻挠；凶星交映日/月/用事星须防",
+          "weight": 2,
+        },
+        Object {
+          "message": "心宿二 落 与 木星 升 交映（差 3.7 分钟）——暴力/冲突/自信/独断(皇室星)（事业开创可用，婚姻勿用）",
+          "polarity": "neutral",
+          "text_zh": "心宿二 落 与 木星 升 交映（差 3.7 分钟）——暴力/冲突/自信/独断(皇室星)（事业开创可用，婚姻勿用）",
+          "weight": 1,
+        },
+        Object {
+          "message": "东次将 升 与 月亮 中天 交映（差 3.8 分钟）——困难/不幸/障碍/失望(寡居星)；凶星交映日/月/用事星须防",
+          "polarity": "negative",
+          "text_zh": "东次将 升 与 月亮 中天 交映（差 3.8 分钟）——困难/不幸/障碍/失望(寡居星)；凶星交映日/月/用事星须防",
+          "weight": 2,
+        },
+        Object {
+          "message": "织女星 中天 与 火星 天底 交映（差 5.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "polarity": "neutral",
+          "text_zh": "织女星 中天 与 火星 天底 交映（差 5.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "weight": 1,
+        },
+        Object {
+          "message": "角宿一 落 与 火星 天底 交映（差 5.6 分钟）——成功/幸运/财富/繁荣",
+          "polarity": "positive",
+          "text_zh": "角宿一 落 与 火星 天底 交映（差 5.6 分钟）——成功/幸运/财富/繁荣",
+          "weight": 1,
+        },
+        Object {
+          "message": "毕宿五 落 与 太阳 天底 交映（差 6.2 分钟）——爆发/冲动/刑伤/精力/开创；凶星交映日/月/用事星须防（除非刻意取火星之力，否则避）",
+          "polarity": "negative",
+          "text_zh": "毕宿五 落 与 太阳 天底 交映（差 6.2 分钟）——爆发/冲动/刑伤/精力/开创；凶星交映日/月/用事星须防（除非刻意取火星之力，否则避）",
+          "weight": 2,
+        },
+        Object {
+          "message": "北落师门 中天 与 月亮 升 交映（差 6.6 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）",
+          "polarity": "negative",
+          "text_zh": "北落师门 中天 与 月亮 升 交映（差 6.6 分钟）——改变/不定/适应/名声；凶星交映日/月/用事星须防（不安定性强，最好不用）",
+          "weight": 2,
+        },
+        Object {
+          "message": "北落师门 升 与 金星 升 交映（差 6.7 分钟）——改变/不定/适应/名声（不安定性强，最好不用）",
+          "polarity": "neutral",
+          "text_zh": "北落师门 升 与 金星 升 交映（差 6.7 分钟）——改变/不定/适应/名声（不安定性强，最好不用）",
+          "weight": 1,
+        },
+        Object {
+          "message": "毕宿五 落 与 木星 落 交映（差 7.5 分钟）——爆发/冲动/刑伤/精力/开创（除非刻意取火星之力，否则避）",
+          "polarity": "neutral",
+          "text_zh": "毕宿五 落 与 木星 落 交映（差 7.5 分钟）——爆发/冲动/刑伤/精力/开创（除非刻意取火星之力，否则避）",
+          "weight": 1,
+        },
+        Object {
+          "message": "织女星 中天 与 月亮 天底 交映（差 7.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "polarity": "neutral",
+          "text_zh": "织女星 中天 与 月亮 天底 交映（差 7.5 分钟）——幸运/成功/财富/口才（吉星会合可用，凶星会合避）",
+          "weight": 1,
+        },
+        Object {
+          "message": "昴宿六 中天 与 土星 落 交映（差 7.7 分钟）——同情/感伤/失望",
+          "polarity": "neutral",
+          "text_zh": "昴宿六 中天 与 土星 落 交映（差 7.7 分钟）——同情/感伤/失望",
+          "weight": 1,
+        },
+      ],
+      "key": "parans",
+      "score": 18,
+      "title": "恒星交映（parans）",
+      "verdict": "bad",
+    },
+    Object {
+      "detail_md": "命度过早/过晚、月空/月燃、土星落一宫等——提示这一时刻的盘是否「可托付判断」,警告不阻断。",
+      "findings": Array [
+        Object {
+          "message": "上升定位星与时主星同性质/同宗派 → 适合判断。",
+          "polarity": "positive",
+          "text_zh": "上升定位星与时主星同性质/同宗派 → 适合判断。",
+          "weight": 1,
+        },
+      ],
+      "key": "radicality",
+      "score": 68,
+      "title": "可判性（盘之可靠）",
+      "verdict": "neutral",
+    },
+    Object {
+      "detail_md": "命点(日/月/命度/幸运点)所在处五尊贵主星计分:庙5旺4三分3界2面1,总分最高者为全盘胜利星。",
+      "findings": Array [
+        Object {
+          "message": "胜利星（Almuten Figuris）：月亮（20 分；按四命点计，事盘无产前朔望）",
+          "polarity": "neutral",
+          "text_zh": "胜利星（Almuten Figuris）：月亮（20 分；按四命点计，事盘无产前朔望）",
+          "weight": 1,
+        },
+        Object {
+          "message": "胜利星 月亮 在盘中有力顺行——全盘有主心骨",
+          "polarity": "positive",
+          "text_zh": "胜利星 月亮 在盘中有力顺行——全盘有主心骨",
+          "weight": 2,
+        },
+        Object {
+          "message": "胜利星 月亮 临角宫",
+          "polarity": "positive",
+          "text_zh": "胜利星 月亮 临角宫",
+          "weight": 1,
+        },
+        Object {
+          "message": "次位：火星(17)、木星(16)",
+          "polarity": "neutral",
+          "text_zh": "次位：火星(17)、木星(16)",
+          "weight": 1,
+        },
+      ],
+      "key": "almuten",
+      "score": 78,
+      "title": "胜利星（Almuten Figuris）",
+      "verdict": "good",
+    },
+  ],
+  "timing": Array [
+    Object {
+      "angle": 120,
+      "orb": 1.5,
+      "otherCn": "土星",
+    },
+    Object {
+      "angle": 0,
+      "orb": 3,
+      "otherCn": "火星",
+    },
+  ],
+  "topic": Object {
+    "cn": "手术",
+    "key_houses": Array [
+      8,
+    ],
+    "moon_phase_pref": "avoid_new_full",
+    "must_avoid": Array [
+      "near_new_or_full_moon",
+      "moon_voc",
+      "mercury_retro",
+      "mars_retro",
+      "station_day",
+      "moon_in_surgery_part_sign",
+      "moon_in_scorpio",
+      "moon_mars_hard",
+      "asc_mars_hard",
+    ],
+    "must_have": Array [
+      "mars_dignified",
+      "l8_well_aspected",
+      "asc_strong",
+    ],
+    "natural_significators": Array [
+      "mars",
+    ],
+    "notes": "命度与月所落座=主管手术部位,吉相越多越好；火星入廟旺、避与土/天/海/冥凶相；美容手术避金逆。",
+    "preferred_asc_modality": Array [],
+    "topic_id": "surgery",
+  },
+  "topicPack": Object {
+    "items": Array [
+      Object {
+        "code": "mars_dignified",
+        "kind": "have",
+        "label": "火星入廟旺/有尊贵",
+        "pass": false,
+      },
+      Object {
+        "code": "l8_well_aspected",
+        "kind": "have",
+        "label": "8宫主无凶相",
+        "pass": true,
+      },
+      Object {
+        "code": "asc_strong",
+        "kind": "have",
+        "label": "命主有力不逆",
+        "pass": false,
+      },
+      Object {
+        "code": "near_new_or_full_moon",
+        "kind": "avoid",
+        "label": "不临新/满月",
+        "pass": true,
+      },
+      Object {
+        "code": "moon_voc",
+        "kind": "avoid",
+        "label": "月不空亡",
+        "pass": true,
+      },
+      Object {
+        "code": "mercury_retro",
+        "kind": "avoid",
+        "label": "水星不逆行",
+        "pass": false,
+      },
+      Object {
+        "code": "mars_retro",
+        "kind": "avoid",
+        "label": "火星不逆行",
+        "pass": true,
+      },
+      Object {
+        "code": "moon_in_scorpio",
+        "kind": "avoid",
+        "label": "月不落天蝎",
+        "pass": true,
+      },
+      Object {
+        "code": "moon_mars_hard",
+        "kind": "avoid",
+        "label": "月火无刑冲",
+        "pass": true,
+      },
+    ],
+    "notes": "命度与月所落座=主管手术部位,吉相越多越好；火星入廟旺、避与土/天/海/冥凶相；美容手术避金逆。",
+    "passed": 6,
+    "total": 9,
+  },
+  "westSchool": Object {
+    "cn": "现代主流",
+    "id": "modern_main",
+  },
+}
+`;

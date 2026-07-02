@@ -2,7 +2,6 @@ import flvjs from 'flv.js';
 import videojs from 'video.js';
 import videojsflash from 'videojs-flash';
 import { Component } from 'react';
-import { Chart3DServer, } from '../../utils/constants';
 import { randomStr, handleError, startWith, endWith, } from '../../utils/helper';
 
 class StreamPlayer extends Component{
@@ -178,7 +177,7 @@ class StreamPlayer extends Component{
 				type: type,
 			}],
 			flash: {
-				swf: `${Chart3DServer}/static/video-js.swf`,
+				swf: './static/video-js.swf',
 			},
 		};
 

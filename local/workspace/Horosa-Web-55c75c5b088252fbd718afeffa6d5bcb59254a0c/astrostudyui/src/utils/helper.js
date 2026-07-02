@@ -973,11 +973,10 @@ export function printArea(id){
 	if(id === undefined || id === null){
 		return;
 	}
-	let cssurl = `${Constants.Chart3DServer}/static/umi.ff10973d.css`;
+	// 打印不再注入远端样式表(历史远端已下线;打印内容为内联样式的图表节点,裸打即可)。
 	printJS({
 		printable: id,
 		type: 'html',
-		style: `@import url(${cssurl})`,
 		maxWidth: 3000,
 	});	
 }

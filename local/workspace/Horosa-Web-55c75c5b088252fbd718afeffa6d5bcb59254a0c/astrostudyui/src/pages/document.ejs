@@ -19,7 +19,18 @@
 </head>
 <body>
 
-<div id="root"></div>
+<div id="root"><!-- 启动骨架:umi.js 下载/解析期间的品牌画面(纯内联零请求);React 挂载即整体替换 -->
+<div id="horosa-boot-splash" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0d1117;z-index:9999;">
+  <style>
+    @media (prefers-color-scheme: light){ #horosa-boot-splash{ background:#f5f4f0 !important; } #horosa-boot-splash .hb-t{ color:#3a3428 !important; } #horosa-boot-splash .hb-s{ color:#8a8578 !important; } }
+    @keyframes hb-spin { to { transform: rotate(360deg); } }
+    @keyframes hb-fade { 0%,100%{opacity:.35} 50%{opacity:1} }
+  </style>
+  <div style="width:52px;height:52px;border-radius:50%;border:3px solid rgba(212,164,76,.22);border-top-color:#d4a44c;animation:hb-spin 0.9s linear infinite;"></div>
+  <div class="hb-t" style="margin-top:22px;font-size:20px;letter-spacing:.35em;color:#e8dcc0;font-family:-apple-system,'PingFang SC',sans-serif;animation:hb-fade 2s ease-in-out infinite;">星&nbsp;阙</div>
+  <div class="hb-s" style="margin-top:10px;font-size:12px;letter-spacing:.12em;color:#7d766a;font-family:-apple-system,'PingFang SC',sans-serif;">正在启动…</div>
+</div>
+</div>
 
 </body>
 </html>

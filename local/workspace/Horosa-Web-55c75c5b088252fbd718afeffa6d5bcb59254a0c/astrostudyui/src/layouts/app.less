@@ -5218,10 +5218,22 @@
     }
 
     .horosa-workspace-shell .horosa-3d-tabs .ant-tabs-content-holder {
-        overflow: auto;
+        overflow: hidden;
         border: 1px solid var(--horosa-border);
         border-radius: 8px;
         background: var(--horosa-panel-soft);
+    }
+
+    .horosa-workspace-shell .horosa-3d-tabs .ant-tabs-content,
+    .horosa-workspace-shell .horosa-3d-tabs .ant-tabs-tabpane {
+        height: 100%;
+    }
+
+    /* 各 tab 顶层滚动区(信息/相位/行星/希腊点)自带旧像素估算的内联 height,
+       与容器真实高度失配时内外出双滚动条:以容器实高接管,滚动只留这一层。 */
+    .horosa-workspace-shell .horosa-3d-tabs .ant-tabs-tabpane > div {
+        height: 100% !important;
+        max-height: 100%;
     }
 
     .horosa-workspace-shell .horosa-liureng-page,
@@ -13746,7 +13758,8 @@
 
     .horosa-workspace-shell .horosa-kinastro-tieban-board {
         width: clamp(680px, 72vw, 1040px);
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
     }
 
     .horosa-workspace-shell .horosa-kinastro-fendjing-board {
@@ -13953,6 +13966,60 @@
         font-size: 12px;
         line-height: 1.45;
         word-break: break-word;
+    }
+
+    /* 铁板框架推演层 */
+    .horosa-workspace-shell .horosa-kinastro-tieban-framework {
+        margin-top: 18px;
+        padding: 16px 16px 4px;
+        border-radius: 14px;
+        border: 1px solid var(--horosa-shusuan-card-line, rgba(228,184,111,.32));
+        background: var(--horosa-surface, rgba(228,184,111,.04));
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-fw-head {
+        display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-fw-head h3 {
+        margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .5px; color: var(--horosa-gold, #c9a86a);
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-fw-tags {
+        font-size: 12px; color: var(--horosa-huangji-muted, #8fa0b9);
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-fw-grid {
+        display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; align-items: start;
+    }
+    /* 批断顺序卡(第3张)横跨整行 */
+    .horosa-workspace-shell .horosa-kinastro-tieban-fw-grid > .horosa-huangji-info-card:nth-child(3) {
+        grid-column: 1 / span 2;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-bagua-strip {
+        display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; margin: 10px 0 6px;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-bagua-item {
+        display: flex; flex-direction: column; align-items: center; gap: 5px;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-bagua-item > span {
+        font-size: 12px; color: var(--horosa-huangji-text, #d8e0ec); white-space: nowrap;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-gua {
+        display: flex; flex-direction: column; gap: 3px; width: 36px;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-yao { display: flex; height: 5px; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-yao i { display: flex; width: 100%; height: 100%; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-yao i.is-yang { background: var(--horosa-gold, #c9a86a); border-radius: 1.5px; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-yao i.is-yin { justify-content: space-between; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-yao i.is-yin b { width: 43%; background: var(--horosa-gold, #c9a86a); border-radius: 1.5px; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-piduan { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-piduan-step {
+        display: inline-flex; align-items: baseline; gap: 5px; padding: 4px 11px; font-size: 12px; font-weight: 600;
+        color: var(--horosa-huangji-text, #d8e0ec); background: var(--horosa-surface-raised, rgba(148,163,184,.14)); border-radius: 13px;
+    }
+    .horosa-workspace-shell .horosa-kinastro-tieban-piduan-step em { font-style: normal; font-size: 11px; font-weight: 400; color: var(--horosa-huangji-muted, #8fa0b9); }
+    .horosa-workspace-shell .horosa-kinastro-tieban-keline { display: inline-flex; flex-wrap: wrap; gap: 3px 8px; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-keline em { font-style: normal; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-keline em.is-active { color: var(--horosa-gold, #c9a86a); font-weight: 700; }
+    .horosa-workspace-shell .horosa-kinastro-tieban-fw-note {
+        margin-top: 8px; font-size: 11px; line-height: 1.6; color: var(--horosa-huangji-muted, #8fa0b9);
     }
 
     .horosa-workspace-shell .horosa-kinastro-fendjing-feature-grid {
@@ -17812,6 +17879,23 @@
 .horosa-heluo-yaoci-expand .horosa-heluo-yaoci-detail:first-of-type { margin-top: 4px; }
 .horosa-heluo-tag.is-rel { background: var(--horosa-accent, rgba(201,168,106,.9)); color: var(--horosa-on-accent, #fff); border-color: transparent; font-weight: 600; }
 :root[data-horosa-appearance='dark'] .horosa-heluo-tag.is-rel { color: #1a1a1a; }
+/* 易经爻辞（原文）+ 经文（卦义/卦辞/总诀）+ 卦气旺衰 */
+.horosa-heluo-yaoci-yaoci { font-size: 14px; line-height: 1.95; color: var(--horosa-text, #1f1f1f); margin-top: 10px; padding: 8px 12px; background: var(--horosa-surface, rgba(148,163,184,.07)); border-left: 3px solid var(--horosa-accent-soft, rgba(201,168,106,.5)); border-radius: 6px; }
+.horosa-heluo-yaoci-yaoci b, .horosa-heluo-jing-item b {
+    display: inline-block; margin-right: 8px; padding: 0 8px; font-size: 12px; font-weight: 600; line-height: 1.7;
+    color: var(--horosa-accent-strong, var(--horosa-accent, #b07d20)); background: var(--horosa-accent-soft, rgba(201,168,106,.16));
+    border-radius: 4px; vertical-align: 1px;
+}
+.horosa-heluo-wangshuai { font-size: 12px; font-weight: 600; color: var(--horosa-accent-strong, var(--horosa-accent, #b07d20)); margin-top: 3px; }
+.horosa-heluo-jing-toggle { margin-top: 8px; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--horosa-accent-strong, var(--horosa-accent, #b07d20)); background: transparent; border: 1px solid var(--horosa-border-soft, rgba(148,163,184,.35)); border-radius: 14px; cursor: pointer; transition: background .15s; }
+.horosa-heluo-jing-toggle:hover { background: var(--horosa-accent-soft, rgba(201,168,106,.14)); }
+.horosa-heluo-jing { margin-top: 10px; padding: 12px 14px; background: var(--horosa-surface, rgba(148,163,184,.07)); border-radius: 8px; border: 1px solid var(--horosa-border-soft, rgba(148,163,184,.22)); }
+.horosa-heluo-jing-item { font-size: 14px; line-height: 1.95; color: var(--horosa-text, #1f1f1f); margin-top: 8px; }
+.horosa-heluo-jing-item:first-child { margin-top: 0; }
+.horosa-heluo-wscell { white-space: nowrap; font-size: 12px; color: var(--horosa-text-muted, #777); }
+/* 左栏分歧开关行：行向对齐(标签左、开关右) */
+.horosa-workspace-shell .horosa-huangji-select-field.horosa-heluo-switch-field { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.horosa-workspace-shell .horosa-huangji-select-grid .horosa-heluo-diverge-hint { grid-column: 1 / span 2; margin-top: 2px; }
 /* 表格 */
 .horosa-heluo-table { border-collapse: collapse; font-size: 13px; width: 100%; }
 .horosa-heluo-table th, .horosa-heluo-table td { border: 1px solid var(--horosa-border-soft, rgba(148,163,184,.28)); padding: 6px 10px; text-align: left; vertical-align: top; }
@@ -17985,6 +18069,17 @@
 	.horosa-divi-sev.sev-high { background: #e07a3b; }
 	.horosa-divi-sev.sev-medium { background: #d2a01f; }
 	.horosa-divi-sev.sev-low { background: #93a1b0; }
+	.horosa-divi-sev.sev-info { background: #7c8796; opacity: .85; }
+	/* 择日·危象日 原生日期输入(明暗双主题) */
+	.horosa-native-date {
+		height: 26px; padding: 2px 8px; font-size: 12px; border-radius: 6px;
+		border: 1px solid var(--horosa-border-soft, rgba(148,163,184,.28));
+		background: var(--horosa-surface, rgba(148,163,184,.06));
+		color: var(--horosa-text, inherit);
+		color-scheme: light dark;
+		outline: none;
+	}
+	.horosa-native-date:focus { border-color: var(--horosa-accent, #b8860b); }
 	.horosa-divi-flag { display: flex; gap: 8px; align-items: flex-start; padding: 7px 2px; border-bottom: 1px dashed var(--horosa-border-soft, rgba(148,163,184,.16)); }
 	.horosa-divi-flag:last-child { border-bottom: none; }
 	.horosa-divi-flag .msg { flex: 1; font-size: 12.5px; line-height: 1.6; color: var(--horosa-text, inherit); }

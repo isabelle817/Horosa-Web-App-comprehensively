@@ -122,6 +122,13 @@ const iconMap = {
 			<path {...lineProps} d="M4 12h16M12 3.8c2.1 2.2 3.2 5 3.2 8.2S14.1 18 12 20.2M12 3.8C9.9 6 8.8 8.8 8.8 12s1.1 6 3.2 8.2" />
 		</Svg>
 	),
+	sphere3d: (
+		<Svg>
+			<circle {...lineProps} cx="12" cy="12" r="8.2" />
+			<ellipse {...lineProps} cx="12" cy="12" rx="8.2" ry="3.4" />
+			<ellipse {...lineProps} cx="12" cy="12" rx="3.4" ry="8.2" />
+		</Svg>
+	),
 	sliders: (
 		<Svg>
 			<path {...lineProps} d="M5 7h14M5 12h14M5 17h14" />

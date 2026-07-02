@@ -1260,6 +1260,15 @@ async function buildHeluoSnapshotForRecord(record, opts){
 	const b = buildChartShusuanBazi(record);
 	if(!b){ return ''; }
 	const overrideQuHuaGong = opts && (opts.quHuaGong === 'tuWangKunGen' || opts.quHuaGong === 'siFangBoOnly') ? opts.quHuaGong : null;
+	// 分歧法门(挂载 record 覆盖;缺省=引擎默认,与现状字节一致)
+	const heluoOpts = {
+		ziShuMode: record.ziShuMode || 'pair',
+		jiGongMode: record.jiGongMode || 'manualSanYuan',
+		zhiZunEnabled: !(record.zhiZunEnabled === 0 || record.zhiZunEnabled === false || record.zhiZunEnabled === '0'),
+		pureGanKunVariant: record.pureGanKunVariant || 'current',
+		liunianStep2: record.liunianStep2 || 'ying',
+		huangdiOffset: parseInt(record.huangdiOffset, 10) || 2697,
+	};
 	try{
 		const chart = heluoCalc({
 			fourPillars: b.fourPillars,
@@ -1267,6 +1276,7 @@ async function buildHeluoSnapshotForRecord(record, opts){
 			hourZhi: b.hourZhi,
 			birthYear: b.birthYear,
 			monthZhi: b.monthZhi,
+			opts: heluoOpts,
 		});
 		if(!chart || !chart.xian || !chart.xian.name || !chart.hou || !chart.hou.name){
 			return '';
@@ -1280,7 +1290,7 @@ async function buildHeluoSnapshotForRecord(record, opts){
 			st = heluoSolarTermForDate(dateStr, overrideQuHuaGong);
 		}
 		const jg = heluoJudge(chart, b.fourPillars, b.monthZhi, st);
-		return buildHeluoSnapshotText(chart, jg, dy) || '';
+		return buildHeluoSnapshotText(chart, jg, dy, { monthZhi: b.monthZhi, opts: heluoOpts }) || '';
 	}catch(e){
 		return '';
 	}
@@ -1329,7 +1339,13 @@ async function regenerateElectionSnapshot(record, options){
 	try{
 		// AI 挂载「每技法设置」:用事类别经 options.topicId 透传（缺省 marriage=现状）。
 		const topicId = (options && typeof options === 'object' && options.topicId) ? options.topicId : 'marriage';
-		const j = runElection(chart, topicId);
+		// 西方子流派:齿轮「每技法设置」落顶层 options.westSchool;储存记录落 payload.extra.westSchool。
+		// 两处都查(缺省 undefined → 引擎兜底现代主流 = 现状)。
+		const westSchool = (options && typeof options === 'object'
+			&& (options.westSchool || (options.extra && options.extra.westSchool))) || undefined;
+		const pick = (k) => (options && typeof options === 'object'
+			&& (options[k] !== undefined ? options[k] : (options.extra ? options.extra[k] : undefined))) || undefined;
+		const j = runElection(chart, topicId, undefined, undefined, { westSchool, surgeryPart: pick('surgeryPart'), crisisBase: pick('crisisBase') });
 		return j ? (buildElectionSnapshot(j) || '') : '';
 	}catch(e){
 		return '';

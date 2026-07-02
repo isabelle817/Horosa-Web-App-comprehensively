@@ -22,6 +22,9 @@ import YanqinHelpDoc from './YanqinHelpDoc';
 import CalendarHelpDoc from './CalendarHelpDoc';
 import PlanetariumHelpDoc from './PlanetariumHelpDoc';
 import CntraditionHelpDoc from './CntraditionHelpDoc';
+import Astro3DHelpDoc from './Astro3DHelpDoc';
+import XuanshiHelpDoc from './XuanshiHelpDoc';
+import AIAnalysisHelpDoc from './AIAnalysisHelpDoc';
 
 export const TECHNIQUE_HELP_DOCS = {
 	astrochart: AstroHelpDoc,
@@ -46,6 +49,9 @@ export const TECHNIQUE_HELP_DOCS = {
 	calendar: CalendarHelpDoc,
 	planetarium: PlanetariumHelpDoc,
 	cntradition: CntraditionHelpDoc,
+	astrochart3D: Astro3DHelpDoc,
+	xuanshi: XuanshiHelpDoc,
+	aianalysis: AIAnalysisHelpDoc,
 };
 
 export function getTechniqueHelpDoc(currentTab){

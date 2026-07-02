@@ -88,7 +88,18 @@ def test_bare_sid_mode_call_sites_whitelist():
                     if re.search(r'\bset_sid_mode\s*\(', line) and not line.strip().startswith('#'):
                         rel = os.path.relpath(path, root)
                         hits.add(rel)
-    assert hits == {
+    expected = {
         os.path.join('astrostudy', 'perchart.py'),
         os.path.join('astrostudy', 'perpredict.py'),
-    }, '裸 set_sid_mode 调用点集合漂移(新增点须过 set/use 相邻评审): %r' % sorted(hits)
+        # acg/ACGraph.py:__init__ ayanamsa 恒星读数 — set_sid_mode→get_ayanamsa_ut 相邻两行(已评审符合 set/use 相邻约定;
+        # 只取 ayanamsa 度数作标注,flatlib 主盘走 tropical 不受该全局态影响)。
+        os.path.join('astrostudy', 'acg', 'ACGraph.py'),
+        # acg/validate_acg.py:check_sidereal — 校验脚本内 set→get 相邻(单进程顺序执行,已评审)。
+        os.path.join('astrostudy', 'acg', 'validate_acg.py'),
+    }
+    # financial.py:_ayanamsa_deg — set_sid_mode→get_ayanamsa_ut 相邻两行(金融黄道制特性,已评审)。
+    # 按「文件存在才计入」自适应:该文件不属于所有构建面,单一测试源在不同构建面都成立。
+    fin = os.path.join('astrostudy', 'financial.py')
+    if os.path.exists(os.path.join(root, fin)):
+        expected.add(fin)
+    assert hits == expected, '裸 set_sid_mode 调用点集合漂移(新增点须过 set/use 相邻评审): %r' % sorted(hits)

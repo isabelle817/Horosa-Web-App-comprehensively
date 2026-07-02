@@ -491,7 +491,7 @@ def _compute_oblique_ascension(ra: float, dec: float, geog_lat: float) -> float:
     """計算斜升（Oblique Ascension）
 
     OA = RA - arcsin(tan(dec) * tan(lat))
-    使用 半弧法的基礎公式
+    使用 Placidus 半弧法的基礎公式
 
     Args:
         ra:        赤經（度）

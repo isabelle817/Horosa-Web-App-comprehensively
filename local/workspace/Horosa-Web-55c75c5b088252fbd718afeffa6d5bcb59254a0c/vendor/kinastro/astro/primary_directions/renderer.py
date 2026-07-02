@@ -518,7 +518,7 @@ def render_primary_directions(result: PrimaryDirectionsResult) -> None:
 
     # ── Header ────────────────────────────────────────────────
     method_label = (
-        auto_cn("Mundo（半弧體系）", "Mundo (Placidus Semi-Arc)")
+        auto_cn("Mundo（Placidus 半弧體系）", "Mundo (Placidus Semi-Arc)")
         if result.method == "mundo" else
         auto_cn("黃道法（Ptolemy 斜升法）", "Zodiacal (Ptolemy Oblique Ascension)")
     )

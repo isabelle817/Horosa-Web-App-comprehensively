@@ -418,6 +418,14 @@ const HORARY_FIELDS = [
 ];
 const ELECTION_FIELDS = [
 	{ name: 'topicId', label: '用事类别', type: 'select', default: 'marriage', group: '择日', options: ELECTION_TOPICS },
+	// 西方子流派(westernSchools 五档;默认现代主流=零回归)。储存记录另经 payload.extra.westSchool 自动还原。
+	{ name: 'westSchool', label: '西方流派', type: 'select', default: 'modern_main', group: '择日', options: [
+		{ value: 'modern_main', label: '现代主流' },
+		{ value: 'hellenistic', label: '希腊化' },
+		{ value: 'persian', label: '波斯-阿拉伯' },
+		{ value: 'renaissance', label: '文艺复兴' },
+		{ value: 'modern_revival', label: '古典复兴' },
+	] },
 ];
 
 // 命盘星盘系（占星本命/十三分盘/宿占等跟随 fields）：把更多排盘选项从 record 读出。
@@ -921,6 +929,24 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 			{ value: 'tuWangKunGen', label: '土王寄坤艮（月支近似，默认=现状）' },
 			{ value: 'siFangBoOnly', label: '直取四方伯（真实节气，仅四方伯卦）' },
 		] },
+		{ name: 'ziShuMode', label: '取数法', type: 'select', default: 'pair', group: '起卦分歧', options: [
+			{ value: 'pair', label: '成对全取（古本，默认）' },
+			{ value: 'single', label: '每支阴阳取一（实验）' },
+		] },
+		{ name: 'jiGongMode', label: '五寄中宫', type: 'select', default: 'manualSanYuan', group: '起卦分歧', options: [
+			{ value: 'manualSanYuan', label: '手册三元表（默认）' },
+			{ value: 'legacy', label: '旧法（上下元性别）' },
+		] },
+		{ name: 'pureGanKunVariant', label: '纯乾坤落爻', type: 'select', default: 'current', group: '起卦分歧', options: [
+			{ value: 'current', label: '通行（节气半年，默认）' },
+			{ value: 'alt', label: '抄本异（反向·待核）' },
+		] },
+		{ name: 'zhiZunEnabled', label: '三至尊卦', type: 'switch', options: ON_OFF, default: 1, group: '起卦分歧', normalize: (v)=>(v === true || v === 1 || v === '1') },
+		{ name: 'liunianStep2', label: '流年次步', type: 'select', default: 'ying', group: '推运分歧', options: [
+			{ value: 'ying', label: '应爻法（默认）' },
+			{ value: 'sequential', label: '顺行（初→上）' },
+		] },
+		{ name: 'huangdiOffset', label: '纪年基准（黄帝纪元差）', type: 'number', default: 2697, group: '断验' },
 	] },
 
 	// ---- B 类：事盘 options 驱动 ----

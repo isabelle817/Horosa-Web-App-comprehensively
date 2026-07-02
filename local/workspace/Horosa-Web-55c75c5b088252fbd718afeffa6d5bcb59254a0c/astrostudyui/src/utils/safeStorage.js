@@ -1,11 +1,11 @@
-// 🛡 安全 localStorage 包装:部分运行环境与隐私浏览模式下 localStorage 配额比常规小很多
-// (有的实现仅 ~5MB,隐私模式甚至 0),用户多次升级 / 累积工具状态后 setItem 会抛 QuotaExceededError → 整个组件崩。
+// 🛡 安全 localStorage 包装:WKWebView / 私有浏览模式下 localStorage 配额比常规浏览器小很多
+// (有的实现仅 ~5MB,iOS 私有模式甚至 0),用户多次升级 / 累积工具状态后 setItem 会抛 QuotaExceededError → 整个组件崩。
 //
 // 此 util 保证:
 //   1) setItem 抛 QuotaExceededError 时,先把白名单内的非关键键清掉再重试一次;再失败就静默返回 false,绝不上抛。
 //   2) getItem 抛任何错时返回 null。
 //   3) removeItem/clear 抛错时静默。
-//   4) 所有 commtools 与 GuaSymDesc 等纯本地存储工具都改用这套 API,根治 QuotaExceededError → 组件崩页。
+//   4) 所有 commtools 与 GuaSymDesc 等纯本地存储工具都改用这套 API,根治 prod app(WKWebView)QuotaExceededError → 组件崩页。
 
 // 非关键键白名单(quota 满时可清理重试):工具类临时态,丢了用户重新填即可。
 // ⚠ 不含案例/挂载/命盘等核心持久数据,避免误删用户的本命盘库。

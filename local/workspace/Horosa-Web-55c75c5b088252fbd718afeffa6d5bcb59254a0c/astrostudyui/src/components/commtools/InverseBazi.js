@@ -16,7 +16,7 @@ export default class InverseBazi extends Component{
 	constructor(props) {
 		super(props);
 
-        // 🛡 safeStorage:浏览器存储配额满 / 隐私模式 getItem 抛错也不让 constructor 崩 → 整个 commtools 抽屉黑屏。
+        // 🛡 safeStorage:WKWebView 配额满 / 私有模式 getItem 抛错也不让 constructor 崩 → 整个 commtools 抽屉黑屏。
         let json = safeLocalStorageGet(BaziInverseKey);
         let st = {};
         if(json){
@@ -58,7 +58,7 @@ export default class InverseBazi extends Component{
     }
 
     saveState(){
-        // 🛡 safeStorage:setItem 在 setState callback 内被调,配额满抛 QuotaExceededError → React 把异常冒到 ErrorBoundary → 组件崩。包 try/catch + 配额满自动清理重试。
+        // 🛡 safeStorage:setItem 在 setState callback 内被调,WKWebView quota 满抛 QuotaExceededError → React 把异常冒到 ErrorBoundary → 组件崩。包 try/catch + 配额满自动清理重试。
         try{
             const json = JSON.stringify(this.state);
             safeLocalStorageSet(BaziInverseKey, json);
@@ -100,7 +100,7 @@ export default class InverseBazi extends Component{
 		const data = await request(`${Constants.ServerRoot}/common/inversebazi`, {
 			body: JSON.stringify(params),
 		});
-		// 🔒 接口不可达/出错 → request 已 toast 提示;此处静默退出避免 data[ResultKey] 崩页(打包发行版更易触发白屏)
+		// 🔒 后端不可达/出错 → request 已 toast 提示;此处静默退出避免 data[ResultKey] 崩页(打包 app 内更易触发,WKWebView 弹白屏)
 		const result = data && data[Constants.ResultKey];
         if(!result || !result.Dates || !result.Dates.length){ return; }
         let dates = result.Dates;

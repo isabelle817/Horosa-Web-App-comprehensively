@@ -8,6 +8,7 @@ import calc, {
 	daYun, liuNian, liuYue, liuRi, judge, periodLiShu, guaRelations, chartExtras, duiGua, solarTermHuagong,
 	yaoText, guaInfo, yaoName, buildSnapshotText, NAME_TO_TRI, guaLines,
 	classifyErShu, zhongZong, shunFanShu, seasonFit, isXiongPair, mingGe,
+	wangShuai, jiNian, shiJi,
 } from '../../utils/heluoLocal';
 import { Gua64 } from '../gua/GuaConst';   // 复用 六爻/统摄法 的纳甲六亲世应
 import { saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
@@ -28,7 +29,7 @@ const LI_TERMS = ['立春', '立夏', '立秋', '立冬'];
 class HeLuoMain extends Component {
 	constructor(props) {
 		super(props);
-		this.state = { daxianKey: '', openYao: '', liunianKey: '', liuyueKey: '', yearForMonth: null, monthForDay: null };
+		this.state = { daxianKey: '', openYao: '', liunianKey: '', liuyueKey: '', yearForMonth: null, monthForDay: null, openJing: '' };
 		this.lastSnapKey = '';
 		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 	}
@@ -73,7 +74,7 @@ class HeLuoMain extends Component {
 		let text = '';
 		try{
 			const m = this.getModel();
-			text = m ? `${buildSnapshotText(m.chart, m.jg, m.dy) || ''}`.trim() : '';
+			text = m ? `${buildSnapshotText(m.chart, m.jg, m.dy, { season: m.extras && m.extras.season, opts: m.opts }) || ''}`.trim() : '';
 		}catch(e){
 			text = '';
 		}
@@ -132,14 +133,15 @@ class HeLuoMain extends Component {
 			date: dateStr,
 			time: timeMoment.format('HH:mm:ss'),
 			lon: fieldVal(f, 'lon', ''),
-			gender: fieldVal(f, 'gender', 1),
+			// 性别以左栏下拉(props.gender '1'/'0')为准，接线到本地引擎；缺省回退 fields。
+			gender: this.props.gender !== undefined ? Number(this.props.gender) : fieldVal(f, 'gender', 1),
 			timeAlg: fieldVal(f, 'timeAlg', 1),
 			after23NewDay: defaultAfter23NewDay(),
 			lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
 		};
 		// 实例 memo:输入签名(四柱参数+日界/晚子+取化工法)不变即返缓存,避免 render/componentDidUpdate→saveSnap/
 		// 快照 handler 多处反复跑「八字+calc+daYun+solarTerm+judge+extras」全量重算(卡顿根因)。算法不变。
-		const sig = JSON.stringify({ ...params, quHuaGong: this.props.quHuaGong || '' });
+		const sig = JSON.stringify({ ...params, quHuaGong: this.props.quHuaGong || '', opts: this.props.opts || {} });
 		if (this._modelKey === sig && Object.prototype.hasOwnProperty.call(this, '_modelCache')) {
 			return this._modelCache;
 		}
@@ -155,7 +157,7 @@ class HeLuoMain extends Component {
 		const birthYear = parseInt(dateStr.slice(0, 4), 10) || 0;
 		const gender = bazi.gender === 'Female' ? '女' : '男';
 		let chart;
-		try { chart = calc({ fourPillars, gender, hourZhi, birthYear, monthZhi }); } catch (e) { return cache(null); }
+		try { chart = calc({ fourPillars, gender, hourZhi, birthYear, monthZhi, opts: this.props.opts || {} }); } catch (e) { return cache(null); }
 		if (!chart.xian.name || !chart.hou.name) return cache(null);
 		const dy = daYun(chart.xian, chart.hou, birthYear);
 		const st = this.solarTerm(dateStr);
@@ -163,7 +165,7 @@ class HeLuoMain extends Component {
 		const nayinStr = (fc.year && (fc.year.naying || fc.year.nayin)) || '';
 		const nayin = '金木水火土'.includes(nayinStr.slice(-1)) ? nayinStr.slice(-1) : '';
 		const extras = chartExtras(chart, fourPillars, monthZhi, jg, { sanhou: st ? st.houLabel : '', nayin });
-		return cache({ fourPillars, monthZhi, hourZhi, birthYear, gender, chart, dy, jg, st, nayin: nayinStr, extras });
+		return cache({ fourPillars, monthZhi, hourZhi, birthYear, gender, chart, dy, jg, st, nayin: nayinStr, extras, opts: this.props.opts || {} });
 	}
 
 	saveSnap() {
@@ -173,7 +175,7 @@ class HeLuoMain extends Component {
 		const key = `${m.chart.xian.name}|${m.chart.xian.yuan}|${m.chart.hou.name}`;
 		if (key === this.lastSnapKey) return;
 		this.lastSnapKey = key;
-		const text = buildSnapshotText(m.chart, m.jg, m.dy);
+		const text = buildSnapshotText(m.chart, m.jg, m.dy, { season: m.extras && m.extras.season, opts: m.opts });
 		if (text) saveModuleAISnapshot('heluo', text, { source: 'react', savedAt: Date.now() });
 	}
 
@@ -223,9 +225,12 @@ class HeLuoMain extends Component {
 	}
 
 
-	renderGuaCard(title, gua, jg, najia, slot) {
+	renderGuaCard(title, gua, jg, najia, slot, season) {
 		const info = guaInfo(gua.name) || {};
 		const dui = duiGua(gua.name);
+		const ws = season ? wangShuai(gua.name, season) : null;
+		const jingKey = `jing:${slot}`;
+		const jingOpen = this.state.openJing === jingKey;
 		return (
 			<div className="horosa-huangji-info-card horosa-heluo-guacard">
 				<div className="horosa-huangji-info-heading">{title}</div>
@@ -234,11 +239,20 @@ class HeLuoMain extends Component {
 					<div className="horosa-heluo-guameta">
 						<div className="horosa-heluo-guaname">{gua.name}<span className="horosa-heluo-verdict">{info.verdict}</span></div>
 						<div className="horosa-heluo-yuanyao">元堂 · {yaoName(gua.lines, gua.yuan)}</div>
+						{ws ? <div className="horosa-heluo-wangshuai">卦气 · 内{ws.low.wuxing}{ws.low.state}／外{ws.up.wuxing}{ws.up.state}</div> : null}
 						<div className="horosa-heluo-gist">{info.gist}</div>
 						<div className="horosa-heluo-dui">互卦 {dui.hu} · 覆卦 {dui.fu}</div>
 						<div className="horosa-heluo-tags">{this.renderLiShu(gua.lines, jg)}</div>
+						<button type="button" className="horosa-heluo-jing-toggle" onClick={() => this.setState({ openJing: jingOpen ? '' : jingKey })}>{jingOpen ? '▾ 收起经文' : '▸ 经文（卦义·卦辞·总诀）'}</button>
 					</div>
 				</div>
+				{jingOpen ? (
+					<div className="horosa-heluo-jing">
+						{info.meaning ? <div className="horosa-heluo-jing-item"><b>卦义</b>{info.meaning}</div> : null}
+						{info.guaci ? <div className="horosa-heluo-jing-item"><b>卦辞</b>{info.guaci}</div> : null}
+						{info.zongjue ? <div className="horosa-heluo-jing-item"><b>总诀</b>{info.zongjue}</div> : null}
+					</div>
+				) : null}
 				{this.renderYaoci(gua.name, gua.yuan, gua.lines, slot)}
 			</div>
 		);
@@ -265,10 +279,11 @@ class HeLuoMain extends Component {
 		const yt = yaoText(guaName2, pos) || {};
 		const ni = (info.mingtiao || {})[slot || 'liunian'] || '';
 		const rels = chart ? guaRelations(lines, chart).filter((r) => r.indexOf('即') < 0) : [];
-		if (!yt.shige && !yt.detail && !ni) return <div className="horosa-heluo-yaoci-detail">（空爻·无条文）</div>;
+		if (!yt.shige && !yt.detail && !ni && !yt.yaoci) return <div className="horosa-heluo-yaoci-detail">（空爻·无条文）</div>;
 		return (
 			<div className="horosa-heluo-yaoci">
 				<div className="horosa-heluo-yaoci-head">{guaName2} · {yaoName(lines, pos)} <span className="horosa-heluo-verdict">{yt.verdict}</span>{rels.length ? <span className="horosa-heluo-yaoci-rel"> · {rels.join('，')}</span> : null}</div>
+				{yt.yaoci ? <div className="horosa-heluo-yaoci-yaoci"><b>易经爻辞</b>{yt.yaoci}</div> : null}
 				{yt.detail ? <div className="horosa-heluo-yaoci-detail"><b>摘要</b>{yt.detail}</div> : null}
 				{yt.shige ? <div className="horosa-heluo-yaoci-shige"><b>诗歌</b>{yt.shige}</div> : null}
 				{ni ? <div className="horosa-heluo-yaoci-simple"><b>易经爻辞推命</b>{ni}</div> : null}
@@ -322,7 +337,7 @@ class HeLuoMain extends Component {
 		const segs = m.dy.all;
 		const cur = segs.find((s) => `${s.gua}|${s.pos}|${s.ageStart}` === this.state.daxianKey);
 		if (!cur) return null;
-		const years = liuNian(cur, m.birthYear);
+		const years = liuNian(cur, m.birthYear, { step2: (m.opts && m.opts.liunianStep2) || 'ying' });
 		return (
 			<div className="horosa-heluo-drill">
 				<div className="horosa-heluo-block-subtitle">流年（{cur.ageStart}-{cur.ageEnd}岁 · {cur.gua}）· 点行看爻辞、点▾看流月</div>
@@ -359,11 +374,12 @@ class HeLuoMain extends Component {
 		if (!this.state.liunianKey || !y) return null;
 		const months = liuYue(y.lines, y.pos);
 		const YUE_JIE = { 寅: '立春', 卯: '惊蛰', 辰: '清明', 巳: '立夏', 午: '芒种', 未: '小暑', 申: '立秋', 酉: '白露', 戌: '寒露', 亥: '立冬', 子: '大雪', 丑: '小寒' };
+		const YUE_SEASON = { 寅: '春', 卯: '春', 辰: '春', 巳: '夏', 午: '夏', 未: '夏', 申: '秋', 酉: '秋', 戌: '秋', 亥: '冬', 子: '冬', 丑: '冬' };
 		return (
 			<div className="horosa-heluo-drill">
-				<div className="horosa-heluo-block-subtitle">流月（{y.age}岁 {y.ganzhi}年 · {y.gua}）· 点行看爻辞、点▾看流日</div>
+				<div className="horosa-heluo-block-subtitle">流月（{y.age}岁 {y.ganzhi}年 · {y.gua}）· 点行看爻辞、点▾看流日 · 旺衰按月令</div>
 				<table className="horosa-heluo-table">
-					<thead><tr><th>月</th><th>流月卦</th><th>动爻</th><th>理数</th><th /></tr></thead>
+					<thead><tr><th>月</th><th>流月卦</th><th>动爻</th><th>理数</th><th>旺衰</th><th /></tr></thead>
 					<tbody>
 						{months.map((mo) => {
 							const mkey = `${y.age}:${mo.month}`;
@@ -371,15 +387,17 @@ class HeLuoMain extends Component {
 							const drilled = this.state.liuyueKey === mkey;
 							const jieName = YUE_JIE[mo.zhi] || '';
 							const jieTs = this.jieQiLabel(mo.zhi === '丑' ? (y.year + 1) : y.year, jieName);
+							const mws = YUE_SEASON[mo.zhi] ? wangShuai(mo.gua, YUE_SEASON[mo.zhi]) : null;
 							return [
 								<tr key={mo.month} className={`${drilled ? 'is-active' : ''}${open ? ' is-open' : ''}`} onClick={() => this.setState({ openYao: open ? '' : `ly:${mkey}` })}>
 									<td>{mo.label}月{jieTs ? <div style={{ fontSize: '11px', opacity: 0.55, fontWeight: 'normal' }}>{jieName} {jieTs}</div> : null}</td>
 									<td>{mo.gua}</td>
 									<td>{yaoName(mo.lines, mo.pos)}</td>
 									<td className="horosa-heluo-tagcell">{this.liShuCell(mo.lines, m.jg, m.chart)}</td>
+									<td className="horosa-heluo-wscell">{mws ? `${mws.low.state}/${mws.up.state}` : '—'}</td>
 									{this.arrowCell(() => this.setState({ liuyueKey: drilled ? '' : mkey, monthForDay: mo }), drilled)}
 								</tr>,
-								open ? <tr key={`${mo.month}_d`} className="horosa-heluo-detailrow"><td colSpan={5}>{this.renderYaoci(mo.gua, mo.pos, mo.lines, 'liunian', m.chart)}</td></tr> : null,
+								open ? <tr key={`${mo.month}_d`} className="horosa-heluo-detailrow"><td colSpan={6}>{this.renderYaoci(mo.gua, mo.pos, mo.lines, 'liunian', m.chart)}</td></tr> : null,
 							];
 						})}
 					</tbody>
@@ -391,6 +409,7 @@ class HeLuoMain extends Component {
 
 	// 流日（点流月▾后出）：5 卦×6日=30日，动爻自初行至上；列 日|卦|动爻|理数
 	renderLiuRi(m) {
+		if (m.opts && m.opts.showLiuRi === false) return null;
 		const mo = this.state.monthForDay;
 		if (!this.state.liuyueKey || !mo) return null;
 		const days = liuRi(mo.lines, mo.pos);
@@ -424,7 +443,12 @@ class HeLuoMain extends Component {
 		const eshu = classifyErShu(chart.tian, chart.di);
 		const mg = mingGe(chart, jg);
 		const xp = isXiongPair(chart.xian.lines, chart.hou.lines);
+		const jn = jiNian(m.birthYear, { huangdiOffset: (m.opts && m.opts.huangdiOffset) || 2697 });
+		const sj = shiJi(chart, jg);
+		const wsX = extras.season ? wangShuai(chart.xian.name, extras.season) : null;
+		const wsH = extras.season ? wangShuai(chart.hou.name, extras.season) : null;
 		const rows = [
+			['紀年', jn ? `黃帝 ${jn.huangdi} 年 · ${jn.yuan}${jn.yunNo}運 · ${jn.ganzhi}` : '—'],
 			['簡斷', extras.jianDuan],
 			['數理', `天數 ${chart.tian}·${extras.shuLi.tian}　地數 ${chart.di}·${extras.shuLi.di}`],
 			['數名', `${eshu.primary || '—'}${eshu.severity.length ? `（${eshu.severity.join('·')}）` : ''}`],
@@ -434,6 +458,8 @@ class HeLuoMain extends Component {
 			['先後天八卦變化', extras.bianYi],
 			['五命', `${m.fourPillars.year}生人・${m.nayin || ''}${extras.benWei.length ? `（${extras.benWei.join('、')}）` : ''}`],
 			['命格', `吉${mg.jiCount}/12 ${mg.jiGe || '—'}　凶${mg.xiongCount}/12 ${mg.xiongGe || '—'}`],
+			['十吉', sj ? `${sj.hitCount}/10　${sj.hit.join('、') || '—'}` : '—'],
+			['卦氣旺衰', (wsX || wsH) ? `先天 内${wsX ? `${wsX.low.wuxing}${wsX.low.state}` : '—'}/外${wsX ? `${wsX.up.wuxing}${wsX.up.state}` : '—'}　后天 内${wsH ? `${wsH.low.wuxing}${wsH.low.state}` : '—'}/外${wsH ? `${wsH.up.wuxing}${wsH.up.state}` : '—'}` : '—'],
 			['命局對體', xp ? `先後天${xp}（凶·防災咎）` : '—'],
 		];
 		return (
@@ -448,8 +474,8 @@ class HeLuoMain extends Component {
 						<div className="horosa-huangji-info-row" key={i}><span>{r[0]}</span><strong>{r[1]}</strong></div>
 					))}
 				</div>
-				{this.renderGuaCard('先天卦（本命·主前段）', chart.xian, jg, this.najia(chart.xian.name), 'xiantian')}
-				{this.renderGuaCard('后天卦（主后段）', chart.hou, jg, this.najia(chart.hou.name), 'houtian')}
+				{this.renderGuaCard('先天卦（本命·主前段）', chart.xian, jg, this.najia(chart.xian.name), 'xiantian', extras.season)}
+				{this.renderGuaCard('后天卦（主后段）', chart.hou, jg, this.najia(chart.hou.name), 'houtian', extras.season)}
 				{this.renderDaxian(m)}
 			</div>
 		);
@@ -491,6 +517,22 @@ class HeLuoMain extends Component {
 							['元堂', `${jg.yuanTang.dangWei ? '当位' : '不当位'}·${jg.yuanTang.youYing ? '有应' : '无应'}·${jg.yuanTang.heLi ? '顺气' : '逆气'}`],
 							['判格', jg.xie ? '葉（藏元气/化工）' : '不葉'],
 						])}
+						{(() => {
+							const season = m.extras && m.extras.season;
+							const wx = season ? wangShuai(chart.xian.name, season) : null;
+							const wh = season ? wangShuai(chart.hou.name, season) : null;
+							const sj = shiJi(chart, jg);
+							const jn = jiNian(m.birthYear, { huangdiOffset: (m.opts && m.opts.huangdiOffset) || 2697 });
+							const miss = sj ? sj.items.filter((x) => !x.ok).map((x) => x.name) : [];
+							return card('断验 · 卦气旺衰 / 十吉 / 纪年', [
+								['时令', season || '—'],
+								['先天卦气', wx ? `内 ${wx.low.wuxing}${wx.low.state}／外 ${wx.up.wuxing}${wx.up.state}` : '—'],
+								['后天卦气', wh ? `内 ${wh.low.wuxing}${wh.low.state}／外 ${wh.up.wuxing}${wh.up.state}` : '—'],
+								['十吉·合', sj ? `${sj.hitCount}/10${sj.hit ? '　' + (sj.hit.join('、') || '—') : ''}` : '—'],
+								['十吉·缺', miss.length ? miss.join('、') : '（俱全）'],
+								['纪年', jn ? `黄帝 ${jn.huangdi} 年 · ${jn.yuan}${jn.yunNo}运 · ${jn.ganzhi}` : '—'],
+							]);
+						})()}
 					</div>
 				</TabPane>
 			</Tabs>

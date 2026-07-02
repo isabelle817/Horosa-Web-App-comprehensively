@@ -8,6 +8,9 @@ import { getErrMsg } from '../msg/errmsg';
 import { markServiceOnline, markServiceOffline, isBackendUnreachableError } from './serviceStatus';
 
 var tmDelta = 0;
+// eslint-disable-next-line import/no-cycle
+import { dedupeEligible, dedupedRequest } from './requestDedupe';
+
 export function setTmDelta(val){
     tmDelta = val;
 }
@@ -470,6 +473,15 @@ async function fetchWithRetryConnRefused(url, opts, timeoutMs, retryCfg){
  * @return {object}           An object containing either "data" or "err"
  */
 export default async function request(url, options) {
+    // 计算类幂等端点:同参进行中共享一次往返 + 30s 会话缓存(白名单内;返回深拷贝;
+    // perfFlag horosa.perf.requestDedupe 可关)。白名单外 100% 走原路径零差异。
+    if (dedupeEligible(url, options)) {
+        return dedupedRequest(url, options, () => requestCore(url, options));
+    }
+    return requestCore(url, options);
+}
+
+async function requestCore(url, options) {
     const silent = !!(options && (options.silent || options.disableLoading));
     if(dispatch && !silent){
         dispatch({

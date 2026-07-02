@@ -144,8 +144,17 @@ class AstroPlanetaryArc extends Component{
 	}
 
 	async requestDirection(params){
-		const data = await request(`${Constants.ServerRoot}/predict/planetaryarc`, { body: JSON.stringify(params) });
-		const result = data[Constants.ResultKey];
+		// 空回包/请求失败防御(与 AstroProfection 同款):后端未就绪等场景不产生 Unhandled Rejection 红屏。
+		let data = null;
+		try{
+			data = await request(`${Constants.ServerRoot}/predict/planetaryarc`, { body: JSON.stringify(params) });
+		}catch(e){
+			return;
+		}
+		const result = data ? data[Constants.ResultKey] : null;
+		if(!result){
+			return;
+		}
 		const tm = new DateTime();
 		const dt = tm.parse(params.datetime, 'YYYY-MM-DD HH:mm:ss');
 		if(params.dirZone){ dt.setZone(params.dirZone); }

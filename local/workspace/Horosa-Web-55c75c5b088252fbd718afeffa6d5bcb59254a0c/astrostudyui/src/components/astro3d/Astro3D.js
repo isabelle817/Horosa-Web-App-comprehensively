@@ -9,7 +9,6 @@ import helvetica from '../../assets/helvetica.json';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import * as AstroHelper from '../astro/AstroHelper';
-import { Chart3DServer,} from '../../utils/constants';
 import { setLoading, setLoadingText,} from '../../utils/request';
 import { getAzimuthStr } from '../../utils/helper';
 import { calcNormalVector, } from '../graph/GraphHelper';
@@ -558,25 +557,15 @@ class Astro3D {
 		loader.setCrossOrigin('*');
 		const dracoLoader = new DRACOLoader();
 		loader.setDRACOLoader( dracoLoader );
+		// 3D 行星模型只从本地静态资源加载:历史远端模型源已下线,且桌面版承诺
+		// 排盘功能零额外出站(隐私政策·网络说明的据实基础)。本地缺模型文件时
+		// 由 loader error 立即降级简化模式,不再有远端重试/等待。
 		const localSource = {
 			name: 'local',
 			modelUrl: './gltf/planets4k.glb',
 			decoderPath: './gltf/draco/',
 		};
-		const remoteSource = {
-			name: 'remote',
-			modelUrl: `${Chart3DServer}/gltf/planets4k.glb`,
-			decoderPath: `${Chart3DServer}/gltf/draco/`,
-		};
-		const preferRemote = typeof window !== 'undefined'
-			&& (
-				window.location.protocol === 'file:'
-				|| window.location.hostname === '127.0.0.1'
-				|| window.location.hostname === 'localhost'
-			);
-		const modelSources = preferRemote
-			? [remoteSource, localSource]
-			: [localSource, remoteSource];
+		const modelSources = [localSource];
 		let sourceIdx = 0;
 		let settled = false;
 		let timeoutId = setTimeout(()=>{

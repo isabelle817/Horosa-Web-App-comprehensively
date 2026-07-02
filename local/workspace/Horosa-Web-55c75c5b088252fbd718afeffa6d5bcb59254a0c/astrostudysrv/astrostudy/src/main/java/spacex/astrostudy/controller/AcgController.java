@@ -25,6 +25,25 @@ public class AcgController {
 	}
 
 	@ResponseBody
+	@RequestMapping("/acgevent")
+	public void acgevent(){
+		// 世运事件时刻查找(kind/direction/fromDate)——与出生数据无关,独立轻请求
+		Map<String, Object> params = new HashMap<String, Object>();
+		if(TransData.containsParam("kind")) {
+			params.put("kind", TransData.get("kind"));
+		}
+		if(TransData.containsParam("direction")) {
+			params.put("direction", TransData.get("direction"));
+		}
+		if(TransData.containsParam("fromDate")) {
+			params.put("fromDate", TransData.get("fromDate"));
+		}
+		Map<String, Object> res = AstroHelper.getAcgEvent(params);
+
+		TransData.set(res);
+	}
+
+	@ResponseBody
 	@RequestMapping("/acgpoint")
 	public void acgpoint(){
 		Map<String, Object> params = getParams();
@@ -38,6 +57,9 @@ public class AcgController {
 		params.put("clickLon", TransData.get("clickLon"));
 		if(TransData.containsParam("orb")) {
 			params.put("orb", TransData.get("orb"));
+		}
+		if(TransData.containsParam("hsys")) {
+			params.put("hsys", TransData.get("hsys"));
 		}
 		Map<String, Object> res = AstroHelper.getAcgPoint(params);
 
@@ -81,7 +103,63 @@ public class AcgController {
 		params.put("zone", TransData.get("zone"));
 		params.put("lat", TransData.get("lat"));
 		params.put("lon", TransData.get("lon"));
-		
+		// 占星地图口径开关(默认由 Python 侧兜底=现状,零回归)
+		if(TransData.containsParam("mode")) {
+			params.put("mode", TransData.get("mode"));
+		}
+		if(TransData.containsParam("lsMode")) {
+			params.put("lsMode", TransData.get("lsMode"));
+		}
+		if(TransData.containsParam("geodetic")) {
+			params.put("geodetic", TransData.get("geodetic"));
+		}
+		if(TransData.containsParam("geodeticVar")) {
+			params.put("geodeticVar", TransData.get("geodeticVar"));
+		}
+		if(TransData.containsParam("cuspLines")) {
+			params.put("cuspLines", TransData.get("cuspLines"));
+		}
+		if(TransData.containsParam("hsys")) {
+			params.put("hsys", TransData.get("hsys"));
+		}
+		if(TransData.containsParam("coord")) {
+			params.put("coord", TransData.get("coord"));
+		}
+		if(TransData.containsParam("ayanamsa")) {
+			params.put("ayanamsa", TransData.get("ayanamsa"));
+		}
+		if(TransData.containsParam("stars")) {
+			params.put("stars", TransData.get("stars"));
+		}
+		if(TransData.containsParam("ccgDate")) {
+			params.put("ccgDate", TransData.get("ccgDate"));
+		}
+		if(TransData.containsParam("ccgTime")) {
+			params.put("ccgTime", TransData.get("ccgTime"));
+		}
+		if(TransData.containsParam("ccgMix")) {
+			params.put("ccgMix", TransData.get("ccgMix"));
+		}
+		// 关系盘(davison/composite/synastry)+ B 盘出生数据
+		if(TransData.containsParam("relMode")) {
+			params.put("relMode", TransData.get("relMode"));
+		}
+		if(TransData.containsParam("relDate")) {
+			params.put("relDate", TransData.get("relDate"));
+		}
+		if(TransData.containsParam("relTime")) {
+			params.put("relTime", TransData.get("relTime"));
+		}
+		if(TransData.containsParam("relZone")) {
+			params.put("relZone", TransData.get("relZone"));
+		}
+		if(TransData.containsParam("relLat")) {
+			params.put("relLat", TransData.get("relLat"));
+		}
+		if(TransData.containsParam("relLon")) {
+			params.put("relLon", TransData.get("relLon"));
+		}
+
 		return params;
 	}
 	

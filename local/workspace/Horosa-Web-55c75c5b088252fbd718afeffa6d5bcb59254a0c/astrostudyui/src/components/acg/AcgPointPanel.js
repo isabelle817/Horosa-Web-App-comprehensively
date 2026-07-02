@@ -14,6 +14,7 @@ const PLANET_CN = {
 };
 const ANGLE_CN = { [AstroConst.ASC]: '上升', [AstroConst.DESC]: '下降', [AstroConst.MC]: '中天', [AstroConst.IC]: '天底' };
 const SIGN_CN = ['白羊', '金牛', '双子', '巨蟹', '狮子', '处女', '天秤', '天蝎', '射手', '摩羯', '水瓶', '双鱼'];
+const HSYS_NAME = { P: '普拉西德', K: '柯赫', W: '整宫', A: '等宫', D: '等宫(MC)', V: '维罗', N: '0°白羊', O: '波菲利', B: '阿卡比特', R: '雷乔蒙塔努斯', C: '坎帕努斯', T: '站心', X: '子午宫', M: '莫林', U: '克鲁辛斯基', Y: 'APC', H: '地平宫', G: '高奎林' };
 
 function glyph(k) { return (AstroText.AstroMsg && AstroText.AstroMsg[k]) || ''; }
 function fmtLat(v) { return `${Math.abs(v).toFixed(2)}°${v >= 0 ? 'N' : 'S'}`; }
@@ -31,6 +32,8 @@ class AcgPointPanel extends Component {
 		const { open, onClose, loading, report } = this.props;
 		const hits = (report && report.hits) || [];
 		const ra = (report && report.relocAngles) || null;
+		const sidA = (report && report.sidAngles) || null;   // 恒星黄道读数(选了 ayanamsa)
+		const sidC = (report && report.sidCusps) || null;
 		const ANGLE_ORDER = [AstroConst.ASC, AstroConst.MC, AstroConst.DESC, AstroConst.IC];
 
 		return (
@@ -73,13 +76,35 @@ class AcgPointPanel extends Component {
 
 						{ra ? (
 							<div style={{ marginTop: 16 }}>
-								<div style={{ fontWeight: 600, margin: '6px 0' }}>迁移四轴（此地起盘）</div>
+								<div style={{ fontWeight: 600, margin: '6px 0' }}>
+									迁移四轴（此地起盘）
+									{report.ayanVal !== undefined ? <span style={{ fontWeight: 400, opacity: 0.6, fontSize: 12, marginLeft: 6 }}>· 恒星岁差 {report.ayanVal}°</span> : null}
+								</div>
 								{ANGLE_ORDER.map((a) => (
 									<div key={a} style={{ fontSize: 13, padding: '3px 0', display: 'flex', justifyContent: 'space-between' }}>
 										<span><span style={{ ...GLYPH, marginRight: 6 }}>{glyph(a)}</span>{ANGLE_CN[a]}</span>
-										<span>{ra[a] !== undefined ? signDeg(ra[a]) : '—'}</span>
+										<span>
+											{ra[a] !== undefined ? signDeg(ra[a]) : '—'}
+											{sidA && sidA[a] !== undefined ? <span style={{ opacity: 0.55, marginLeft: 8 }}>恒 {signDeg(sidA[a])}</span> : null}
+										</span>
 									</div>
 								))}
+							</div>
+						) : null}
+
+						{report.cusps && report.cusps.length === 12 ? (
+							<div style={{ marginTop: 16 }}>
+								<div style={{ fontWeight: 600, margin: '6px 0' }}>
+									重置盘十二宫尖（{HSYS_NAME[report.hsys] || report.hsys || '整宫'}）
+								</div>
+								<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 18px' }}>
+									{report.cusps.map((c, i) => (
+										<div key={i} style={{ fontSize: 12.5, padding: '2px 0', display: 'flex', justifyContent: 'space-between' }}>
+											<span style={{ opacity: 0.65 }}>{i + 1}宫</span>
+											<span>{signDeg(c)}{sidC && sidC[i] !== undefined ? <span style={{ opacity: 0.55, marginLeft: 6 }}>恒 {signDeg(sidC[i])}</span> : null}</span>
+										</div>
+									))}
+								</div>
 							</div>
 						) : null}
 					</div>

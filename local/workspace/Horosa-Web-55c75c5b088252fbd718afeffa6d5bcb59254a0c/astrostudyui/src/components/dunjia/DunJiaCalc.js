@@ -2232,7 +2232,7 @@ export function calcDunJia(fields, nongli, options, context){
 			qijuMethodLabel: getOptionLabel(QIJU_METHOD_OPTIONS, opts.qijuMethod),
 			schoolLabel: getOptionLabel(SCHOOL_OPTIONS, opts.school),
 			// 当前实际所用定局法:数字盘=报数定局;各家自有定局(年/月/日/刻);时家/综合用拆补/置闰/茅山/无闰选择。
-			dingFaLabel: (opts.qijuMethod === 'shuzi' && shuziInfo) ? '阴盘·报数定局(§5.5 通则)'
+			dingFaLabel: (opts.qijuMethod === 'shuzi' && shuziInfo) ? '阴盘·报数定局'
 				: opts.paiPanType === 0 ? '三元起宫·皆阴遁'
 					: opts.paiPanType === 1 ? (normalizeNum(opts.yueJiaQiJuType, 0) === 1 ? '年支直取·皆阴遁' : '年符头定局·皆阴遁')
 						: opts.paiPanType === 2 ? '节气三元·六十日一局'
@@ -2294,12 +2294,12 @@ export function buildDunJiaSnapshotText(pan){
 	lines.push(`定局法：${pan.options.dingFaLabel || pan.options.qijuMethodLabel}`);
 	lines.push(`盘式：${pan.options.schoolLabel || '转盘（排宫）'}`);
 	if(pan.shuziInfo){
-		lines.push(`阴盘起局：报数 ${pan.shuziInfo.digits}，各位求和 ${pan.shuziInfo.sum}，除9(余0作9)定局数；用神宫 ${pan.shuziInfo.gong} 宫（${pan.shuziInfo.gua}·${pan.shuziInfo.direction}）。阴阳遁按节气、局已据报数置换；阴盘奇门取数与余数映射各家有别(§5.5 通则)，断盘侧重用神宫象意。`);
+		lines.push(`阴盘起局：报数 ${pan.shuziInfo.digits}，各位求和 ${pan.shuziInfo.sum}，除9(余0作9)定局数；用神宫 ${pan.shuziInfo.gong} 宫（${pan.shuziInfo.gua}·${pan.shuziInfo.direction}）。阴阳遁按节气、局已据报数置换；阴盘奇门取数与余数映射各家有别，断盘侧重用神宫象意。`);
 	}
 	if(pan.school === '飞盘'){
 		lines.push('飞盘体系：洛书飞布九星九门九神（含中宫），九神为符蛇阴合勾常雀地天。');
 	} else if(pan.school === '混合'){
-		lines.push('飞转混合（专题§4.2）：九星=排宫(转盘·星寄坤2不入中、天禽)，八门=飞宫(飞盘·可入中5)，九神=飞泊(含中宫)。');
+		lines.push('飞转混合：九星=排宫(转盘·星寄坤2不入中、天禽)，八门=飞宫(飞盘·可入中5)，九神=飞泊(含中宫)。');
 	}
 	lines.push(`空亡方式：${pan.options.kongModeLabel}`);
 	lines.push(`驿马方式：${pan.options.yimaModeLabel}`);

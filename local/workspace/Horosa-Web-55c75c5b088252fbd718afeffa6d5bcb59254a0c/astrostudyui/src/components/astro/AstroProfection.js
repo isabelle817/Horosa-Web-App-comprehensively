@@ -240,10 +240,20 @@ class AstroProfection extends Component{
 	}
 
 	async requestDirection(params){
-		const data = await request(`${Constants.ServerRoot}/predict/profection`, {
-			body: JSON.stringify(params),
-		});
-		const result = data[Constants.ResultKey];
+		// 空回包/请求失败防御:后端未就绪、无效生辰等场景 request 可能抛错或返回空——
+		// 静默保持现盘,不产生 Unhandled Rejection(此前 data 为 undefined 时读 Result 直接炸红屏)。
+		let data = null;
+		try{
+			data = await request(`${Constants.ServerRoot}/predict/profection`, {
+				body: JSON.stringify(params),
+			});
+		}catch(e){
+			return;
+		}
+		const result = data ? data[Constants.ResultKey] : null;
+		if(!result){
+			return;
+		}
 		let tm = new DateTime();
 		let dt = tm.parse(params.datetime, 'YYYY-MM-DD HH:mm:ss');
 		if(params.dirZone){

@@ -17,6 +17,7 @@ const SEV = {
 	high: { cn: '较重', cls: 'sev-high' },
 	medium: { cn: '中等', cls: 'sev-medium' },
 	low: { cn: '轻微', cls: 'sev-low' },
+	info: { cn: '注记', cls: 'sev-info' },
 };
 const VERD = { good: { cn: '吉', color: '#2f9e6f' }, neutral: { cn: '平', color: '#3b82f6' }, caution: { cn: '留意', color: '#d2a01f' }, bad: { cn: '凶', color: '#cf5b45' } };
 const GRADE = {
@@ -37,9 +38,9 @@ class ElectionJudgment extends Component{
 		try{ const t = buildElectionSnapshot(this._j); if(t && t !== _lastElectionSnap){ _lastElectionSnap = t; saveModuleAISnapshot('election', t, {}); } }catch(e){ /* noop */ }
 	}
 	render(){
-		const { chart, topicId, natalFacts, mundaneSet } = this.props;
+		const { chart, topicId, natalFacts, mundaneSet, westSchool, surgeryPart, crisisBase } = this.props;
 		let j = null; let err = null;
-		try{ j = chart ? runElection(chart, topicId, natalFacts, mundaneSet) : null; }catch(e){ err = e; console.error('runElection failed', e); }
+		try{ j = chart ? runElection(chart, topicId, natalFacts, mundaneSet, { westSchool, surgeryPart, crisisBase }) : null; }catch(e){ err = e; console.error('runElection failed', e); }
 		this._j = j;
 		if(!chart) return <div className="horosa-divi-judge"><div className="horosa-divi-note">排盘中…</div></div>;
 		if(err || !j) return <div className="horosa-divi-judge"><div className="horosa-divi-note">判断生成失败：{String((err && err.message) || err || '无结果')}</div></div>;
@@ -137,6 +138,13 @@ class ElectionJudgment extends Component{
 							<div className="horosa-divi-card-head">月亮入相位（应期：约 1°≈1 时间单位）</div>
 							{moonApply.length ? moonApply.map((a, i) => <div key={i} className="horosa-divi-testi"><span className="dot">·</span><span>月 → {cn(a.other)} {ASPECT_CN[a.angle] || a.angle + '°'}（尚差 {a.orb.toFixed(1)}°）</span></div>) : <div className="horosa-divi-line">月亮无入相位（或已空亡）。</div>}
 						</div>
+						{j.crisis ? (
+							<div className="horosa-divi-card">
+								<div className="horosa-divi-card-head">危象日参照（手术·~7 日律）</div>
+								<div className="horosa-divi-line">{j.crisis.text}</div>
+								<div className="horosa-divi-note" style={{ marginTop: 4 }}>月自病始每行 45°（约 3.5 日）为一危象节点：45/90/180/270°。手术宜避危象节点前后，纯参照不计分。</div>
+							</div>
+						) : null}
 						<div className="horosa-divi-note">把择日盘当事件本命盘：宫内星＝初期，宫主星＝后期；多个相位在同一时段成正相位 → 该期影响显著。</div>
 					</div>
 				</TabPane>

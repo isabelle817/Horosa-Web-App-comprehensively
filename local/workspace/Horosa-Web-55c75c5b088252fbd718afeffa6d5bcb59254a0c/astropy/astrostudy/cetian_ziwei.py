@@ -24,8 +24,32 @@
 import math
 
 import swisseph as swe
-import streamlit as st
 from dataclasses import dataclass, field
+
+# streamlit 是上游模块自带 UI 框架的依赖:本仓桌面运行链只用本文件的排盘计算
+# (compute_cetian_ziwei_chart 与常量表),render_* 渲染函数不被调用,亦不打包
+# streamlit(及其 pyarrow/pandas/plotly 依赖树,≈330MB)。此处提供兼容桩:
+#   - cache_data 退化为透传装饰器(桌面侧上层已有参数缓存,无需此层;并避免
+#     lru_cache 返回共享引用被调用方改写的语义差异);
+#   - 其余属性为 no-op(仅当误调渲染函数时静默,不影响计算)。
+# 上游开发环境装有 streamlit 时 try 分支原样生效,行为不变。
+# 配套哨兵:tests/test_runtime_deps_slim.py(新增顶层重依赖会变红)。
+try:
+    import streamlit as st  # type: ignore
+except ImportError:
+    class _StreamlitStub(object):
+        @staticmethod
+        def cache_data(**_kwargs):
+            def _wrap(fn):
+                return fn
+            return _wrap
+
+        def __getattr__(self, _name):
+            def _noop(*_args, **_kw):
+                return None
+            return _noop
+
+    st = _StreamlitStub()
 
 # ============================================================
 # 常量 (Constants)

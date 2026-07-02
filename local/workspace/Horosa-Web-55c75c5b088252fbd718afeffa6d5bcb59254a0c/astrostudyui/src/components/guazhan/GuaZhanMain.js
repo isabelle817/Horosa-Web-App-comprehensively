@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { createSignatureMemo } from '../../utils/memoBySignature';
 import { Checkbox, message } from 'antd';
 import { XQButton as Button, XQInputNumber as InputNumber, XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
 import * as Constants from '../../utils/constants';
@@ -357,7 +358,7 @@ class GuaZhanMain extends Component{
 			rightPanelTab: 'overview',
 			liuyaoSettings: normalizeLiuyaoSettings(null),
 		};
-		this._liuyaoCache = { key: null, analysis: null };
+		this._liuyaoMemo = createSignatureMemo(4);
 
 		this.unmounted = false;
 		this.lastRestoredCaseId = null;
@@ -483,14 +484,16 @@ class GuaZhanMain extends Component{
 		yao.forEach((y, i)=>{ if(y.change){ moving.push(i + 1); } });
 		const settings = normalizeLiuyaoSettings(st.liuyaoSettings);
 		const key = [st.currentGua, moving.join('-'), dayGz, monthGz, yearGz, JSON.stringify(settings)].join('|');
-		if(this._liuyaoCache.key === key){ return this._liuyaoCache.analysis; }
+		// 单槽升 4 槽 LRU:切流派/切卦往返(A→B→A)免重算 analyzeLiuyao
+		const hit = this._liuyaoMemo.get(key);
+		if(hit !== undefined){ return hit; }
 		const ctx = {
 			dayGan: dayGz.length >= 2 ? dayGz[0] : null, dayZhi: dayGz.length >= 2 ? dayGz[1] : null,
 			monthGan: monthGz.length >= 2 ? monthGz[0] : null, monthZhi: monthGz.length >= 2 ? monthGz[1] : null,
 			yearGan: yearGz.length >= 2 ? yearGz[0] : null, yearZhi: yearGz.length >= 2 ? yearGz[1] : null,
 		};
 		const analysis = analyzeLiuyao(nowGua, moving, ctx, settings);
-		this._liuyaoCache = { key, analysis };
+		this._liuyaoMemo.set(key, analysis);
 		return analysis;
 	}
 
