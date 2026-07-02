@@ -31,6 +31,62 @@ caught before release.
 
 Tracked-harness changes (`desktop_installer_bundle/electron/*`, `scripts/*`) don't need layers 1–2 (git-safe or ships-in-exe), but DO need layer 3 (sentinel) — and gitignored harness files are additionally inventoried in `HARNESS_MANIFEST.md` (below) so a silent loss is detectable and recoverable from the shipped exe's `app.asar`.
 
+## 增量更新契约 (DELTA-V2 — differential updates that survive any Mac change)
+
+electron-updater's blockmap differential download is only as good as the packaging structure lets it
+be: measured on the old single-tar format, a version upgrade reused just **16.8%** of the installer
+(~622MB re-downloaded). The DELTA-V2 structure (per-file payload tree + Spring Boot exploded backend)
+makes cross-version downloads track the **true change** instead of the total. These invariants are
+**self-enforcing** — `release_selfcheck.py` gates (`payload tree format + path budget`,
+`installer size ceiling`, `differential efficiency`) hard-fail a release that violates them, so any
+future session/agent inherits the mechanism without needing to understand it.
+
+**The seven invariants:**
+
+1. **Payload = a file tree, NEVER a monolithic archive.** `stage-runtime.cjs` packs
+   `build/app-runtime-packed/` as `runtime/` + `project/` + `payload-manifest.json` (format 2:
+   per-file `path/size/sha256`, payloadId = manifest hash). A tar/zip payload avalanches its whole
+   compressed stream on any byte change → delta dies. (Contract-recorded exception: a subtree may be
+   short-name-archived ONLY to satisfy invariant 4's path budget, and must be noted here.)
+2. **Backend ships in Spring Boot's official exploded form** (`bundle/astrostudyboot-exploded/`:
+   BOOT-INF/lib per-jar + deterministic `horosa-classes.jar` + classpath.idx + MANIFEST.MF + the
+   staging-written `.horosa-exploded.json` marker with `bundleFingerprint`). The 324MB fat jar, the
+   machine-built uber jar, and CDS `.jsa` archives must NOT enter the payload — each would change
+   wholesale every backend release and ruin the delta. `build-uber-jar.py extract` (build machine) and
+   `merge-tree` (user machine) share one merge implementation, proven CONTENT_EQUIVALENT to the legacy
+   fat→uber path (118,728 entries, 0 mismatches).
+3. **Deterministic derived artifacts.** `horosa-classes.jar` is built with sorted entries + zeroed zip
+   timestamps + fixed compression (DETERMINISTIC_ZIP) so unchanged content is byte-identical across
+   builds. electron-builder's app-64.7z is already differential-friendly by design (non-solid,
+   `-mtm/-mta/-mtc=off`); do NOT change `compression`/archive options without re-running the
+   double-build determinism proof.
+4. **Path budget ≤160 chars** for every payload-relative path (NSIS 3.0.4.1 has no long-path manifest
+   and installs via MAX_PATH-bound SHFileOperation; the budget leaves prefix headroom). Enforced at
+   staging (`assertPayloadPathBudget`) AND at release (selfcheck gate).
+5. **Release hygiene:** the previous release's `.exe` + `.blockmap` assets stay published when N+1
+   ships (the updater derives the old blockmap URL by version substitution — never delete/draft the
+   prior release first); all releases build on the same machine/OS (LZMA2 multithreading drifts bytes
+   across machines — a cross-OS build measured ~97% delta on identical content); every release passes
+   the `differential efficiency` gate (bump releases: download ≤ truly-changed-bytes ×1.5 +50MB;
+   overwrites: informational; `HOROSA_DELTA_BASELINE_RESET=1` for declared format migrations).
+6. **Updater identity frozen:** `updaterCacheDirName` / productName / `perMachine:false` must not
+   change — the NSIS template self-seeds `%LOCALAPPDATA%\<updaterCacheDirName>\installer.exe` on every
+   install, which is why even a manually-downloaded install gets a DIFFERENTIAL first auto-update.
+7. **The mechanism lives ONLY in the Windows harness + this overlay** (stage-runtime.cjs,
+   service-manager.js, build-uber-jar.py, delta-report.py, selfcheck — all HARNESS_MANIFEST-tracked)
+   with ZERO structural coupling to the product source: the payload manifest scans whatever the tree
+   contains. A Mac sync can add/rename/move/delete anything and the delta simply tracks it — and can
+   never clobber the machinery itself.
+
+**Mac-sync playbook** (when a sync trips a gate — full steps in SKILL.md「增量更新」):
+- Path-budget gate trips → shorten/short-name-archive the offending subtree (invariant 1 exception, record it here).
+- Size-ceiling gate trips (huge new assets) → the sanctioned escape hatch is `nsis-web + differentialPackage`.
+- Staging explode asserts trip (Spring Boot layout changed upstream) → fix `extract_tree`'s asserts, or ship
+  ONE release with `HOROSA_SHIP_FAT_JAR=1` (legacy tar+fat-jar format; sentinel-guarded emergency path,
+  delta poor for that release only) and return to tree format next release.
+- After every Mac sync, run `python scripts/delta-report.py` against the live blockmap before releasing —
+  the delta composition should match what the sync actually changed.
+
 ## The adaptations (17)
 
 > **Round-3 note — the dominant Windows perf fix is NOT in this overlay.** Measured: Windows Defender on-access
