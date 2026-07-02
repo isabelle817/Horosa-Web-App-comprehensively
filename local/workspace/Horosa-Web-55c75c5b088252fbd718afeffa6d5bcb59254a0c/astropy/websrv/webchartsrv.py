@@ -507,4 +507,110 @@ if __name__ == '__main__':
     cherrypy.engine.start()
     # P0 启动握手:监听后向 stdout 报端口,壳/launcher 可确认「此端口确为本次起的 chart 后端」(消 TOCTOU/误判)。
     print('HOROSA_READY chart_port={0}'.format(chart_port), flush=True)
+
+    # v3.0.1 perf ROUND-3 R3 (HOROSA_XUANSHI_WARMUP): the kentang registry's LazyMountedService
+    # (marker: HOROSA_KENTANG_LAZY_MOUNT) defers webxuanshisrv's heavy import chain (xuanshi's 5
+    # submodules + 99MB SQLite bundles) OFF the startup path. That saves ~5-10s of Windows cold
+    # import, BUT it shifts the cost to the first user click on the 玄学史 tab. To hide that
+    # click-latency behind idle time — same trick Round-2's chartProbeWarmupPromise (service-manager
+    # side) plays for the /chart cold path — spawn a background daemon thread that sleeps 5s
+    # (past the visible-window paint) then imports webxuanshisrv once. Non-blocking, non-fatal on
+    # error, idempotent (importlib memoizes in sys.modules). Kill-switch: HOROSA_XUANSHI_WARMUP=0
+    # (or if lazy mount itself is disabled via HOROSA_KENTANG_LAZY_MOUNT=0, warmup is redundant
+    # anyway since the module was already eagerly imported at mount time).
+    def _horosa_xuanshi_warmup():
+        import os as _os_wu
+        import time as _time_wu
+        import threading as _threading_wu
+        import importlib as _importlib_wu
+        if _os_wu.environ.get('HOROSA_XUANSHI_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
+            return
+        def _run():
+            try:
+                _time_wu.sleep(20.0)
+                _importlib_wu.import_module('websrv.webxuanshisrv')
+                # v3.0.1 perf ROUND-4 R4 (HOROSA_XUANSHI_WARMUP): also materialize the 玄学史 global
+                # summary once so the FIRST /xuanshi/summary click hits an already-warm cache instead of
+                # paying the full-table load_events() SELECT + translation-join + celestial load on the
+                # visible path. global_summary() is pure read-only + memoized (_XX_CACHE / celestial load
+                # cache / db._CONNS), so computing it at warmup vs at first request returns the IDENTICAL
+                # dict — byte-identical, just paid off the click path. Non-fatal.
+                try:
+                    from astrostudy import xuanshi as _xs_wu
+                    _xs_wu.global_summary()
+                except Exception:
+                    pass
+            except Exception:
+                pass  # non-fatal — cold path will pay the cost on first request instead
+        _threading_wu.Thread(target=_run, name='HorosaXuanShiWarmup', daemon=True).start()
+    _horosa_xuanshi_warmup()
+
+    # v3.0.1 perf ROUND-4 R4 (HOROSA_QIZHENG_WARMUP): the 七政四余 起盘 itself is already fast
+    # (swe.sweObject, ~0.6s), but the qizheng service module webqizhengkinsrv transitively imports
+    # streamlit — a ~2.4s one-time COLD import paid on the user's first 七政四余 click (the kentang
+    # LazyMountedService defers it off startup, same as xuanshi). Pre-import it on a STAGGERED background
+    # daemon (7s, after the xuanshi warmup's 5s so the two heavy imports don't spike CPU together), hiding
+    # the import behind idle time. Non-blocking, non-fatal, idempotent (sys.modules memoizes → the first
+    # real request reuses the warmed module). Byte-identical: only pre-runs the SAME import the lazy mount
+    # would run on first request; zero change to compute_chart / shensha / dasha output. Kill-switch:
+    # HOROSA_QIZHENG_WARMUP=0.
+    def _horosa_qizheng_warmup():
+        import os as _os_qw
+        import time as _time_qw
+        import threading as _threading_qw
+        import importlib as _importlib_qw
+        if _os_qw.environ.get('HOROSA_QIZHENG_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
+            return
+        def _run():
+            try:
+                _time_qw.sleep(24.0)
+                _importlib_qw.import_module('websrv.webqizhengkinsrv')
+            except Exception:
+                pass  # non-fatal — cold path will pay the cost on first request instead
+        _threading_qw.Thread(target=_run, name='HorosaQiZhengWarmup', daemon=True).start()
+    _horosa_qizheng_warmup()
+
+    # v3.0.1 perf ROUND-4 R4 (HOROSA_SERVICES_WARMUP): 泛化版技法服务预热。kentang 的
+    # LazyMountedService 把全部技法服务的重导入挪出了启动路径,但也意味着每个技法的**首次点击**
+    # 要付一次冷导入(普查实测:MED 档 geomancy/shaozi/tieban/fendjing/beiji/nanji/chunzi/xianqin
+    # 各有 astro 数据束/SQL 初始化等一次性成本)。这里在 xuanshi(5s)/qizheng(7s)之后再错峰 9s,
+    # 用**单个**守护线程按序逐个预导入其余服务模块,每个之间 sleep 0.8s——单线程+错峰保证预热期
+    # CPU 无可感占用。字节级安全:与懒挂载首请求执行的是同一个 import(sys.modules 记忆化,首请求
+    # 直接复用已热模块),不改任何计算。每个模块独立 try/except,失败=该技法回到首点付冷成本的现状。
+    # Kill-switch: HOROSA_SERVICES_WARMUP=0。
+    def _horosa_services_warmup():
+        import os as _os_sw
+        import time as _time_sw
+        import threading as _threading_sw
+        import importlib as _importlib_sw
+        if _os_sw.environ.get('HOROSA_SERVICES_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
+            return
+        def _run():
+            _time_sw.sleep(28.0)
+            for _mod in (
+                'websrv.webgeomancysrv',
+                'websrv.webshaozisrv',
+                'websrv.webtiebansrv',
+                'websrv.webfendjingsrv',
+                'websrv.webbeijisrv',
+                'websrv.webnanjisrv',
+                'websrv.webchunzisrv',
+                'websrv.webxianqinsrv',
+                'websrv.webtaiyisrv',
+                'websrv.webjinkousrv',
+                'websrv.webqimensrv',
+                'websrv.webwangjisrv',
+                'websrv.webwuzhaosrv',
+                'websrv.webtaixuansrv',
+                'websrv.webjingjuesrv',
+                'websrv.webshenyishusrv',
+            ):
+                try:
+                    _importlib_sw.import_module(_mod)
+                except Exception:
+                    pass  # non-fatal — 该技法首点自付冷导入,与现状一致
+                _time_sw.sleep(0.8)
+        _threading_sw.Thread(target=_run, name='HorosaServicesWarmup', daemon=True).start()
+    _horosa_services_warmup()
+
     cherrypy.engine.block()

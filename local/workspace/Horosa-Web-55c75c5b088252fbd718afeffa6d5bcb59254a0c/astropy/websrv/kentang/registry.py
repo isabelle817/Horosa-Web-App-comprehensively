@@ -137,6 +137,66 @@ KENTANG_SERVICE_SPECS = [
 ]
 
 
+import os
+import threading
+
+
+# v3.0.1 perf ROUND-3 R3 (HOROSA_KENTANG_LAZY_MOUNT): the original _load_service +
+# mount_kentang_services eagerly `__import__`-ed every one of the 17 kentang service specs
+# at server start. Each import pulled its underlying engine (kintaiyi, kinqimen, ...,
+# webxuanshisrv → xuanshi's 5 heavy submodules + 99MB SQLite bundles). On Windows this
+# added 5-10s of Python cold-import to the Horosa startup path — a v3.0.0-era net-new
+# cost (v2.6.9 had no xuanshi module and a smaller kentang set). Fix: wrap every spec in
+# _LazyMountedService and let CherryPy dispatch demand-load the concrete adapter on the
+# FIRST request that hits its mount point. Warm dispatch after first hit == pre-round-3
+# performance (memoized). Kill-switch HOROSA_KENTANG_LAZY_MOUNT=0 reverts to the eager
+# path, spec-by-spec identical to the original. This is the fix that actually bites the
+# webxuanshisrv startup cost (it does `from astrostudy.xuanshi import celestial as xs_celestial`
+# etc. at top level, bypassing xuanshi/__init__.py's PEP 562 lazy pattern), so this
+# registry-level wrap is the primary lever.
+class _LazyMountedService(object):
+    """CherryPy-compatible proxy that defers spec module import + class instantiation
+    until the first attribute access (== first dispatched request). Attribute lookup
+    resolves against the real service instance once loaded; __getattr__ is only invoked
+    on failed default lookup, so CherryPy's expose/dispatch introspection walks straight
+    into the real handler without knowing about the wrap."""
+    __slots__ = ("_spec", "_impl", "_lock")
+
+    exposed = False  # dispatchers only inspect this on leaf handlers; on the root we let
+                     # the default (False) fall through so CherryPy walks into child attrs.
+
+    def __init__(self, spec):
+        object.__setattr__(self, "_spec", spec)
+        object.__setattr__(self, "_impl", None)
+        object.__setattr__(self, "_lock", threading.Lock())
+
+    def _load(self):
+        impl = object.__getattribute__(self, "_impl")
+        if impl is not None:
+            return impl
+        lock = object.__getattribute__(self, "_lock")
+        with lock:
+            impl = object.__getattribute__(self, "_impl")
+            if impl is not None:
+                return impl
+            spec = object.__getattribute__(self, "_spec")
+            module = __import__(spec["module"], fromlist=[spec["class_name"]])
+            service_cls = getattr(module, spec["class_name"])
+            impl = service_cls()
+            object.__setattr__(self, "_impl", impl)
+            return impl
+
+    def __getattr__(self, name):
+        # __getattr__ is only called when normal lookup fails. Slots (_spec/_impl/_lock)
+        # and the class-level `exposed` attribute resolve normally; everything else
+        # (real handlers, dispatch attributes, etc.) triggers the lazy load.
+        if name.startswith("__") and name.endswith("__"):
+            # Never load on dunder probes — keeps `hasattr(node, '__something__')` cheap
+            # and avoids pulling the impl for stuff like repr/type inspection.
+            raise AttributeError(name)
+        return getattr(self._load(), name)
+
+
 def _load_service(spec):
     module = __import__(spec["module"], fromlist=[spec["class_name"]])
     service_cls = getattr(module, spec["class_name"])
@@ -144,5 +204,10 @@ def _load_service(spec):
 
 
 def mount_kentang_services(cherrypy):
+    lazy_mount = os.environ.get("HOROSA_KENTANG_LAZY_MOUNT", "1").lower() not in ("0", "false", "no", "off")
     for spec in KENTANG_SERVICE_SPECS:
-        cherrypy.tree.mount(_load_service(spec), spec["mount"])
+        if lazy_mount:
+            service = _LazyMountedService(spec)
+        else:
+            service = _load_service(spec)
+        cherrypy.tree.mount(service, spec["mount"])
