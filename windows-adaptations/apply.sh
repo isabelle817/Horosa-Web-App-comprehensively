@@ -147,4 +147,38 @@ echo "== 16. v3.0.1 perf ROUND-4 P1 (占星首盘 9.7s 的 80%=baziAssemble 7781
 apply_patch bazi_warmup_v1                 astrostudysrv/astrostudyboot/src/main/java/spacex/astrostudyboot/AstroStudyProgram.java astrostudyboot__AstroStudyProgram.baziWarmup.java.patch
 echo "   ^^ astrostudyboot is BACKEND Java. After this patch rebuild: astrostudyboot clean package, then copy to bundle."
 
+echo "== 17. v3.0.1 perf ROUND-5 (Python 排盘热路径请求内 memo;纯每实例缓存、reinit() 重置、无行为开关、golden 字节全等) =="
+# perchart.py:同一 /chart 请求内重复计算的 6 处纯函数结果 memo(67 恒星批/28 宿调整批/28 宿原始批/
+# 日出求解/围攻/互容 —— 均为「同请求同输入被算 2-3 次」的浪费)。缓存挂在 chart 实例上,reinit() 清零,
+# 跨请求零共享;golden 4 变体(标准/南盘/斗柄/七政)PYTHONHASHSEED=0 下逐字节全等。重复盘 617-747ms → 443-504ms。
+apply_patch _getFixedStars67Cached         astropy/astrostudy/perchart.py                astropy__perchart.chartMemo.py.patch
+# guo74.py:virtualSu28 逐星 chart.getFixedStar()×28 → 改读 perchart 的原始 28 宿批缓存(同一请求第三次取数)。
+apply_patch getRawFixedStarSu28Cached      astropy/astrostudy/guostarsect/guo74.py       astropy__guostarsect__guo74.su28Batch.py.patch
+# flatlib ephem.py:恒星批(67 星/28 宿)只依赖 (IDs, jd, pos, height, flags, sidereal 上下文),与宫位制/
+# 容许度无关 → 有界 LRU(8 条,线程安全,存取皆 deepcopy 防 relocate/+180° 串染)。「改设置重排同一盘」
+# 恒星段 379-480ms → 183-236ms。kill-switch HOROSA_STAR_LRU=0。
+apply_patch HOROSA_STAR_LRU                flatlib-ctrad2/flatlib/ephem/ephem.py         flatlib__ephem.starLru.py.patch
+
+echo "== 18. v3.0.1 perf ROUND-5 (历法求解降维:NongLi.approach 朔/节候选 + BirthJieQi 上升瘦盘;同一 HOROSA_JIEQI_FAST_APPROACH 开关) =="
+# NongLi.approach:朔(日月合)与节气候选求解原本每迭代 new 完整 Chart;改 swe.sweObject 直读日/月经度,
+# 收敛判据一字不动 → 4 年(含公元前 500)golden 逐字节全等;整年农历表 1445-2460ms → 113-194ms。
+apply_patch _JIEQI_FAST_APPROACH           astropy/astrostudy/jieqi/NongLi.py            astropy__jieqi__NongLi.fastApproach.py.patch
+# BirthJieQi(R3 patch 已重生成,现同时携带 R5 _ascChart):卯时/上升求解只读 ASC → 瘦 Chart(仅太阳、
+# needpars=False);3 个代表日期 golden 全等,398-490ms → 30-36ms。guard 沿用 HOROSA_JIEQI_FAST_APPROACH(§12 已应用则跳过)。
+
+echo "== 19. v3.0.1 perf ROUND-5 (webchartsrv 追加:七政 streamlit 懒导入 + 预热挪至端口就绪后 + /chart 三段计时;patch 已并入 §14 同一文件) =="
+# §14 的 webchartsrv patch 已重生成,现同时携带:HOROSA_CETIAN_LAZY(webcetiansrv 顶层 streamlit=启动导入墙
+# 49% → 懒导入,预热线程空闲补齐)、HOROSA_PY_WARMUP_BLOCKING(PD/india 同步预热从 engine.start 前挪到端口
+# 就绪后,=1 恢复原行为)、HOROSA_PY_CHART_TIMING(=1 时打 CHART_PY_PERF init/build/encode 三段,纯观测)。
+# guard 沿用 §14 的 HOROSA_SERVICES_WARMUP(pristine 必缺 → 全量重放,patch 含全部追加)。
+
+echo "== 20. v3.0.1 perf ROUND-5 B-F3 (农历「日级」外部缓存读写桌面版停用;年表持久化不动) — REQUIRES a jar rebuild =="
+# NongliHelper:每个未见过的日期一读一写外部缓存(读基本必 miss)。日行是内存月表的纯推导,重算逐字节
+# 一致 → env HOROSA_NONGLI_DAY_PERSIST=0(桌面壳注入)跳过日级读写;env 缺省=原行为(Mac/服务器零变化)。
+apply_patch nongli_day_persist_v1          astrostudysrv/astrostudy/src/main/java/spacex/astrostudy/helper/NongliHelper.java astrostudy__NongliHelper.dayPersist.java.patch
+# OnlyFourColumns.forwardDirect:流水 println(每盘一行 stdout 管道噪音,零响应字节)删除。
+apply_patch quiet_println_v1               astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java astrostudycn__OnlyFourColumns.quietPrintln.java.patch
+echo "   ^^ astrostudy+astrostudycn are BACKEND Java. After these patches rebuild astrostudyboot.jar (SKILL gotcha #5):"
+echo "      astrostudy install -> astrostudycn install -> astrostudyboot clean package, then copy to bundle."
+
 echo "== done. Verify: npm run selfcheck (windows-ahead / perf sentinels must all pass). =="

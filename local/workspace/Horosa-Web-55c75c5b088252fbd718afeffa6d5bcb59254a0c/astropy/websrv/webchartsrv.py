@@ -19,6 +19,10 @@ except ImportError:
 
     jsonpickle = _JsonpickleCompat()
 
+# v3.0.1 perf ROUND-5 (#18 观测):HOROSA_PY_CHART_TIMING=1 时对 /chart 打三段计时(init/build/encode),
+# 与 Java 侧 B0(CHART_PERF_SEG_REV)对齐,补齐 python= 段的构成黑盒。默认关=输出与响应逐字节不变。
+_PY_CHART_TIMING = os.environ.get('HOROSA_PY_CHART_TIMING', '0').lower() in ('1', 'true', 'yes', 'on')
+
 # Ensure flatlib is resolvable from bundled sources.
 _CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 _PROJ_ROOT = os.path.abspath(os.path.join(_CUR_DIR, "..", ".."))
@@ -46,9 +50,16 @@ from websrv.webcalc import WebCalcSrv
 from websrv.webacgsrv import AcgSrv
 from websrv.webastroextrasrv import AstroExtraSrv
 from websrv.webplanetariumsrv import PlanetariumSrv
-# 策天飞星:已按《十八飞星策天紫微斗数》全面重写为自有引擎,从 kentang 摘出,直接挂载(不再走 kentang registry)。
-from websrv.webcetiansrv import CeTianSrv
-from websrv.kentang.registry import mount_kentang_services
+# 策天飞星:已按《十八飞星策天紫微斗数》全面重写为自有引擎,从 kentang 摘出直接挂载。
+# v3.0.1 perf ROUND-5 (HOROSA_CETIAN_LAZY):webcetiansrv 顶层拉起 streamlit —— 启动导入墙的 49%
+# (973 个启动模块中的 320 个,实测暖导入 1.3-1.9s、冷 ~2.4s+),是懒挂载模式漏掉的唯一重挂载。
+# 与 kentang 17 个服务同款 _LazyMountedService 惰性代理(首个 /cetian 请求才导入,sys.modules 记忆化,
+# 行为逐字节不变);预热线程会在空闲期提前导入。kill-switch:HOROSA_CETIAN_LAZY=0 恢复饿加载。
+from websrv.kentang.registry import mount_kentang_services, _LazyMountedService
+
+_CETIAN_LAZY = os.environ.get('HOROSA_CETIAN_LAZY', '1').lower() not in ('0', 'false', 'no', 'off')
+if not _CETIAN_LAZY:
+    from websrv.webcetiansrv import CeTianSrv
 
 
 
@@ -117,7 +128,9 @@ class WebChartSrv:
 
             _terms_orig = push_request_terms(data.get('termsVariant', 0), data.get('leoBoundFirst'))
             _trip_orig = push_request_trip(data.get('triplicity'))
+            _pt0 = time.perf_counter() if _PY_CHART_TIMING else 0.0
             perchart = PerChart(data)
+            _pt1 = time.perf_counter() if _PY_CHART_TIMING else 0.0
             guostar = GuoStarSect(perchart)
             guolao_sunrise_time = None
             if data.get('guolaoLifeMode') == 'yumao':
@@ -177,7 +190,12 @@ class WebChartSrv:
             if predictives is not None:
                 obj['predictives'] = predictives
 
+            _pt2 = time.perf_counter() if _PY_CHART_TIMING else 0.0
             res = jsonpickle.encode(obj, unpicklable=False)
+            if _PY_CHART_TIMING:
+                _pt3 = time.perf_counter()
+                print('CHART_PY_PERF rev=py_chart_seg_v1 init={0:.0f} build={1:.0f} encode={2:.0f} total={3:.0f}'.format(
+                    (_pt1 - _pt0) * 1000, (_pt2 - _pt1) * 1000, (_pt3 - _pt2) * 1000, (_pt3 - _pt0) * 1000), flush=True)
             return res
         except:
             traceback.print_exc()
@@ -458,7 +476,14 @@ def ensure_chart_port_free(host, port, attempts=12, wait=0.5):
     return _chart_port_free(host, port)
 
 
-if __name__ == '__main__':
+def _run_startup_warmups():
+    # PD 预热 + 印度盘预热(原样搬运,顺序 PD→india、打印与 WARMED 语义不变)。
+    # v3.0.1 perf ROUND-5 (HOROSA_PY_WARMUP_BLOCKING):默认从 engine.start() **之前**挪到端口就绪
+    # 打点之后 —— 壳的就绪门控只等 TCP 端口(HOROSA_READY/healthz warm 无任何消费者,已全仓核实),
+    # 原位置让暖机 ~0.7s(冷 1-5s)白白垫在端口绑定前面。安全性:壳的后台整盘探针是回归制
+    # (zodiacal=0),与 swisseph sid_mode 无关;真实 sidereal 请求受与稳态并发完全相同的
+    # set_sid_mode 相邻行约定保护(tests/test_swe_concurrency.py 钉住)。
+    # kill-switch:HOROSA_PY_WARMUP_BLOCKING=1 恢复「绑定前同步预热」原行为。
     try:
         t0 = time.perf_counter()
         warm_chart = PerChart(dict(WebChartSrv.PD_WARMUP_SAMPLE))
@@ -468,15 +493,21 @@ if __name__ == '__main__':
     except Exception:
         traceback.print_exc()
 
-    # 印度盘后端预热:同步跑一个 dummy 印度盘(复用上面 PD 预热已热的 swisseph/星历),把 india
-    # 各子算法的冷计算路径载入,消除每次重启软件后首次进入印度占星的 ~3s 冷启动。同步(非后台线程)
-    # 以避免与首个真实请求并发改 swisseph 全局 sid_mode 致错盘;失败静默不影响服务。
+    # 印度盘后端预热:跑一个 dummy 印度盘(复用上面 PD 预热已热的 swisseph/星历),把 india
+    # 各子算法的冷计算路径载入,消除每次重启软件后首次进入印度占星的 ~3s 冷启动。在主线程串行执行
+    # (非后台线程),sid_mode 读写遵循与真实请求相同的相邻行约定;失败静默不影响服务。
     try:
         t1 = time.perf_counter()
         warmup_india()
         print('india warmup ready in {0:.3f}s'.format(time.perf_counter() - t1))
     except Exception:
         traceback.print_exc()
+
+
+if __name__ == '__main__':
+    _WARMUP_BLOCKING = os.environ.get('HOROSA_PY_WARMUP_BLOCKING', '0').lower() in ('1', 'true', 'yes', 'on')
+    if _WARMUP_BLOCKING:
+        _run_startup_warmups()
 
     chart_port = int(os.environ.get('HOROSA_CHART_PORT', '8899'))
     cherrypy.config.update({'server.socket_host': '127.0.0.1',
@@ -496,7 +527,10 @@ if __name__ == '__main__':
     cherrypy.tree.mount(WebJdnSrv(), '/jdn')
     cherrypy.tree.mount(WebCalcSrv(), '/calc')
     cherrypy.tree.mount(AcgSrv(), '/location')
-    cherrypy.tree.mount(CeTianSrv(), '/cetian')
+    if _CETIAN_LAZY:
+        cherrypy.tree.mount(_LazyMountedService({'module': 'websrv.webcetiansrv', 'class_name': 'CeTianSrv'}), '/cetian')
+    else:
+        cherrypy.tree.mount(CeTianSrv(), '/cetian')
     cherrypy.tree.mount(AstroExtraSrv(), '/astroextra')
     cherrypy.tree.mount(PlanetariumSrv(), '/planetarium')
     mount_kentang_services(cherrypy)
@@ -507,6 +541,11 @@ if __name__ == '__main__':
     cherrypy.engine.start()
     # P0 启动握手:监听后向 stdout 报端口,壳/launcher 可确认「此端口确为本次起的 chart 后端」(消 TOCTOU/误判)。
     print('HOROSA_READY chart_port={0}'.format(chart_port), flush=True)
+
+    # v3.0.1 perf ROUND-5:PD/india 预热默认在端口就绪之后、主线程上立即执行(见 _run_startup_warmups
+    # 注释;壳只等端口,预热不再垫在绑定前)。HOROSA_PY_WARMUP_BLOCKING=1 时已在上面原位跑过。
+    if not _WARMUP_BLOCKING:
+        _run_startup_warmups()
 
     # v3.0.1 perf ROUND-3 R3 (HOROSA_XUANSHI_WARMUP): the kentang registry's LazyMountedService
     # (marker: HOROSA_KENTANG_LAZY_MOUNT) defers webxuanshisrv's heavy import chain (xuanshi's 5
@@ -588,6 +627,8 @@ if __name__ == '__main__':
         def _run():
             _time_sw.sleep(28.0)
             for _mod in (
+                # cetian 置首:它拖 streamlit(启动导入墙的 49%,ROUND-5 起改为懒挂载),预热最先补它。
+                'websrv.webcetiansrv',
                 'websrv.webgeomancysrv',
                 'websrv.webshaozisrv',
                 'websrv.webtiebansrv',
