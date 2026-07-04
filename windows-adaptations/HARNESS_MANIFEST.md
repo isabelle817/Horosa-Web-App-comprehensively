@@ -8,7 +8,7 @@ additionally reconstructible from session records. See windows-adaptations/READM
 
 | file | sha256 | bytes | git | purpose |
 |---|---|---|---|---|
-| `.claude/skills/horosa-dev/SKILL.md` | `f3d340601aa87041c40131518f56cda983b4f0bb3e8f7485326dea041db49c65` | 157443 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
+| `.claude/skills/horosa-dev/SKILL.md` | `e432b95f7183d949c278f2b315a2b140343c9a7f736063c52fbc3e64218e91d4` | 161159 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
 | `desktop_installer_bundle/assets/installer.nsh` | `f0fb7ce4ab16e953bf862e614fe375d742da303b95af2b8c751033d453c37ba3` | 54208 | gitignored | NSIS hooks: disk-space gate, uninstall cleanup, OS gate |
 | `desktop_installer_bundle/electron/build-uber-jar.py` | `350016fb4d41b2f60644737e37cf7e3e7a698849efd1d4824cdfefe177e7f9cc` | 19280 | gitignored | fat-jar -> single uber jar merge (classpath.idx first-wins + SPI union + dir entries) enabling fast static CDS |
 | `desktop_installer_bundle/electron/defender-exclusion.js` | `c9630a39c99e1abde7f5c5a847bfe7c2af8a9cfa5fb27dc979ba48048197c651` | 7369 | gitignored | consented Windows Defender exclusion of the app runtime (~500x on-access I/O tax fix) |
@@ -27,7 +27,8 @@ additionally reconstructible from session records. See windows-adaptations/READM
 | `desktop_installer_bundle/scripts/delta-report.py` | `95d98a079976190b0104cb40f2ae1a6ed53283eb04a41f69c18085c5951d7a01` | 6472 | gitignored | DELTA-V2: blockmap differential estimator + payload-manifest diff (powers the differential-efficiency release gate) |
 | `desktop_installer_bundle/scripts/hostile_env_smoke.ps1` | `274eef272a2155fbabda30dcac93101421c4adfb82570bab6a84f75b11395692` | 7848 | gitignored | PERF-R6 B-1: hostile-env packaged-app smoke (poisoned PYTHON*/JAVA*/proxy/GBK -> ready + /chart 200 + clean logs) |
 | `desktop_installer_bundle/scripts/release_preflight.py` | `574d5b2264f57e76f4ff541efa3f8cb46b8e668707e74b51f74158aa26b26d50` | 4840 | gitignored | pre-release env checks |
-| `desktop_installer_bundle/scripts/release_selfcheck.py` | `5c31f0365d7b1cd8ec59e23088d09cdba12412cd1a3bfd64c038c115d3382220` | 72663 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
+| `desktop_installer_bundle/scripts/release_selfcheck.py` | `e99dc490704ae478d647b2436cb3758c90a0a2553407c5856f63c36a569727a5` | 74412 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
 | `desktop_installer_bundle/scripts/sign-update.cjs` | `4359ec4d95fc9fb801c997f793fed3fde528691de5f3dc89633fb2c5edc60317` | 5887 | gitignored | Ed25519 signing of release assets |
 | `desktop_installer_bundle/scripts/stage-runtime.cjs` | `e892e5465df1cbed27e8d5aef20cca8126e28b98676dcff479fa5376cb0809e6` | 31150 | gitignored | stages local/workspace/runtime -> build/app-runtime payload |
+| `desktop_installer_bundle/scripts/verify_kentang_services.py` | `d62c6000cc9fa5ebeeb14bc663bf9cae9dcd42dd127a2b3acf11d165f35f9795` | 4430 | gitignored | institutional gate: every kentang technique backend (KENTANG_SERVICE_SPECS) imports+resolves+instantiates in the packaged runtime (guards the v3.2.0 太乙/三式合一 kintaiyi_unavailable 404 class); wired into release_selfcheck.py |
 | `desktop_installer_bundle/scripts/write-app-update-yml.cjs` | `a2793ac922c02784751e57841e1ec54fc9911555904e985eb1284dc92e72221b` | 2308 | gitignored | app-update.yml generator (updater feed) |
