@@ -61,7 +61,10 @@ export function fetchChart(values, requestOptions){
 		body: JSON.stringify(values),
 		...opts,
 	}).then((rsp)=>{
-		if(key && rsp){
+		// perf T-6(speculativePrecompute 配套,marker: chartMem_valid_only_v1):只缓存「有效盘」
+		// 响应(Result.params 在)—— 错误信封(ResultCode!=0/服务瞬断)不进 chartMem,否则短窗内
+		// 同参重试会命中缓存的过期错误(对既有路径也是净改善;确认路径 isValidChartResponse 判定不变)。
+		if(key && rsp && rsp.Result && rsp.Result.params){
 			pushCache(chartMem, key, clonePlain(rsp));
 		}
 		return rsp;

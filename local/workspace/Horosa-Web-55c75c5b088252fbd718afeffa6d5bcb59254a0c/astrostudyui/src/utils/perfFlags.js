@@ -87,3 +87,11 @@ export function techniqueResultCacheEnabled(){
 export function firstLoadParallelEnabled(){
 	return flagEnabled('horosa.perf.firstLoadParallel');
 }
+
+// perf T-6 预测性预计算(speculativePrecompute):用户在排盘表单里编辑参数时,防抖后提前发出与
+// 「提交」完全相同的确定性计算请求 —— 结果只进 services 层缓存(chartMem/在途合并),不落任何
+// 状态、不动 UI;点提交时直接命中/加入在途 → 点击→显示≈渲染耗时。严禁随机/取现时类端点
+// (沿用 _requestCache.js 判据)。关掉(horosa.perf.speculativePrecompute=0)即回到「点提交才计算」。
+export function speculativePrecomputeEnabled(){
+	return flagEnabled('horosa.perf.speculativePrecompute');
+}

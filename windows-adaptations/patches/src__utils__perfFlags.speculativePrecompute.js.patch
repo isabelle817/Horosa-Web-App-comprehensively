@@ -1,0 +1,54 @@
+diff --git a/astrostudyui/src/utils/perfFlags.js b/astrostudyui/src/utils/perfFlags.js
+index d81da82..cca39cb 100644
+--- a/astrostudyui/src/utils/perfFlags.js
++++ b/astrostudyui/src/utils/perfFlags.js
+@@ -49,3 +49,49 @@ export function freezeInactiveTabsEnabled(){
+ export function requestDedupeEnabled(){
+ 	return flagEnabled('horosa.perf.requestDedupe');
+ }
++
++// 天文馆性能门控(只动渲染时机,不动任何排盘/外推内容):
++//   - renderGating:隐藏/非激活时暂停 Babylon 渲染循环(可见+激活时一字不动)。
++//   - onDemandRender:可见+激活但静止(暂停)时按需渲染而非每帧 60fps;配 idleHeartbeat 1fps 兜底。
++//   - metricsThrottle:FPS/网格调试读数节流到 ~2Hz。
++//   - timeEditDebounce:可编辑时间的后端整盘重算去抖(显示与「确定」提交均同步、不去抖)。
++export function planetariumRenderGatingEnabled(){
++	return flagEnabled('horosa.perf.planetariumRenderGating');
++}
++
++export function planetariumOnDemandRenderEnabled(){
++	return flagEnabled('horosa.perf.planetariumOnDemandRender');
++}
++
++export function planetariumIdleHeartbeatEnabled(){
++	return flagEnabled('horosa.perf.planetariumIdleHeartbeat');
++}
++
++export function planetariumMetricsThrottleEnabled(){
++	return flagEnabled('horosa.perf.planetariumMetricsThrottle');
++}
++
++export function planetariumTimeEditDebounceEnabled(){
++	return flagEnabled('horosa.perf.planetariumTimeEditDebounce');
++}
++
++// 技法结果缓存:对**确定性纯计算**技法(紫微本盘/七政等,同 birth+设置必产同结果、无随机、无「现在时刻」依赖)
++// 做「同参复用 + 在途合并」,让切换/来回访问命中即秒回(返回同一结果深拷贝,与直连逐值等价、只更快)。
++// 关掉即回到每次直连后端。严禁用于卜卦随机起卦/塔罗/AI 等(见 _requestCache.js 头部约束)。
++export function techniqueResultCacheEnabled(){
++	return flagEnabled('horosa.perf.techniqueResultCache');
++}
++
++// 首屏并行化:把页面首次加载时**互不依赖**的后端请求从「串行瀑布」改为并行发起(纯发起时机,内容/结果不变)。
++// 例:玄学史 总览/玄典/名家/事件 4 个 fetch 同时发;占星首屏独立预取并行。关掉即回到原串行顺序。
++export function firstLoadParallelEnabled(){
++	return flagEnabled('horosa.perf.firstLoadParallel');
++}
++
++// perf T-6 预测性预计算(speculativePrecompute):用户在排盘表单里编辑参数时,防抖后提前发出与
++// 「提交」完全相同的确定性计算请求 —— 结果只进 services 层缓存(chartMem/在途合并),不落任何
++// 状态、不动 UI;点提交时直接命中/加入在途 → 点击→显示≈渲染耗时。严禁随机/取现时类端点
++// (沿用 _requestCache.js 判据)。关掉(horosa.perf.speculativePrecompute=0)即回到「点提交才计算」。
++export function speculativePrecomputeEnabled(){
++	return flagEnabled('horosa.perf.speculativePrecompute');
++}

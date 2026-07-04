@@ -6,6 +6,19 @@ export default class AstroFormComp extends Component{
 		super(props);
 
 		this.clickOk = this.clickOk.bind(this);
+		this.livePrecompute = this.livePrecompute.bind(this);
+	}
+
+	// perf T-6(speculativePrecompute):表单编辑期把「提交会发出的同一份参数」提前交给
+	// astro/precomputeFetch(只暖 services 缓存,不落 state、不动 UI)。点提交时 *fetch
+	// 命中缓存/加入在途 → 点击→显示≈渲染耗时。
+	livePrecompute(params){
+		if(this.props.dispatch){
+			this.props.dispatch({
+				type: 'astro/precomputeFetch',
+				payload: params,
+			});
+		}
 	}
 
 	clickOk(flds){
@@ -38,11 +51,12 @@ export default class AstroFormComp extends Component{
 
 		return (
 			<div>
-				<ChartFormData 
+				<ChartFormData
 					fields={this.props.fields}
 					okTitle='提交'
 					returnTitle='返回列表'
 					onOk={this.clickOk}
+					onLivePrecompute={this.livePrecompute}
 				/>
 			</div>
 		)

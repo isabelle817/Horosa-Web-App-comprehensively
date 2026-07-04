@@ -1,0 +1,52 @@
+diff --git a/astrostudyui/src/models/astro.js b/astrostudyui/src/models/astro.js
+index 64278a5..4aa3131 100644
+--- a/astrostudyui/src/models/astro.js
++++ b/astrostudyui/src/models/astro.js
+@@ -7,7 +7,7 @@ import {randomStr,} from '../utils/helper';
+ import { DefLat, DefLon, DefGpsLat, DefGpsLon, } from '../utils/constants';
+ import { showChartServiceError as showChartServiceErrorRich } from '../components/common/ChartServiceErrorModal';
+ import { saveAstroAISnapshotLazy, } from '../utils/astroAiSnapshot';
+-import { hookRafEnabled } from '../utils/perfFlags';
++import { hookRafEnabled, speculativePrecomputeEnabled } from '../utils/perfFlags';
+ import { loadLocalFateEvents, saveLocalFateEvents, } from '../utils/localdeeplearn';
+ import * as AstroConst from '../constants/AstroConst';
+ import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../utils/dayBoundary';
+@@ -1078,6 +1078,38 @@ export default {
+ 		},
+ 
+ 
++		// perf T-6(speculativePrecompute):排盘表单编辑期的「只暖缓存」预计算。参数构造与
++		// 下方 *fetch 逐字节一致(date/time/ad/zone/cid + includePrimaryDirection),但结果只进
++		// services/astro 的 chartMem/chartInflight —— 不落任何 state、不关抽屉、不触发 hook、
++		// 不弹错误。用户点「提交」时 *fetch 的 fetchChart 直接命中缓存或加入在途请求 →
++		// 点击→显示 ≈ 渲染耗时。任何失败静默(投机性质,正式路径行为不变)。
++		*precomputeFetch({ payload: values }, { call, select }){
++			try{
++				if(!speculativePrecomputeEnabled()){ return; }
++				if(!values || !values.date || typeof values.date.format !== 'function'){ return; }
++				if(values.lon === undefined || values.lon === null || values.lon === ''
++					|| values.lat === undefined || values.lat === null || values.lat === ''){
++					return; // 表单未填完整,预取无意义(且避免以半参数占缓存槽)
++				}
++				const param = {
++					...values,
++					date: values.date.format('YYYY/MM/DD'),
++					time: values.date.format('HH:mm:ss'),
++					ad: values.date.ad,
++					zone: values.date.zone,
++					cid: null,
++				};
++				if(param.pdaspects && param.pdaspects instanceof String){
++					param.pdaspects = JSON.parse(param.pdaspects);
++				}
++				const astroState = yield select((state)=>state.astro);
++				param.includePrimaryDirection = shouldIncludePrimaryDirection(astroState);
++				yield call(service.fetchChart, param, { silent: true, disableLoading: true });
++			}catch(e){
++				// speculative only — never surface
++			}
++		},
++
+ 		*fetch({ payload: values }, { call, put, select }){
+ 			const param = {
+ 				...values,

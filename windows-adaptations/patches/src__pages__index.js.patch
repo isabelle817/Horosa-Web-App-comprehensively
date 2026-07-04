@@ -1,6 +1,28 @@
---- a/astrostudyui/src/pages/index.js (Mac 1c463718)
-+++ b/astrostudyui/src/pages/index.js (Windows-adapted)
-@@ -243,6 +243,14 @@
+diff --git a/astrostudyui/src/pages/index.js b/astrostudyui/src/pages/index.js
+index 5aa95f6..982e790 100644
+--- a/astrostudyui/src/pages/index.js
++++ b/astrostudyui/src/pages/index.js
+@@ -62,7 +62,8 @@ function startIdlePreload(){
+ 		}else{
+ 			setTimeout(next, 300);
+ 		}
+-	}, 2000);
++	// perf T-3:首帧后 1s 起跑(原 2s;仍每次 1 个 chunk、空闲执行,不抢首屏交互)。
++	}, 1000);
+ }
+ 
+ // 3D 星盘动态化(首包瘦身):babylon 系重组件不入主包;lazyPreloadable 自带 Suspense+错误边界,并进 idle 预取队列(用户点击时通常已就绪)。
+@@ -352,6 +353,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+         // 盘变了才刷新目标技法,且延迟到切换 paint 之后(切换瞬间、刷新随后带 spinner);盘没变=跳过=纯瞬间。
+         if(needRefresh){
+             tabRefreshSigRef.current[key] = currentSig;
++            // perf:userTimingMarks —— 「切页→技法刷新开始」User-Timing 打点(纯观测,DevTools/
++            // Performance 面板可读;量化点击→显示的前端份额)。失败静默。
++            try{ if(typeof performance !== 'undefined' && performance.mark){ performance.mark(`horosa:tab:${key}:refresh-start`); } }catch(e){ /* observation only */ }
+             setTimeout(()=>{
+                 if(!(predictHook[key] && predictHook[key].fun)){ return; }
+                 if(key === 'indiachart' || key === 'cntradition' || key === 'jieqichart'
+@@ -376,6 +380,14 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
      }
  
      function changeCond(values){
@@ -15,7 +37,7 @@
          let flds = {
              ...fields,
          };  
-@@ -273,10 +281,10 @@
+@@ -424,10 +436,10 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
          if(values.southchart !== undefined && values.southchart !== null){
              flds.southchart.value = values.southchart;
          }
