@@ -140,6 +140,17 @@ KENTANG_SERVICE_SPECS = [
 import os
 import sys
 import threading
+import traceback
+
+
+class KentangServiceLoadError(RuntimeError):
+    """A kentang lazy-mounted service failed to import / resolve its class / instantiate.
+
+    Deliberately NOT an ``AttributeError``: CherryPy's object dispatcher walks the mount
+    tree with ``getattr(node, name, None)``, which swallows AttributeError as "no such
+    route" — that is exactly how the v3.2.0 太乙 failure became a permanent, traceback-free
+    404. Any load failure must surface as a 5xx WITH a logged traceback, never a silent 404.
+    """
 
 
 def _import_kentang_service_module(spec):
@@ -162,12 +173,13 @@ def _import_kentang_service_module(spec):
     module_name = spec["module"]
     class_name = spec["class_name"]
     engine = spec.get("engine")
+    first_error = None
     try:
         module = __import__(module_name, fromlist=[class_name])
         if getattr(module, class_name, None) is not None:
             return module
-    except Exception:
-        pass  # a poisoned engine submodule can make the first import raise — purge + retry below
+    except Exception as exc:
+        first_error = exc  # a poisoned engine submodule can make the first import raise — purge + retry below
     # Poisoned / partial cache (classless adapter module, or a half-imported vendor engine such
     # as kintaiyi): purge the adapter module AND its engine package (+ any partial submodules)
     # from sys.modules, then re-import once from a clean state.
@@ -177,11 +189,18 @@ def _import_kentang_service_module(spec):
     for key in list(sys.modules):
         if any(key == p or key.startswith(p + ".") for p in prefixes):
             sys.modules.pop(key, None)
-    module = __import__(module_name, fromlist=[class_name])
+    try:
+        module = __import__(module_name, fromlist=[class_name])
+    except Exception as exc:
+        # Keep the FIRST failure attached for diagnosis (it usually names the true poison).
+        raise ImportError(
+            "kentang service module %r failed to import after self-heal purge "
+            "(engine=%r, first_error=%r)" % (module_name, engine, first_error)
+        ) from exc
     if getattr(module, class_name, None) is None:
         raise ImportError(
             "kentang service module %r imported without class %r after self-heal purge "
-            "(engine=%r)" % (module_name, class_name, engine)
+            "(engine=%r, first_error=%r)" % (module_name, class_name, engine, first_error)
         )
     return module
 
@@ -239,7 +258,28 @@ class _LazyMountedService(object):
             # Never load on dunder probes — keeps `hasattr(node, '__something__')` cheap
             # and avoids pulling the impl for stuff like repr/type inspection.
             raise AttributeError(name)
-        return getattr(self._load(), name)
+        try:
+            impl = self._load()
+        except Exception as exc:
+            # KENTANG_LOUD_LOAD_FAIL — a load failure must NEVER escape as AttributeError:
+            # CherryPy's dispatcher resolves the route via getattr(node, name, None), which
+            # treats AttributeError as "no such route" → the v3.2.0 太乙 failure surfaced as a
+            # permanent, traceback-free 404 (the poisoned streamlit stub made the vendored
+            # engine's import die with AttributeError). Re-raise as KentangServiceLoadError
+            # (RuntimeError subclass) so the request becomes a diagnosable 5xx, and print the
+            # full traceback so python.log carries first-class evidence.
+            spec = object.__getattribute__(self, "_spec")
+            print(
+                "[kentang] service %r (mount %s) FAILED to load — request will error loudly "
+                "instead of silently 404ing:" % (spec.get("key"), spec.get("mount")),
+                file=sys.stderr, flush=True,
+            )
+            traceback.print_exc()
+            raise KentangServiceLoadError(
+                "kentang service %r failed to load: %s: %s"
+                % (spec.get("key"), type(exc).__name__, exc)
+            ) from exc
+        return getattr(impl, name)
 
 
 def _load_service(spec):
