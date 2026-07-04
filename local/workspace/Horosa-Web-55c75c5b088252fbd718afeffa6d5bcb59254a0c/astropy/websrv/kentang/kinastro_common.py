@@ -42,7 +42,7 @@ def _ensure_streamlit_stub():
             # 桩在场时 `filename.endswith` 炸 AttributeError → kintaiyi 导入永久失败,
             # CherryPy 把 AttributeError 当「无此路由」→ /taiyi/pan 整进程静默 404
             # (v3.2.0 太乙事故的真实根因;七政/玄学史预热先注入桩、太乙首点必在其后,
-            # 故 Windows 必现)。dunder 拒答后 hasattr(stub,'__file__')=False,
+            # 故瘦身发货包必现)。dunder 拒答后 hasattr(stub,'__file__')=False,
             # inspect/pickle/copy 等标准内省安全跳过;vendor 计算路径只用具名属性
             # (st.cache_data/st.warning 等),桩语义不变。
             if _name.startswith("__") and _name.endswith("__"):

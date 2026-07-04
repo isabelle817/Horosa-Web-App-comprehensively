@@ -79,8 +79,8 @@ public class OnlyFourColumns extends BaZi {
 	private void forwardDirect(PhaseType phaseType) {
 		String monthGanzi = this.fourColumns.month.ganzi;
 		int monthIdx = StemBranch.JiaZiIndex.get(monthGanzi);
-		// HOROSA_BAZI_DIRECT_QUIET quiet_println_v1 — stray debug println removed (stdout pipe noise,
-		// zero response bytes; value was never part of any API payload)
+		// WS-3b: 调试残留 println 移除——本方法在 /chart 八字大运热路径上,每请求一次 stdout
+		// 同步写(容器管道下 1-5ms)纯属浪费;需要调试用 main() 入口。
 		this.directAge = this.nextJieSeconds * DirectTimeFactor / (365.25 * 24 * 3600);
 		int sec = ConvertUtility.getValueAsInt(this.nextJieSeconds * DirectTimeFactor);
 		

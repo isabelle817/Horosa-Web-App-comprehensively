@@ -1,4 +1,7 @@
 
+import time as _ledger_time
+_PY_T0 = _ledger_time.perf_counter()  # 启动账本基准:必须在一切重导入之前
+
 import os
 import sys
 import traceback
@@ -8,6 +11,11 @@ import socket
 import signal
 import subprocess
 import threading
+
+from websrv.startup_ledger import ledger_mark  # 零依赖,不入重导入墙
+
+ledger_mark('py.interp_start', t0=_PY_T0)
+
 import cherrypy
 
 try:
@@ -19,10 +27,6 @@ except ImportError:
             return json.dumps(obj, ensure_ascii=False, default=str)
 
     jsonpickle = _JsonpickleCompat()
-
-# v3.0.1 perf ROUND-5 (#18 观测):HOROSA_PY_CHART_TIMING=1 时对 /chart 打三段计时(init/build/encode),
-# 与 Java 侧 B0(CHART_PERF_SEG_REV)对齐,补齐 python= 段的构成黑盒。默认关=输出与响应逐字节不变。
-_PY_CHART_TIMING = os.environ.get('HOROSA_PY_CHART_TIMING', '0').lower() in ('1', 'true', 'yes', 'on')
 
 # Ensure flatlib is resolvable from bundled sources.
 _CUR_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -51,16 +55,15 @@ from websrv.webcalc import WebCalcSrv
 from websrv.webacgsrv import AcgSrv
 from websrv.webastroextrasrv import AstroExtraSrv
 from websrv.webplanetariumsrv import PlanetariumSrv
-# 策天飞星:已按《十八飞星策天紫微斗数》全面重写为自有引擎,从 kentang 摘出直接挂载。
-# v3.0.1 perf ROUND-5 (HOROSA_CETIAN_LAZY):webcetiansrv 顶层拉起 streamlit —— 启动导入墙的 49%
-# (973 个启动模块中的 320 个,实测暖导入 1.3-1.9s、冷 ~2.4s+),是懒挂载模式漏掉的唯一重挂载。
-# 与 kentang 17 个服务同款 _LazyMountedService 惰性代理(首个 /cetian 请求才导入,sys.modules 记忆化,
-# 行为逐字节不变);预热线程会在空闲期提前导入。kill-switch:HOROSA_CETIAN_LAZY=0 恢复饿加载。
-from websrv.kentang.registry import mount_kentang_services, _LazyMountedService
+# 策天飞星:已按《十八飞星策天紫微斗数》全面重写为自有引擎,从 kentang 摘出,直接挂载(不再走 kentang registry)。
+from websrv.webcetiansrv import CeTianSrv
+from websrv.kentang.registry import mount_kentang_services
 
-_CETIAN_LAZY = os.environ.get('HOROSA_CETIAN_LAZY', '1').lower() not in ('0', 'false', 'no', 'off')
-if not _CETIAN_LAZY:
-    from websrv.webcetiansrv import CeTianSrv
+ledger_mark('py.imports_done', t0=_PY_T0)
+
+# 请求级三段计时(HOROSA_PY_CHART_TIMING)并入启动账本:
+# 开=对 /chart 记 init/build/encode 三段写账本;默认关=输出与响应逐字节不变。
+_PY_CHART_TIMING = os.environ.get('HOROSA_PY_CHART_TIMING', '0').lower() in ('1', 'true', 'yes', 'on')
 
 
 
@@ -194,9 +197,13 @@ class WebChartSrv:
             _pt2 = time.perf_counter() if _PY_CHART_TIMING else 0.0
             res = jsonpickle.encode(obj, unpicklable=False)
             if _PY_CHART_TIMING:
+                # 三段:init(PerChart 构造)/build(取数组装)/encode(序列化)——补齐 python= 段构成黑盒
                 _pt3 = time.perf_counter()
-                print('CHART_PY_PERF rev=py_chart_seg_v1 init={0:.0f} build={1:.0f} encode={2:.0f} total={3:.0f}'.format(
-                    (_pt1 - _pt0) * 1000, (_pt2 - _pt1) * 1000, (_pt3 - _pt2) * 1000, (_pt3 - _pt0) * 1000), flush=True)
+                ledger_mark('py.chart_req', extra={
+                    'init_ms': round((_pt1 - _pt0) * 1000.0, 1),
+                    'build_ms': round((_pt2 - _pt1) * 1000.0, 1),
+                    'encode_ms': round((_pt3 - _pt2) * 1000.0, 1),
+                })
             return res
         except:
             traceback.print_exc()
@@ -496,13 +503,32 @@ def _startup_gate_tool():
     STARTUP_GATE.wait(timeout=60)
 
 
+def _warm_real_astropy():
+    # xuanshi_astropy_warmup:提前把真 astropy(PyPI 天文库,kintaiyi 太乙引擎依赖)装入
+    # sys.modules——启动门(STARTUP_GATE)保证业务 POST 必在 warmup 之后,故「真 astropy
+    # 先于任何桩交互场景装入」被钉死,kentang 挂载顺序从此不再承重(v3.2.0 太乙静默 404
+    # 事故的顺序免疫层;根因层见 kinastro_common 桩 dunder 守卫)。瘦身包未随 astropy
+    # 时 ImportError 静默跳过(功能由各服务自身兜底),其它异常打印不吞。
+    try:
+        import astropy.units   # noqa: F401
+        import astropy.coordinates   # noqa: F401
+        import astropy.time   # noqa: F401
+    except ImportError:
+        pass
+    except Exception:
+        traceback.print_exc()
+
+
 def _run_warmups():
+    _warm_real_astropy()
     try:
         t0 = time.perf_counter()
         warm_chart = PerChart(dict(WebChartSrv.PD_WARMUP_SAMPLE))
         warm_chart.getPredict().getPrimaryDirection()
         WebChartSrv.WARMED = True
-        print('pd warmup ready in {0:.3f}s'.format(time.perf_counter() - t0), flush=True)
+        _pd_ms = (time.perf_counter() - t0) * 1000.0
+        print('pd warmup ready in {0:.3f}s'.format(_pd_ms / 1000.0), flush=True)
+        ledger_mark('py.warmup_pd', t0=_PY_T0, ms=_pd_ms)
     except Exception:
         traceback.print_exc()
     # 印度盘预热:把 india 各子算法冷路径载入,消除首次进入印度占星的 ~3s 冷启动;
@@ -510,10 +536,41 @@ def _run_warmups():
     try:
         t1 = time.perf_counter()
         warmup_india()
-        print('india warmup ready in {0:.3f}s'.format(time.perf_counter() - t1), flush=True)
+        _in_ms = (time.perf_counter() - t1) * 1000.0
+        print('india warmup ready in {0:.3f}s'.format(_in_ms / 1000.0), flush=True)
+        ledger_mark('py.warmup_india', t0=_PY_T0, ms=_in_ms)
+    except Exception:
+        traceback.print_exc()
+    # kentang 懒挂载空闲预热(WS-3d):挂载阶段零导入(mounts 段 -1.2~1.9s),
+    # 监听后在本 warmup 线程逐个补装真服务——用户首点通常已就绪;
+    # 预热失败只打日志,首个真实请求会以 KentangServiceLoadError 响亮 500(同一加载路径)。
+    try:
+        from websrv.kentang.registry import prewarm_kentang_services
+        t2 = time.perf_counter()
+        _loaded, _failed = prewarm_kentang_services()
+        _kt_ms = (time.perf_counter() - t2) * 1000.0
+        print('kentang prewarm ready in {0:.3f}s (loaded={1}, failed={2})'.format(
+            _kt_ms / 1000.0, _loaded, _failed), flush=True)
+        ledger_mark('py.warmup_kentang', t0=_PY_T0, ms=_kt_ms)
     except Exception:
         traceback.print_exc()
     STARTUP_GATE.set()
+    # xuanshi_summary_warmup_v1:玄学史首点的最大一次性成本不在 XuanShiSrv 类加载
+    # (上面的 kentang prewarm 已盖),而在 global_summary() 首算(全表 load_events()
+    # SELECT + 译名 join + celestial 装载,冷 ~2.3s)。放在门开之后:绝不延长业务请求
+    # 的等待窗;global_summary 纯只读 + 模块级 memo,预热与首点返回同一 dict,逐字节
+    # 一致,只是把成本从可见点击路径挪进空闲。失败静默=首点回到冷即付的现状。
+    # kill-switch:HOROSA_XUANSHI_WARMUP=0。
+    if os.environ.get('HOROSA_XUANSHI_WARMUP', '1').lower() not in ('0', 'false', 'no', 'off'):
+        try:
+            t3 = time.perf_counter()
+            from astrostudy import xuanshi as _xs_wu
+            _xs_wu.global_summary()
+            _xs_ms = (time.perf_counter() - t3) * 1000.0
+            print('xuanshi summary warmup ready in {0:.3f}s'.format(_xs_ms / 1000.0), flush=True)
+            ledger_mark('py.warmup_xuanshi_summary', t0=_PY_T0, ms=_xs_ms)
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':
@@ -541,13 +598,11 @@ if __name__ == '__main__':
     cherrypy.tree.mount(WebJdnSrv(), '/jdn')
     cherrypy.tree.mount(WebCalcSrv(), '/calc')
     cherrypy.tree.mount(AcgSrv(), '/location')
-    if _CETIAN_LAZY:
-        cherrypy.tree.mount(_LazyMountedService({'module': 'websrv.webcetiansrv', 'class_name': 'CeTianSrv'}), '/cetian')
-    else:
-        cherrypy.tree.mount(CeTianSrv(), '/cetian')
+    cherrypy.tree.mount(CeTianSrv(), '/cetian')
     cherrypy.tree.mount(AstroExtraSrv(), '/astroextra')
     cherrypy.tree.mount(PlanetariumSrv(), '/planetarium')
     mount_kentang_services(cherrypy)
+    ledger_mark('py.mounts_done', t0=_PY_T0)
 
     # 绑定前先确保端口可用(回收上次崩溃残留的僵尸 chart python),消除「Port 8899 not free」反复起不来。
     ensure_chart_port_free('127.0.0.1', chart_port)
@@ -560,126 +615,5 @@ if __name__ == '__main__':
     cherrypy.engine.start()
     # P0 启动握手:监听后向 stdout 报端口,壳/launcher 可确认「此端口确为本次起的 chart 后端」(消 TOCTOU/误判)。
     print('HOROSA_READY chart_port={0}'.format(chart_port), flush=True)
-
-    # v3.0.1 perf ROUND-3 R3 (HOROSA_XUANSHI_WARMUP): the kentang registry's LazyMountedService
-    # (marker: HOROSA_KENTANG_LAZY_MOUNT) defers webxuanshisrv's heavy import chain (xuanshi's 5
-    # submodules + 99MB SQLite bundles) OFF the startup path. That saves ~5-10s of Windows cold
-    # import, BUT it shifts the cost to the first user click on the 玄学史 tab. To hide that
-    # click-latency behind idle time — same trick Round-2's chartProbeWarmupPromise (service-manager
-    # side) plays for the /chart cold path — spawn a background daemon thread that sleeps past the
-    # visible-window paint, then imports webxuanshisrv once. Non-blocking, non-fatal on
-    # error, idempotent (importlib memoizes in sys.modules). Kill-switch: HOROSA_XUANSHI_WARMUP=0
-    # (or if lazy mount itself is disabled via HOROSA_KENTANG_LAZY_MOUNT=0, warmup is redundant
-    # anyway since the module was already eagerly imported at mount time).
-    def _horosa_xuanshi_warmup():
-        import os as _os_wu
-        import time as _time_wu
-        import threading as _threading_wu
-        import importlib as _importlib_wu
-        if _os_wu.environ.get('HOROSA_XUANSHI_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
-            return
-        def _run():
-            try:
-                # PERF-R6:20s→10s —— streamlit 桩+裁包后各服务冷导入大幅变便宜,预热整体前移,
-                # 用户更早点开玄学史也是暖的;与 CDS eager dump(60s)完全错开,错峰结构不变。
-                _time_wu.sleep(10.0)
-                _importlib_wu.import_module('websrv.webxuanshisrv')
-                # v3.0.1 perf ROUND-4 R4 (HOROSA_XUANSHI_WARMUP): also materialize the 玄学史 global
-                # summary once so the FIRST /xuanshi/summary click hits an already-warm cache instead of
-                # paying the full-table load_events() SELECT + translation-join + celestial load on the
-                # visible path. global_summary() is pure read-only + memoized (_XX_CACHE / celestial load
-                # cache / db._CONNS), so computing it at warmup vs at first request returns the IDENTICAL
-                # dict — byte-identical, just paid off the click path. Non-fatal.
-                try:
-                    from astrostudy import xuanshi as _xs_wu
-                    _xs_wu.global_summary()
-                except Exception:
-                    pass
-            except Exception:
-                pass  # non-fatal — cold path will pay the cost on first request instead
-        _threading_wu.Thread(target=_run, name='HorosaXuanShiWarmup', daemon=True).start()
-    _horosa_xuanshi_warmup()
-
-    # v3.0.1 perf ROUND-4 R4 (HOROSA_QIZHENG_WARMUP): the 七政四余 起盘 itself is already fast
-    # (swe.sweObject, ~0.6s), but the qizheng service module webqizhengkinsrv historically paid a
-    # heavy one-time COLD import on the user's first 七政四余 click (the kentang LazyMountedService
-    # defers it off startup, same as xuanshi; since v3.1.0 the upstream streamlit stub removes the
-    # biggest chunk, the pre-import still hides the remaining engine/data cost). Pre-import it on a
-    # STAGGERED background daemon (after the xuanshi warmup so the two heavy imports don't spike CPU
-    # together), hiding the import behind idle time. Non-blocking, non-fatal, idempotent
-    # (sys.modules memoizes → the first real request reuses the warmed module). Byte-identical: only
-    # pre-runs the SAME import the lazy mount would run on first request; zero change to
-    # compute_chart / shensha / dasha output. Kill-switch: HOROSA_QIZHENG_WARMUP=0.
-    def _horosa_qizheng_warmup():
-        import os as _os_qw
-        import time as _time_qw
-        import threading as _threading_qw
-        import importlib as _importlib_qw
-        if _os_qw.environ.get('HOROSA_QIZHENG_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
-            return
-        def _run():
-            try:
-                _time_qw.sleep(14.0)  # PERF-R6:24s→14s(紧跟 xuanshi 之后错峰)
-                _importlib_qw.import_module('websrv.webqizhengkinsrv')
-            except Exception:
-                pass  # non-fatal — cold path will pay the cost on first request instead
-        _threading_qw.Thread(target=_run, name='HorosaQiZhengWarmup', daemon=True).start()
-    _horosa_qizheng_warmup()
-
-    # v3.0.1 perf ROUND-4 R4 (HOROSA_SERVICES_WARMUP): 泛化版技法服务预热。kentang 的
-    # LazyMountedService 把全部技法服务的重导入挪出了启动路径,但也意味着每个技法的**首次点击**
-    # 要付一次冷导入(普查实测:MED 档 geomancy/shaozi/tieban/fendjing/beiji/nanji/chunzi/xianqin
-    # 各有 astro 数据束/SQL 初始化等一次性成本)。这里在 xuanshi(20s)/qizheng(24s)之后再错峰 28s,
-    # 用**单个**守护线程按序逐个预导入其余服务模块,每个之间 sleep 0.8s——单线程+错峰保证预热期
-    # CPU 无可感占用。字节级安全:与懒挂载首请求执行的是同一个 import(sys.modules 记忆化,首请求
-    # 直接复用已热模块),不改任何计算。每个模块独立 try/except,失败=该技法回到首点付冷成本的现状。
-    # Kill-switch: HOROSA_SERVICES_WARMUP=0。
-    def _horosa_services_warmup():
-        import os as _os_sw
-        import time as _time_sw
-        import threading as _threading_sw
-        import importlib as _importlib_sw
-        if _os_sw.environ.get('HOROSA_SERVICES_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
-            return
-        def _run():
-            # kentang_astropy_preimport_v1:真 astropy(PyPI 天文库,kintaiyi 太乙引擎的重依赖,
-            # 冷导入 ~1-2s)在任何技法预热/桩注入之前先行缓存进 sys.modules。双重收益:
-            # ① 深度防御——astropy 导入期会 inspect.getmodule() 遍历 sys.modules 做内省,
-            #    任何后来者(桩/劣质模块)都无法再影响它(v3.2.0 太乙 404 的导入顺序类根因,
-            #    根修在 kinastro_common 的 stub_dunder_guard_v1,这里把整类顺序依赖归零);
-            # ② 太乙首点最大的一次性导入成本挪进启动后空闲期。失败静默(首点自付,与现状一致)。
-            try:
-                import astropy.units  # noqa: F401
-            except Exception:
-                pass
-            _time_sw.sleep(18.0)  # PERF-R6:28s→18s(排在 xuanshi/qizheng 之后,0.8s 间距不变)
-            for _mod in (
-                # cetian 置首:历史上它拖 streamlit(启动导入墙的 49%,ROUND-5 起改为懒挂载;
-                # v3.1.0 上游 stub 后仍有引擎/数据一次性成本),预热最先补它。
-                'websrv.webcetiansrv',
-                'websrv.webgeomancysrv',
-                'websrv.webshaozisrv',
-                'websrv.webtiebansrv',
-                'websrv.webfendjingsrv',
-                'websrv.webbeijisrv',
-                'websrv.webnanjisrv',
-                'websrv.webchunzisrv',
-                'websrv.webxianqinsrv',
-                'websrv.webtaiyisrv',
-                'websrv.webjinkousrv',
-                'websrv.webqimensrv',
-                'websrv.webwangjisrv',
-                'websrv.webwuzhaosrv',
-                'websrv.webtaixuansrv',
-                'websrv.webjingjuesrv',
-                'websrv.webshenyishusrv',
-            ):
-                try:
-                    _importlib_sw.import_module(_mod)
-                except Exception:
-                    pass  # non-fatal — 该技法首点自付冷导入,与现状一致
-                _time_sw.sleep(0.8)
-        _threading_sw.Thread(target=_run, name='HorosaServicesWarmup', daemon=True).start()
-    _horosa_services_warmup()
-
+    ledger_mark('py.listening', t0=_PY_T0, extra={'port': chart_port})
     cherrypy.engine.block()

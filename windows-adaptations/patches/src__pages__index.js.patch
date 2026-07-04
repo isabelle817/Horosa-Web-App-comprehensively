@@ -1,18 +1,8 @@
 diff --git a/astrostudyui/src/pages/index.js b/astrostudyui/src/pages/index.js
-index 5aa95f6..982e790 100644
+index 8d63b57..f18b957 100644
 --- a/astrostudyui/src/pages/index.js
 +++ b/astrostudyui/src/pages/index.js
-@@ -62,7 +62,8 @@ function startIdlePreload(){
- 		}else{
- 			setTimeout(next, 300);
- 		}
--	}, 2000);
-+	// perf T-3:首帧后 1s 起跑(原 2s;仍每次 1 个 chunk、空闲执行,不抢首屏交互)。
-+	}, 1000);
- }
- 
- // 3D 星盘动态化(首包瘦身):babylon 系重组件不入主包;lazyPreloadable 自带 Suspense+错误边界,并进 idle 预取队列(用户点击时通常已就绪)。
-@@ -352,6 +353,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+@@ -391,6 +391,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
          // 盘变了才刷新目标技法,且延迟到切换 paint 之后(切换瞬间、刷新随后带 spinner);盘没变=跳过=纯瞬间。
          if(needRefresh){
              tabRefreshSigRef.current[key] = currentSig;
@@ -22,10 +12,12 @@ index 5aa95f6..982e790 100644
              setTimeout(()=>{
                  if(!(predictHook[key] && predictHook[key].fun)){ return; }
                  if(key === 'indiachart' || key === 'cntradition' || key === 'jieqichart'
-@@ -376,6 +380,14 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
-     }
- 
-     function changeCond(values){
+@@ -463,10 +466,18 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+         if(values.southchart !== undefined && values.southchart !== null){
+             flds.southchart.value = values.southchart;
+         }
+-        if(flds.lat.value >= 0){
+-            let lat = flds.lat.value;
 +        // Windows-ahead defensive guard: a restored/imported chart payload may omit a
 +        // form field or carry a numeric `lat`; ensureField guarantees the field object
 +        // exists, and `lat` is String()-coerced before .toLowerCase() below (a numeric
@@ -34,15 +26,6 @@ index 5aa95f6..982e790 100644
 +            if(obj && !obj[name]){ obj[name] = { value: undefined }; }
 +            return obj ? obj[name] : { value: undefined };
 +        };
-         let flds = {
-             ...fields,
-         };  
-@@ -424,10 +436,10 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
-         if(values.southchart !== undefined && values.southchart !== null){
-             flds.southchart.value = values.southchart;
-         }
--        if(flds.lat.value >= 0){
--            let lat = flds.lat.value;
 +        if(ensureField(flds, 'lat').value >= 0){
 +            let lat = String(flds.lat.value);
              if(lat.toLowerCase().indexOf('n') >= 0){
@@ -51,3 +34,4 @@ index 5aa95f6..982e790 100644
              }
          }
  
+
