@@ -681,11 +681,13 @@ reclaim_stale_port() {
 if ! reclaim_stale_port "${CHART_PORT}" "webchartsrv"; then
   diag_log "blocked: port ${CHART_PORT} still in use after reclaim -> exit 3 (retryable)"
   echo "port ${CHART_PORT} is already in use."
+  echo "端口冲突(退出码 3=可重试):换端口重试,或先运行 stop_horosa_local.sh。Port conflict (exit 3 = retryable)."
   exit 3
 fi
 if ! reclaim_stale_port "${BACKEND_PORT}" "astrostudyboot"; then
   diag_log "blocked: port ${BACKEND_PORT} still in use after reclaim -> exit 3 (retryable)"
   echo "port ${BACKEND_PORT} is already in use."
+  echo "端口冲突(退出码 3=可重试):换端口重试,或先运行 stop_horosa_local.sh。Port conflict (exit 3 = retryable)."
   exit 3
 fi
 
@@ -831,11 +833,14 @@ PY
 }
 
 cd "${ROOT}"
-PYTHON_LAUNCH_CMD=(env PYTHONPATH="${PYTHONPATH_ASTRO}" HOROSA_CHART_PORT="${CHART_PORT}")
+# horosa_web_python_utf8_v1:①剥离宿主 PYTHONHOME/PYTHONSTARTUP/PYTHONUSERBASE(经典
+# init_fs_encoding 杀手与用户级注入面;PYTHONPATH 本行显式覆盖=天然免疫);② -X utf8 CLI 旗
+# 优先级高于任何继承环境(宿主 PYTHONUTF8=0 也压不掉),CJK 路径/非 UTF-8 码页机器行为一致。
+PYTHON_LAUNCH_CMD=(env -u PYTHONHOME -u PYTHONSTARTUP -u PYTHONUSERBASE PYTHONPATH="${PYTHONPATH_ASTRO}" HOROSA_CHART_PORT="${CHART_PORT}")
 if [ "${PYTHON_LAUNCH_NOUSERSITE}" = "1" ]; then
   PYTHON_LAUNCH_CMD+=(PYTHONNOUSERSITE=1)
 fi
-PYTHON_LAUNCH_CMD+=("${PYTHON_BIN}" "${ROOT}/astropy/websrv/webchartsrv.py")
+PYTHON_LAUNCH_CMD+=("${PYTHON_BIN}" -X utf8 "${ROOT}/astropy/websrv/webchartsrv.py")
 # pid 文件读取防御:文件缺失/为空/非数字时不得把空串喂给 kill -0(会报 usage 错→被误读成「进程已退出」)。
 pid_alive() {
   local f="$1" pid
@@ -853,7 +858,10 @@ if ! pid_alive "${PY_PID_FILE}"; then
 fi
 ledger_log sh.python_spawned
 
-JAVA_LAUNCH_CMD=(env \
+# horosa_web_java_env_sanitize_v1:宿主毒化变量剥离 —— 装了 IDE/安卓工具链的机器常见全局
+# _JAVA_OPTIONS/JAVA_TOOL_OPTIONS(如 -Xmx32m),JVM 会无条件并入启动参数;CLASSPATH 同理。
+# 与桌面启动器 sanitizeEmbeddedRuntimeEnv 同语义;env -u 在 macOS/Git Bash 均支持。
+JAVA_LAUNCH_CMD=(env -u _JAVA_OPTIONS -u JAVA_TOOL_OPTIONS -u JDK_JAVA_OPTIONS -u CLASSPATH \
   HOROSA_DESKTOP_MONGO_OPTIONAL="${DESKTOP_MONGO_OPTIONAL}" \
   HOROSA_DESKTOP_MONGO_SKIP_PING="${DESKTOP_MONGO_SKIP_PING}" \
   HOROSA_MONGO_FALLBACK_DIR="${MONGO_FALLBACK_DIR}" \
@@ -1003,6 +1011,7 @@ if [ "${ready}" -ne 1 ]; then
   bind_err_re='Address already in use|Errno 48|BindException|Port [0-9]+ was already in use'
   if { tail -n 160 "${PY_LOG}" 2>/dev/null || true; tail -n 160 "${JAVA_LOG}" 2>/dev/null || true; } | grep -Eq "${bind_err_re}"; then
     diag_log "===== run end (failed: port bind conflict, exit 3 retryable) ====="
+    echo "端口冲突(退出码 3=可重试):换端口重试,或先运行 stop_horosa_local.sh。Port conflict (exit 3 = retryable)."
     exit 3
   fi
   diag_log "===== run end (failed) ====="
@@ -1088,3 +1097,14 @@ echo "html:     ${HTML_PATH}"
 echo "logs:     ${LOG_DIR}"
 echo ""
 echo "stop:     ${ROOT}/stop_horosa_local.sh"
+
+# horosa_web_pyc_precompile_v1:就绪后 45s 空闲期后台预编译 .pyc(镜像桌面 schedulePycCompile,
+# 下次启动 Python 冷导入省 2-3s)。幂等、Python 按 mtime 自失效;绝不阻塞前台、失败零影响。
+# HOROSA_WEB_PYC_PRECOMPILE=0 关闭。
+if [ "${HOROSA_WEB_PYC_PRECOMPILE:-1}" != "0" ]; then
+  (
+    sleep 45
+    "${PYTHON_BIN}" -X utf8 -m compileall -q "${ROOT}/astropy" "${ROOT}/vendor" >/dev/null 2>&1 || true
+  ) >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+fi

@@ -209,6 +209,11 @@ function Get-StandalonePythonRuntime {
   # eliminates "works on my machine" drift. Bump these two lines to upgrade.
   $tag = '20260510'
   $asset = 'cpython-3.11.15+20260510-x86_64-pc-windows-msvc-install_only.tar.gz'
+  # Pinned checksum (from the release's SHA256SUMS). Update together with $tag/$asset on every
+  # bump. A flaky mirror or a tampered download must never become the shipped interpreter:
+  # transient download failures are retried, a checksum mismatch is a HARD stop (no silent
+  # fallback to an unverified archive).
+  $expectedSha256 = 'c0d6d9da1286640790c07f32c74516486c4ccd170a65952eebb3e125c34e6c67'
   $url = "https://github.com/astral-sh/python-build-standalone/releases/download/$tag/$asset"
 
   $work = Join-Path ([System.IO.Path]::GetTempPath()) ("horosa-pbs-" + [System.Guid]::NewGuid().ToString('N'))
@@ -216,10 +221,27 @@ function Get-StandalonePythonRuntime {
   $tarPath = Join-Path $work 'python.tar.gz'
   try {
     Write-Host "Downloading pinned standalone Python: $asset"
-    & curl.exe -sL --fail $url -o $tarPath
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $tarPath)) {
-      throw "download failed (curl exit $LASTEXITCODE)"
+    $downloadOk = $false
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+      if ($attempt -gt 1) {
+        Write-Host ("[WARN] download attempt {0}/3 after failure; retrying in 3s..." -f $attempt)
+        Start-Sleep -Seconds 3
+        Remove-Item -Path $tarPath -Force -ErrorAction SilentlyContinue
+      }
+      & curl.exe -sL --fail $url -o $tarPath
+      if ($LASTEXITCODE -eq 0 -and (Test-Path $tarPath)) {
+        $downloadOk = $true
+        break
+      }
     }
+    if (-not $downloadOk) {
+      throw "download failed after 3 attempts (curl exit $LASTEXITCODE)"
+    }
+    $actualSha256 = (Get-FileHash -LiteralPath $tarPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+      throw "standalone Python checksum mismatch (expected $expectedSha256, got $actualSha256) - refusing to stage an unverified interpreter. Re-download later or verify the pinned tag/asset/sha trio."
+    }
+    Write-Host ("[OK] Standalone Python checksum verified: {0}" -f $expectedSha256)
     & tar.exe -xzf $tarPath -C $work
     if ($LASTEXITCODE -ne 0) { throw "extract failed (tar exit $LASTEXITCODE)" }
     $extractedRoot = Join-Path $work 'python'
@@ -235,6 +257,11 @@ function Get-StandalonePythonRuntime {
     Write-Host "[OK] Standalone Python staged into runtime: $asset"
     return $true
   } catch {
+    if ($_.Exception.Message -like '*checksum mismatch*') {
+      # Integrity failure is NOT a fallback condition: silently switching to a system Python
+      # after a bad-checksum download would defeat the pin. Propagate as a hard stop.
+      throw
+    }
     Write-Host ("[WARN] Standalone Python acquisition failed: {0}" -f $_.Exception.Message)
     return $false
   } finally {

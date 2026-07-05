@@ -94,7 +94,9 @@ port_listening() {
 file_mtime() {
   local path="$1"
   if [ -f "${path}" ]; then
-    stat -f "%m" "${path}" 2>/dev/null || echo 0
+    # horosa_web_portable_stat_v1:BSD(-f,macOS)优先,GNU(-c,Linux/Git Bash)回退 ——
+    # 此前 Git Bash 下恒回 0(freshness 永远判旧),现在两端都取真 mtime。
+    stat -f "%m" "${path}" 2>/dev/null || stat -c "%Y" "${path}" 2>/dev/null || echo 0
   else
     echo 0
   fi
