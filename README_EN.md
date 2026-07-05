@@ -141,6 +141,9 @@ Yes. Every computation runs locally; no internet is needed to install or use it.
 **Does it run on ARM laptops (Snapdragon)?**
 Windows 11 on ARM runs Horosa through the system's built-in x64 emulation — fully functional, slightly slower than native x64. Windows 10 on ARM has no x64 emulation and is not supported; the installer detects this and says so instead of leaving a broken install.
 
+**Does it work on Windows S-mode or company-managed PCs?**
+Windows S-mode only allows Microsoft Store apps and blocks side-loaded installers (including Horosa's setup itself) — a system-level restriction; switch out of S-mode (Settings → Activation) before installing. Enterprise AppLocker / software-restriction policies behave the same way; ask your IT admin to allow the app.
+
 **Does my Windows display language or region affect anything?**
 No. Install and use are locale-independent by design: any system language, Turkish/Thai/Arabic regional settings, legacy GBK/Shift-JIS code pages, the "Beta: UTF-8 worldwide" option, and non-ASCII Windows user names all work. Blocking installer errors are shown in Chinese plus a short English line.
 
