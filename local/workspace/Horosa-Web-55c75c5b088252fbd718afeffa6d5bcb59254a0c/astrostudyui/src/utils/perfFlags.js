@@ -105,3 +105,15 @@ export function firstLoadParallelEnabled(){
 export function speculativePrecomputeEnabled(){
 	return flagEnabled('horosa.perf.speculativePrecompute');
 }
+
+// PERF-R8 P2:排盘后数据层空闲预热(scheduleDataWarmGroup)的细闸——在总闸 idleWarmQueue
+// 之内再单独可关。预热只经各技法自己的缓存入口取数(结果与用户首点逐字节一致,只是提前付),
+// 关掉即回到「首点付冷成本」的现状。
+export function dataWarmTasksEnabled(){
+	return flagEnabled('horosa.perf.dataWarmTasks');
+}
+
+// PERF-R8 P3:分至图年份邻位预取(year±1)的独立闸。
+export function neighborPrefetchEnabled(){
+	return flagEnabled('horosa.perf.neighborPrefetch');
+}

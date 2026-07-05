@@ -1396,6 +1396,23 @@ async function fetchGuolaoChartCached(params, options){
 	return clonePlain(result);
 }
 
+// PERF-R8 P2(数据层空闲预热):按当前命盘 fields 预热七政「本命盘」进 guolaoMem —— 与用户
+// 首点走完全相同的 fieldsToParams + fetchGuolaoChartCached 入口(key 同、body 同、结果逐字节同,
+// 只是提前付)。仅暖本命:流年/Moira 规则依赖「此刻」的流年时间(makeDefaultMoiraTransitTime)
+// =取现时端点,按预热白名单纪律禁入。存储样式为七政 kinastro 引擎时跳过(不同引擎路径,
+// 预热本命盘对其无效)。失败静默;绝不 dispatch 任何全局 state。
+export async function warmGuolaoNatal(fields){
+	try{
+		if(!fields || !fields.date || !fields.date.value || !fields.date.value.format){ return null; }
+		if(!(fields.lon && fields.lon.value) || !(fields.lat && fields.lat.value)){ return null; }
+		if(getStoredGuolaoChartStyle() === GUOLAO_CHART_STYLE_QIZHENG){ return null; }
+		const params = fieldsToParams(fields);
+		return await fetchGuolaoChartCached(params, { silent: true });
+	}catch(e){
+		return null; // 预热失败静默:首点回到冷即付的现状
+	}
+}
+
 function buildGuolaoSnapshotText(params, result){
 	const lines = [];
 	const chart = result && result.chart ? result.chart : {};

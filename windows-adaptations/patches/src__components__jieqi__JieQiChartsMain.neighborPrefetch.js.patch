@@ -1,0 +1,25 @@
+diff --git a/astrostudyui/src/components/jieqi/JieQiChartsMain.js b/astrostudyui/src/components/jieqi/JieQiChartsMain.js
+index 8d2e163..87a50fc 100644
+--- a/astrostudyui/src/components/jieqi/JieQiChartsMain.js
++++ b/astrostudyui/src/components/jieqi/JieQiChartsMain.js
+@@ -22,7 +22,7 @@ import * as Su28Helper from '../su28/Su28Helper';
+ import { buildAstroSnapshotContent, } from '../../utils/astroAiSnapshot';
+ import { saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
+ import { setJieqiSeedLocalCache, } from '../../utils/localCalcCache';
+-import { fetchPreciseJieqiYear } from '../../utils/preciseCalcBridge';
++import { fetchPreciseJieqiYear, prefetchJieqiYearNeighbors } from '../../utils/preciseCalcBridge';
+ import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
+ import { appendPlanetHouseInfo, appendPlanetHouseInfoById, } from '../../utils/planetHouseInfo';
+ 
+@@ -1126,6 +1126,11 @@ export class JieQiChartsMain extends Component{
+ 		const seq = ++this.baziRequestSeq;
+ 		const reqPromise = (async()=>{
+ 			const fullResult = await fetchPreciseJieqiYear(seedParams);
++			if(fullResult){
++				// PERF-R8 P3:当前年取到后静默预取 year±1(同参仅换年;幂等三层缓存;
++				// generation 门控防连点风暴)→ 年份步进=命中即时。失败静默。
++				prefetchJieqiYearNeighbors(seedParams);
++			}
+ 			if(!fullResult || this.unmounted){
+ 				return fullResult;
+ 			}

@@ -58,7 +58,7 @@ apply_patch(){ # $1=marker $2=target-rel $3=patchfile
 apply_patch isDesktopShellWindow astrostudyui/src/utils/windowSizePersistence.js src__utils__windowSizePersistence.js.patch
 # PERF-R7 起该 patch 为「Mac 基线→Windows 现状」的累积全量(ensureField 守卫 + P1-5 切页
 # User-Timing 打点 + T-3 idle 预载 1s 起跑);守卫 marker 用最新的 refresh-start。
-apply_patch "refresh-start"       astrostudyui/src/pages/index.js                 src__pages__index.js.patch
+apply_patch scheduleDataWarmGroup  astrostudyui/src/pages/index.js                 src__pages__index.js.patch
 
 echo "== 6. backend patch (boundless #14: loopback NEVER via the system proxy) — REQUIRES a jar rebuild =="
 apply_patch isLoopbackTarget     astrostudysrv/boundless/src/main/java/boundless/net/http/HttpUriRequestHystrixCommand.java boundless__HttpUriRequestHystrixCommand.java.patch
@@ -73,7 +73,7 @@ cp "$OV/files/astrostudyui/src/components/xuanshi/echartsCore.js" "$WS/astrostud
 # marker-guarded:Mac 若已合入同款优化,marker 命中即跳过 -> apply.sh 变 no-op(isLoopbackTarget 先例)。
 # PERF-R7 起 perfFlags 由三段链式补丁合并为一个累积全量补丁(planetarium 系 + techniqueCache +
 # firstLoadParallel + T-6 speculativePrecompute),守卫 marker 用最新的 speculativePrecomputeEnabled。
-apply_patch speculativePrecomputeEnabled   astrostudyui/src/utils/perfFlags.js                          src__utils__perfFlags.speculativePrecompute.js.patch
+apply_patch neighborPrefetchEnabled        astrostudyui/src/utils/perfFlags.js                          src__utils__perfFlags.speculativePrecompute.js.patch
 apply_patch "perf:planetariumRenderGating" astrostudyui/src/components/planetarium/PlanetariumBabylon.js src__components__planetarium__PlanetariumBabylon.js.patch
 apply_patch "./echartsCore"                astrostudyui/src/components/xuanshi/XuanShiCelestial.js       src__components__xuanshi__XuanShiCelestial.js.patch
 apply_patch "./echartsCore"                astrostudyui/src/components/xuanshi/XuanShiMap.js             src__components__xuanshi__XuanShiMap.js.patch
@@ -203,9 +203,28 @@ echo "== 22. PERF-R7 T-6 预测性预计算(点击→显示体感瞬间;perfFlag
 # 只暖 services 层 chartMem/在途缓存(不落 state、不动 UI、失败静默);点提交时 *fetch 命中/join →
 # 点击→显示≈渲染耗时。配套:services/astro fetchChart 只缓存有效盘(chartMem_valid_only_v1,错误
 # 信封不进缓存=对既有路径也是净改善)。perfFlags 开关已并入 §7 的累积补丁。跨平台,建议上游化 Mac。
-apply_patch precomputeFetch                astrostudyui/src/models/astro.js                             src__models__astro.precomputeFetch.js.patch
-apply_patch chartMem_valid_only_v1         astrostudyui/src/services/astro.js                           src__services__astro.chartMemValidOnly.js.patch
+apply_patch markChartRefreshEnd            astrostudyui/src/models/astro.js                             src__models__astro.precomputeFetch.js.patch
+apply_patch markChartCacheHit              astrostudyui/src/services/astro.js                           src__services__astro.chartMemValidOnly.js.patch
 apply_patch scheduleLivePrecompute         astrostudyui/src/components/comp/ChartFormData.js            src__components__comp__ChartFormData.livePrecompute.js.patch
 apply_patch onLivePrecompute               astrostudyui/src/components/astro/AstroFormComp.js           src__components__astro__AstroFormComp.livePrecompute.js.patch
+
+echo "== 23. PERF-R8 P0/P2/P3(观测补全 + 排盘后数据层空闲预热 + 分至邻位预取;纯前端、kill-switch、功能零降级)=="
+# P0 观测:refresh-end/render-complete/cache-hit User-Timing 打点(并入 models/services/pages 累积补丁)。
+# P2 数据层预热:idleWarmQueue 组式 API(scheduleDataWarmGroup:generation 作废旧组+泵可重 arm)
+#   + 排盘成功后按当前盘预热 星运pd/印占/七政本命/量化盘中点 —— 全部走各技法**自己导出的
+#   builder + 缓存入口**(key/body 与真实首点逐字节一致;india 需 dashaSystem 默认补齐、
+#   germanytech 口径≠AI 无头版、guolao 禁 snapshot 入口/kinastro 样式跳过、pd 抽纯函数绝不
+#   dispatch)。双闸 horosa.perf.idleWarmQueue(总)/ horosa.perf.dataWarmTasks(细)。
+# P3 邻位预取:jieqi 当前年取到后静默预取 year±1(generation 门控防连点风暴;闸 neighborPrefetch)。
+# lazy-init A/B 实测不采纳(ON 中位 +86ms,成本搬家),旗子保持默认关;BeanTiming 观测器
+# (astrostudyboot,HOROSA_BEAN_TIMING=1 才开)为下一轮定点惰化取数——jar 侧,非 overlay。
+apply_patch scheduleDataWarmGroup          astrostudyui/src/utils/idleWarmQueue.js       src__utils__idleWarmQueue.dataWarmGroup.js.patch
+apply_patch scheduleDataWarmGroup          "astrostudyui/src/utils/__tests__/idleWarmQueue.test.js" src__utils__tests__idleWarmQueue.test.dataWarmGroup.js.patch
+apply_patch buildIndiaWarmParams           astrostudyui/src/components/astro/IndiaChart.js src__components__astro__IndiaChart.warmParams.js.patch
+apply_patch warmGuolaoNatal                astrostudyui/src/components/guolao/GuoLaoChartMain.js src__components__guolao__GuoLaoChartMain.warmNatal.js.patch
+apply_patch warmPrimaryDirection           astrostudyui/src/components/direction/AstroDirectMain.js src__components__direction__AstroDirectMain.warmPd.js.patch
+apply_patch warmGermanyMidpoint            astrostudyui/src/components/germany/AstroMidpoint.js src__components__germany__AstroMidpoint.warmMidpoint.js.patch
+apply_patch prefetchJieqiYearNeighbors     astrostudyui/src/utils/preciseCalcBridge.js   src__utils__preciseCalcBridge.neighborPrefetch.js.patch
+apply_patch prefetchJieqiYearNeighbors     astrostudyui/src/components/jieqi/JieQiChartsMain.js src__components__jieqi__JieQiChartsMain.neighborPrefetch.js.patch
 
 echo "== done. Verify: npm run selfcheck (windows-ahead / perf sentinels must all pass). =="

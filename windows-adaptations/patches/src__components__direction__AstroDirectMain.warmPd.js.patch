@@ -1,0 +1,247 @@
+diff --git a/astrostudyui/src/components/direction/AstroDirectMain.js b/astrostudyui/src/components/direction/AstroDirectMain.js
+index 4bf6e65..b06e78e 100644
+--- a/astrostudyui/src/components/direction/AstroDirectMain.js
++++ b/astrostudyui/src/components/direction/AstroDirectMain.js
+@@ -499,6 +499,131 @@ function buildPrimaryDirectionFetchFields(baseFields, chartObj, pdMethod, pdTime
+ 	return fields;
+ }
+ 
++// PERF-R8 P2:主限配置/请求构造抽为模块级纯函数 —— 原类方法逻辑逐字搬移(解析顺序
++// override → chart.params → fields → 默认 不变),类方法纯委托。数据层预热复用同一构造,
++// key/body 与真实首点逐字节一致。
++function getDesiredPdConfigPure(chartObj, fields, override = {}){
++	const chart = chartObj || {};
++	const params = chart.params || {};
++	const flds = fields || {};
++	const pick = (key)=>{
++		if(override[key] !== undefined && override[key] !== null){
++			return override[key];
++		}
++		if(params[key] !== undefined && params[key] !== null){
++			return params[key];
++		}
++		if(flds[key] && flds[key].value !== undefined && flds[key].value !== null){
++			return flds[key].value;
++		}
++		return undefined;
++	};
++	const toFlag = (v)=>(v === true || v === 1 || v === '1' || v === 'true') ? 1 : 0;
++	// 顺向 / 逆向 默认都开(用户偏好「顺逆都开」):仅显式 0/false 才关。
++	const offIf = (v)=>(v === 0 || v === '0' || v === false || v === 'false') ? 0 : 1;
++	const pdDirect = offIf(pick('pdDirect'));
++	const pdConverse = offIf(pick('pdConverse'));
++	return {
++		pdMethod: override.pdMethod || (params.pdMethod
++			? params.pdMethod
++			: (flds.pdMethod ? flds.pdMethod.value : DEFAULT_PD_METHOD)),
++		pdTimeKey: override.pdTimeKey || (params.pdTimeKey
++			? params.pdTimeKey
++			: (flds.pdTimeKey ? flds.pdTimeKey.value : DEFAULT_PD_TIME_KEY)),
++		pdYears: normalizePdYears(override.pdYears !== undefined && override.pdYears !== null ? override.pdYears
++			: (params.pdYears !== undefined && params.pdYears !== null ? params.pdYears
++			: (flds.pdYears ? flds.pdYears.value : 100))),
++		pdtype: toFlag(pick('pdtype')),
++		pdDirect,
++		pdConverse,
++		pdAntiscia: toFlag(pick('pdAntiscia')),
++		pdTerms: toFlag(pick('pdTerms')),
++	};
++}
++
++function buildPrimaryDirectionRequestPure(chartObj, fields, override = {}){
++	const chart = chartObj || {};
++	// 与原类方法逐字对齐:配置解析用「组件 props.fields 对应位」(本参数 fields),
++	// fetch-fields 基底允许 override.fields 覆盖 —— 两处兜底语义不合并。
++	const desired = getDesiredPdConfigPure(chart, fields, override);
++	const nextFields = buildPrimaryDirectionFetchFields(
++		override.fields || fields,
++		chart,
++		desired.pdMethod,
++		desired.pdTimeKey,
++		desired.pdYears,
++		{
++			pdtype: desired.pdtype,
++			direct: desired.pdDirect === 1,
++			converse: desired.pdConverse === 1,
++			antiscia: desired.pdAntiscia === 1,
++			terms: desired.pdTerms === 1,
++		}
++	);
++	const dateValue = nextFields.date && nextFields.date.value;
++	const timeValue = nextFields.time && nextFields.time.value;
++	if(!dateValue || !timeValue || !dateValue.format || !timeValue.format){
++		return null;
++	}
++	const dateStr = dateValue.format('YYYY/MM/DD');
++	const timeStr = timeValue.format('HH:mm:ss');
++	// 畸形日期(NaN)绝不发请求——否则后端 Datetime 抛错弹「param error」。
++	if(`${dateStr}`.indexOf('NaN') >= 0 || `${timeStr}`.indexOf('NaN') >= 0){
++		return null;
++	}
++	return {
++		date: dateStr,
++		time: timeStr,
++		ad: nextFields.ad && nextFields.ad.value !== undefined ? nextFields.ad.value : (dateValue.ad !== undefined ? dateValue.ad : 1),
++		zone: nextFields.zone ? nextFields.zone.value : undefined,
++		lat: nextFields.lat ? nextFields.lat.value : undefined,
++		lon: nextFields.lon ? nextFields.lon.value : undefined,
++		gpsLat: nextFields.gpsLat ? nextFields.gpsLat.value : undefined,
++		gpsLon: nextFields.gpsLon ? nextFields.gpsLon.value : undefined,
++		hsys: nextFields.hsys ? nextFields.hsys.value : 0,
++		southchart: nextFields.southchart ? nextFields.southchart.value : 0,
++		zodiacal: nextFields.zodiacal ? nextFields.zodiacal.value : 0, siderealAyanamsa: nextFields.siderealAyanamsa ? nextFields.siderealAyanamsa.value : '',
++		tradition: nextFields.tradition ? nextFields.tradition.value : 0,
++		strongRecption: nextFields.strongRecption ? nextFields.strongRecption.value : 0,
++		simpleAsp: nextFields.simpleAsp ? nextFields.simpleAsp.value : 0,
++		virtualPointReceiveAsp: nextFields.virtualPointReceiveAsp ? nextFields.virtualPointReceiveAsp.value : 0,
++		doubingSu28: nextFields.doubingSu28 ? nextFields.doubingSu28.value : 0,
++		predictive: true,
++		includePrimaryDirection: true,
++		showPdBounds: nextFields.showPdBounds ? nextFields.showPdBounds.value : 1,
++		pdtype: desired.pdtype,
++		pdMethod: desired.pdMethod,
++		pdTimeKey: desired.pdTimeKey,
++		pdYears: desired.pdYears,
++		pdDirect: desired.pdDirect,
++		pdConverse: desired.pdConverse,
++		pdAntiscia: desired.pdAntiscia,
++		pdTerms: desired.pdTerms,
++		pdaspects: nextFields.pdaspects ? nextFields.pdaspects.value : [0, 60, 90, 120, 180],
++		name: nextFields.name ? nextFields.name.value : null,
++		pos: nextFields.pos ? nextFields.pos.value : null,
++		cid: null,
++	};
++}
++
++// PERF-R8 P2(数据层空闲预热):按当前盘+默认主限配置预热 /predict/pd —— 与星运首点
++// (默认子页 primarydirect)同一构造、同一 url+body → requestDedupe L1/L2 命中(10min 内
++// 首点 ≈0ms;超窗回落后端 paramhash 盘 ~百毫秒)。silent 且丢弃结果:绝不 dispatch、
++// 绝不触碰全局 state(组件路径的 savePrimaryDirectionRows 副作用与预热无关)。失败静默。
++export async function warmPrimaryDirection(chartObj, fields){
++	try{
++		const req = buildPrimaryDirectionRequestPure(chartObj, fields, {});
++		if(!req){ return null; }
++		return await request(`${Constants.ServerRoot}/predict/pd`, {
++			body: JSON.stringify(req),
++			cache: 'no-store',
++			silent: true,
++		});
++	}catch(e){
++		return null; // 预热失败静默:首点回到冷即付的现状
++	}
++}
++
+ function unwrapPredictiveResponse(data){
+ 	if(!data || typeof data !== 'object'){
+ 		return null;
+@@ -653,106 +778,13 @@ class AstroDirectMain extends Component{
+ 	}
+ 
+ 	getDesiredPdConfig(chartObj, override = {}){
+-		const chart = chartObj || this.props.chartObj || {};
+-		const params = chart.params || {};
+-		const fields = this.props.fields || {};
+-		// 解析顺序:override(本次「计算」选择) → chart.params(已落库) → fields(表单) → 默认。
+-		const pick = (key)=>{
+-			if(override[key] !== undefined && override[key] !== null){
+-				return override[key];
+-			}
+-			if(params[key] !== undefined && params[key] !== null){
+-				return params[key];
+-			}
+-			if(fields[key] && fields[key].value !== undefined && fields[key].value !== null){
+-				return fields[key].value;
+-			}
+-			return undefined;
+-		};
+-		const toFlag = (v)=>(v === true || v === 1 || v === '1' || v === 'true') ? 1 : 0;
+-		// 顺向 / 逆向 默认都开(用户偏好「顺逆都开」):仅显式 0/false 才关。
+-		const offIf = (v)=>(v === 0 || v === '0' || v === false || v === 'false') ? 0 : 1;
+-		const pdDirect = offIf(pick('pdDirect'));
+-		const pdConverse = offIf(pick('pdConverse'));
+-		return {
+-			pdMethod: override.pdMethod || (params.pdMethod
+-				? params.pdMethod
+-				: (fields.pdMethod ? fields.pdMethod.value : DEFAULT_PD_METHOD)),
+-			pdTimeKey: override.pdTimeKey || (params.pdTimeKey
+-				? params.pdTimeKey
+-				: (fields.pdTimeKey ? fields.pdTimeKey.value : DEFAULT_PD_TIME_KEY)),
+-			pdYears: normalizePdYears(override.pdYears !== undefined && override.pdYears !== null ? override.pdYears
+-				: (params.pdYears !== undefined && params.pdYears !== null ? params.pdYears
+-				: (fields.pdYears ? fields.pdYears.value : 100))),
+-			pdtype: toFlag(pick('pdtype')),
+-			pdDirect,
+-			pdConverse,
+-			pdAntiscia: toFlag(pick('pdAntiscia')),
+-			pdTerms: toFlag(pick('pdTerms')),
+-		};
++		// PERF-R8 P2:逻辑原样抽为模块级纯函数(预热复用同一构造 → key/body 逐字节一致);
++		// 本方法保持既有签名与解析语义(chartObj/props 兜底),纯委托零行为变化。
++		return getDesiredPdConfigPure(chartObj || this.props.chartObj, this.props.fields, override);
+ 	}
+ 
+ 	buildPrimaryDirectionRequest(chartObj, override = {}){
+-		const chart = chartObj || this.props.chartObj || {};
+-		const desired = this.getDesiredPdConfig(chart, override);
+-		const nextFields = buildPrimaryDirectionFetchFields(
+-			override.fields || this.props.fields,
+-			chart,
+-			desired.pdMethod,
+-			desired.pdTimeKey,
+-			desired.pdYears,
+-			{
+-				pdtype: desired.pdtype,
+-				direct: desired.pdDirect === 1,
+-				converse: desired.pdConverse === 1,
+-				antiscia: desired.pdAntiscia === 1,
+-				terms: desired.pdTerms === 1,
+-			}
+-		);
+-		const dateValue = nextFields.date && nextFields.date.value;
+-		const timeValue = nextFields.time && nextFields.time.value;
+-		if(!dateValue || !timeValue || !dateValue.format || !timeValue.format){
+-			return null;
+-		}
+-		const dateStr = dateValue.format('YYYY/MM/DD');
+-		const timeStr = timeValue.format('HH:mm:ss');
+-		// 畸形日期(NaN)绝不发请求——否则后端 Datetime 抛错弹「param error」。
+-		if(`${dateStr}`.indexOf('NaN') >= 0 || `${timeStr}`.indexOf('NaN') >= 0){
+-			return null;
+-		}
+-		return {
+-			date: dateStr,
+-			time: timeStr,
+-			ad: nextFields.ad && nextFields.ad.value !== undefined ? nextFields.ad.value : (dateValue.ad !== undefined ? dateValue.ad : 1),
+-			zone: nextFields.zone ? nextFields.zone.value : undefined,
+-			lat: nextFields.lat ? nextFields.lat.value : undefined,
+-			lon: nextFields.lon ? nextFields.lon.value : undefined,
+-			gpsLat: nextFields.gpsLat ? nextFields.gpsLat.value : undefined,
+-			gpsLon: nextFields.gpsLon ? nextFields.gpsLon.value : undefined,
+-			hsys: nextFields.hsys ? nextFields.hsys.value : 0,
+-			southchart: nextFields.southchart ? nextFields.southchart.value : 0,
+-			zodiacal: nextFields.zodiacal ? nextFields.zodiacal.value : 0, siderealAyanamsa: nextFields.siderealAyanamsa ? nextFields.siderealAyanamsa.value : '',
+-			tradition: nextFields.tradition ? nextFields.tradition.value : 0,
+-			strongRecption: nextFields.strongRecption ? nextFields.strongRecption.value : 0,
+-			simpleAsp: nextFields.simpleAsp ? nextFields.simpleAsp.value : 0,
+-			virtualPointReceiveAsp: nextFields.virtualPointReceiveAsp ? nextFields.virtualPointReceiveAsp.value : 0,
+-			doubingSu28: nextFields.doubingSu28 ? nextFields.doubingSu28.value : 0,
+-			predictive: true,
+-			includePrimaryDirection: true,
+-			showPdBounds: nextFields.showPdBounds ? nextFields.showPdBounds.value : 1,
+-			pdtype: desired.pdtype,
+-			pdMethod: desired.pdMethod,
+-			pdTimeKey: desired.pdTimeKey,
+-			pdYears: desired.pdYears,
+-			pdDirect: desired.pdDirect,
+-			pdConverse: desired.pdConverse,
+-			pdAntiscia: desired.pdAntiscia,
+-			pdTerms: desired.pdTerms,
+-			pdaspects: nextFields.pdaspects ? nextFields.pdaspects.value : [0, 60, 90, 120, 180],
+-			name: nextFields.name ? nextFields.name.value : null,
+-			pos: nextFields.pos ? nextFields.pos.value : null,
+-			cid: null,
+-		};
++		return buildPrimaryDirectionRequestPure(chartObj || this.props.chartObj, override.fields || this.props.fields, override);
+ 	}
+ 
+ 	needsPrimaryDirectionLoad(chartObj){

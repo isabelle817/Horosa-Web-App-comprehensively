@@ -8,17 +8,17 @@ additionally reconstructible from session records. See windows-adaptations/READM
 
 | file | sha256 | bytes | git | purpose |
 |---|---|---|---|---|
-| `.claude/skills/horosa-dev/SKILL.md` | `60246714b2d3b272cb041fd706b2c8a5a388caaec1a2fe7712817835b6f4a2f5` | 15741 | gitignored | the dev/sync/release runbook CORE (rules + runbooks + commands; restructured 2026-07-04) |
-| `.claude/skills/horosa-dev/references/gotchas-full.md` | `0f2b85fbe8f763f8d8cd9e90ff2d2dc6c8b611abeaf2b5f6e2e83765e30cff8e` | 170888 | gitignored | the full 49-gotcha institutional archive (verbatim history + topic index; new gotchas append HERE) |
-| `CLAUDE.md` | `f51770c3d2d615aa360977faaf09685a369fc47e9ca9dabe1c43d6927039e925` | 3235 | gitignored | repo-root session baseline (paths, red lines, verification entry points; local-only) |
+| `.claude/skills/horosa-dev/SKILL.md` | `069b3ec219af15fb64e9a2847d68e1c0b94f5213cbefac7ee2450a2891ba9abe` | 16248 | gitignored | the dev/sync/release runbook CORE (rules + runbooks + commands; restructured 2026-07-04) |
+| `.claude/skills/horosa-dev/references/gotchas-full.md` | `b100a282a1ccb59051ee4641c29aafc473dd3613bef303b61b845eabb7718cbb` | 174850 | gitignored | the full 49-gotcha institutional archive (verbatim history + topic index; new gotchas append HERE) |
+| `CLAUDE.md` | `0ff9d2eb82097152430f378ff8cbec46cd17ec62af4de6805087476c4e4a2803` | 3274 | gitignored | repo-root session baseline (paths, red lines, verification entry points; local-only) |
 | `desktop_installer_bundle/assets/installer.nsh` | `ada65772c603799a9a280807aa31ad4ce9f076ebbb3f8beba4fbf8df082975f6` | 57741 | gitignored | NSIS hooks: disk-space gate, uninstall cleanup, OS gate, details-visible install log + phase banners |
 | `desktop_installer_bundle/electron/build-uber-jar.py` | `350016fb4d41b2f60644737e37cf7e3e7a698849efd1d4824cdfefe177e7f9cc` | 19280 | gitignored | fat-jar -> single uber jar merge (classpath.idx first-wins + SPI union + dir entries) enabling fast static CDS |
 | `desktop_installer_bundle/electron/defender-exclusion.js` | `c9630a39c99e1abde7f5c5a847bfe7c2af8a9cfa5fb27dc979ba48048197c651` | 7369 | gitignored | consented Windows Defender exclusion of the app runtime (~500x on-access I/O tax fix) |
 | `desktop_installer_bundle/electron/job-object.js` | `049c81988ff548081012f06099593d3e98ff7b4169bad8f491a389d57b1d60b0` | 6883 | gitignored | Windows Job Object KILL_ON_JOB_CLOSE so children die with the shell |
 | `desktop_installer_bundle/electron/logger.js` | `4d4863ef4451d498d9593ab650ec6ab6cfd77df1e1a4e7acd1356805fd5e46a8` | 3627 | gitignored | shell logger + rotation |
-| `desktop_installer_bundle/electron/main.js` | `f45c93a5f689641cbdd2748f245e92c93117aad6d011d847c8f3a85e866966f3` | 97940 | gitignored | Electron main process (bootstrap, updater, windows, Defender-exclusion hook) |
+| `desktop_installer_bundle/electron/main.js` | `75932cf5b008863272e620308b82d6b14cf9e80dd86b6112fe809947e46a1122` | 98395 | gitignored | Electron main process (bootstrap, updater, windows, Defender-exclusion hook) |
 | `desktop_installer_bundle/electron/preload.js` | `3e509d2fb94771909d73d48855f25d031e50abc262aa408a666a5f5bf6cb7bde` | 3391 | gitignored | renderer bridge (window.horosaDesktop) |
-| `desktop_installer_bundle/electron/service-manager.js` | `78dc5af410bfd5bcf8f0b9c33c6b3a56c408d4bd60e14645f6a5aeb3eaaaf0a2` | 166185 | gitignored | runtime manager: python/java spawn, readiness gate, uber-jar build, static+dynamic layered CDS, port retry |
+| `desktop_installer_bundle/electron/service-manager.js` | `0ba90f465edcc4bf8ddf29feb370c41d07704707afbc4496e6e9ffbcf0403921` | 167007 | gitignored | runtime manager: python/java spawn, readiness gate, uber-jar build, static+dynamic layered CDS, port retry |
 | `desktop_installer_bundle/electron/service-manager.test.js` | `5a6f622b1c871632712ddf19dcf8f3a3e6fcc3b14dfa2fbe71c76ac8ab807f2b` | 58340 | gitignored | node:test suite for the runtime manager |
 | `desktop_installer_bundle/electron/update-flow.js` | `ea1164a13fdf91c4c71565813ea4f37d467f207066c7cad2718b46e59ab3f597` | 3630 | gitignored | auto-update flow (sidecar-stop-before-install, progress window) |
 | `desktop_installer_bundle/electron/update-flow.test.js` | `d4ef0ee099429329fae93b5f958817f777f55b2c1cb9d24c6a6ecec1233109d3` | 3189 | gitignored | node:test suite for the update flow |
@@ -31,7 +31,7 @@ additionally reconstructible from session records. See windows-adaptations/READM
 | `desktop_installer_bundle/scripts/hostile_env_smoke.ps1` | `a3d1323f1236868907352caea4078552ca67932ce692c6135dd440b950096da5` | 9359 | gitignored | PERF-R6 B-1: hostile-env packaged-app smoke (poisoned PYTHON*/JAVA*/proxy/GBK -> ready + /chart 200 + clean logs) |
 | `desktop_installer_bundle/scripts/patch-nsis-template.cjs` | `e58c0c01cbbcc4de184998768a012aa122dc875dc877faa997c454d0433847e2` | 4439 | gitignored | PERF-R7 I-1 install-speed: build-time controlled patch of app-builder-lib extractAppPackage.nsh (same-volume move-first instead of the second full-tree copy; version-pinned, exact-anchor, idempotent) |
 | `desktop_installer_bundle/scripts/release_preflight.py` | `574d5b2264f57e76f4ff541efa3f8cb46b8e668707e74b51f74158aa26b26d50` | 4840 | gitignored | pre-release env checks |
-| `desktop_installer_bundle/scripts/release_selfcheck.py` | `74284a3cf1c179803cdd82dc9033937e9460aa62e0108759b36f0437eed5d18f` | 85185 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
+| `desktop_installer_bundle/scripts/release_selfcheck.py` | `475630469ad7c5863abdaa4aad1ba2d31233024b5d4ec4c8e93b41a07d519cc8` | 88348 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
 | `desktop_installer_bundle/scripts/run_pytest_embedded.ps1` | `f3241a8b3b079ea886435679cb803101cb4aabc170e57c70bcb60f210cd3f08a` | 1880 | gitignored | one-command astropy pytest on the EMBEDDED interpreter (gotcha #29 recipe as code) |
 | `desktop_installer_bundle/scripts/sign-update.cjs` | `4359ec4d95fc9fb801c997f793fed3fde528691de5f3dc89633fb2c5edc60317` | 5887 | gitignored | Ed25519 signing of release assets |
 | `desktop_installer_bundle/scripts/stage-runtime.cjs` | `e892e5465df1cbed27e8d5aef20cca8126e28b98676dcff479fa5376cb0809e6` | 31150 | gitignored | stages local/workspace/runtime -> build/app-runtime payload |
