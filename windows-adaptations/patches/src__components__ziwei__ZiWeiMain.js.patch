@@ -1,8 +1,8 @@
 diff --git a/astrostudyui/src/components/ziwei/ZiWeiMain.js b/astrostudyui/src/components/ziwei/ZiWeiMain.js
-index 79f8ccb..7c7f223 100644
+index 242018b..08db506 100644
 --- a/astrostudyui/src/components/ziwei/ZiWeiMain.js
 +++ b/astrostudyui/src/components/ziwei/ZiWeiMain.js
-@@ -28,6 +28,8 @@ import * as ZWConst from '../../constants/ZWConst';
+@@ -31,6 +31,8 @@ import * as ZWConst from '../../constants/ZWConst';
  import DateTime from '../comp/DateTime';
  import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
  import { ziweirulesCached } from '../../services/rules';
@@ -11,7 +11,7 @@ index 79f8ccb..7c7f223 100644
  import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
  import { calcZiwei, deriveSanPan } from './ZiweiCalc';
  import { detectPatterns } from './ziweiPatterns';
-@@ -656,10 +658,15 @@ class ZiWeiMain extends Component{
+@@ -660,10 +662,15 @@ class ZiWeiMain extends Component{
  		// 并行 + rules 会话缓存:rules 与本盘无关(body 恒 {}),原串行瀑布白付一次 RTT;
  		// 启动已 prime 缓存(models/app.js dispatch rules/ziwei),此处通常零成本命中。
  		// 任一失败整体 throw、不 setState,与原「串行中途失败不 setState」口径一致。

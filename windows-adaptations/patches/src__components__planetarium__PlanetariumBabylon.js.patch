@@ -1,5 +1,5 @@
 diff --git a/astrostudyui/src/components/planetarium/PlanetariumBabylon.js b/astrostudyui/src/components/planetarium/PlanetariumBabylon.js
-index 72747bb..7157df7 100644
+index 52b9682..3f585ff 100644
 --- a/astrostudyui/src/components/planetarium/PlanetariumBabylon.js
 +++ b/astrostudyui/src/components/planetarium/PlanetariumBabylon.js
 @@ -1,6 +1,13 @@
@@ -251,7 +251,7 @@ index 72747bb..7157df7 100644
  	scheduleBackgroundFull(options = {}){
  		if(this._isUnmounted){
  			return;
-@@ -4747,12 +4886,27 @@ class PlanetariumBabylon extends Component{
+@@ -4748,12 +4887,27 @@ class PlanetariumBabylon extends Component{
  			try{ document.body.classList.remove('planetarium-time-editing'); }catch(e){ /* no-op */ }
  			document.removeEventListener('mousedown', this._onTimeEditorDocMouseDown, true);
  		}

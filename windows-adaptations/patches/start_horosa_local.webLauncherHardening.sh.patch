@@ -1,8 +1,8 @@
 diff --git a/start_horosa_local.sh b/start_horosa_local.sh
-index 1fb24d5..7734e25 100644
+index 481f541..d6a36eb 100644
 --- a/start_horosa_local.sh
 +++ b/start_horosa_local.sh
-@@ -681,11 +681,13 @@ reclaim_stale_port() {
+@@ -696,11 +696,13 @@ reclaim_stale_port() {
  if ! reclaim_stale_port "${CHART_PORT}" "webchartsrv"; then
    diag_log "blocked: port ${CHART_PORT} still in use after reclaim -> exit 3 (retryable)"
    echo "port ${CHART_PORT} is already in use."
@@ -16,7 +16,7 @@ index 1fb24d5..7734e25 100644
    exit 3
  fi
  
-@@ -831,11 +833,14 @@ PY
+@@ -850,11 +852,14 @@ PY
  }
  
  cd "${ROOT}"
@@ -33,7 +33,7 @@ index 1fb24d5..7734e25 100644
  # pid 文件读取防御:文件缺失/为空/非数字时不得把空串喂给 kill -0(会报 usage 错→被误读成「进程已退出」)。
  pid_alive() {
    local f="$1" pid
-@@ -853,7 +858,10 @@ if ! pid_alive "${PY_PID_FILE}"; then
+@@ -872,7 +877,10 @@ if ! pid_alive "${PY_PID_FILE}"; then
  fi
  ledger_log sh.python_spawned
  
@@ -45,7 +45,7 @@ index 1fb24d5..7734e25 100644
    HOROSA_DESKTOP_MONGO_OPTIONAL="${DESKTOP_MONGO_OPTIONAL}" \
    HOROSA_DESKTOP_MONGO_SKIP_PING="${DESKTOP_MONGO_SKIP_PING}" \
    HOROSA_MONGO_FALLBACK_DIR="${MONGO_FALLBACK_DIR}" \
-@@ -1003,6 +1011,7 @@ if [ "${ready}" -ne 1 ]; then
+@@ -1033,6 +1041,7 @@ if [ "${ready}" -ne 1 ]; then
    bind_err_re='Address already in use|Errno 48|BindException|Port [0-9]+ was already in use'
    if { tail -n 160 "${PY_LOG}" 2>/dev/null || true; tail -n 160 "${JAVA_LOG}" 2>/dev/null || true; } | grep -Eq "${bind_err_re}"; then
      diag_log "===== run end (failed: port bind conflict, exit 3 retryable) ====="
@@ -53,7 +53,7 @@ index 1fb24d5..7734e25 100644
      exit 3
    fi
    diag_log "===== run end (failed) ====="
-@@ -1088,3 +1097,14 @@ echo "html:     ${HTML_PATH}"
+@@ -1118,3 +1127,14 @@ echo "html:     ${HTML_PATH}"
  echo "logs:     ${LOG_DIR}"
  echo ""
  echo "stop:     ${ROOT}/stop_horosa_local.sh"

@@ -1,8 +1,8 @@
 diff --git a/astrostudyui/src/components/guolao/GuoLaoChartMain.js b/astrostudyui/src/components/guolao/GuoLaoChartMain.js
-index 1d01891..9457483 100644
+index 70e2eaa..b257975 100644
 --- a/astrostudyui/src/components/guolao/GuoLaoChartMain.js
 +++ b/astrostudyui/src/components/guolao/GuoLaoChartMain.js
-@@ -1396,6 +1396,23 @@ async function fetchGuolaoChartCached(params, options){
+@@ -1397,6 +1397,23 @@ async function fetchGuolaoChartCached(params, options){
  	return clonePlain(result);
  }
  

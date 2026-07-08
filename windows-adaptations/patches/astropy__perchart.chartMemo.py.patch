@@ -1,8 +1,8 @@
 diff --git a/astropy/astrostudy/perchart.py b/astropy/astrostudy/perchart.py
-index bef1c4e..d226e01 100644
+index 05ccfe6..e7d59d4 100644
 --- a/astropy/astrostudy/perchart.py
 +++ b/astropy/astrostudy/perchart.py
-@@ -726,6 +726,14 @@ class PerChart:
+@@ -836,6 +836,14 @@ class PerChart:
      def reinit(self):
          self.orientOccident = None
          self.orientOccidentHouses = None
@@ -17,7 +17,7 @@ index bef1c4e..d226e01 100644
          self.dynchart = ChartDynamics(self.chart)
          self.dynchart.simpleAsp = self.simpleAsp
          self.applyOrbOverrides()
-@@ -1248,7 +1256,14 @@ class PerChart:
+@@ -1413,7 +1421,14 @@ class PerChart:
  
          return res
  
@@ -32,7 +32,7 @@ index bef1c4e..d226e01 100644
          res = []
          planets = const.LIST_SEVEN_PLANETS.copy()
          if self.tradition == False:
-@@ -1499,8 +1514,7 @@ class PerChart:
+@@ -1664,8 +1679,7 @@ class PerChart:
              planets = self.objlists
          planets = planets.copy()
          planets.extend(const.LIST_ANGLES)
@@ -42,7 +42,7 @@ index bef1c4e..d226e01 100644
          for planet in planets:
              fixstars = {
                  'id': planet,
-@@ -1692,7 +1706,15 @@ class PerChart:
+@@ -1857,7 +1871,15 @@ class PerChart:
              'MinDelta': [] if len(alltmp) == 0 else alltmp[0]
          }
  
@@ -58,7 +58,7 @@ index bef1c4e..d226e01 100644
          res = {}
          planets = const.LIST_SEVEN_PLANETS.copy()
          # if self.tradition == False:
-@@ -2191,7 +2213,24 @@ class PerChart:
+@@ -2466,7 +2488,24 @@ class PerChart:
                  continue
  
  
@@ -83,7 +83,7 @@ index bef1c4e..d226e01 100644
          stars = self.chart.getFixedStartsSu28()
          self.relocateSouthObjects(stars)
          res = []
-@@ -2238,9 +2277,19 @@ class PerChart:
+@@ -2537,9 +2576,19 @@ class PerChart:
          self.fillPlanetSu28(res)
          return res
  
@@ -105,7 +105,7 @@ index bef1c4e..d226e01 100644
          res = []
          for id in const.LIST_FIXED_STARS:
              obj = stars.content[id]
-@@ -2335,7 +2384,15 @@ class PerChart:
+@@ -2634,7 +2683,15 @@ class PerChart:
          daystar = dayerStar[day]
          return daystar
  
