@@ -29,9 +29,10 @@
 1. [星阙是什么](#一星阙是什么)
 2. [技术栈](#二技术栈)
 3. [全功能清单（命 / 卜 / 工具）](#三全功能清单)
-4. [许可与第三方](#四许可与第三方)
-5. [致谢](#五致谢)
-6. [文档与入口](#六文档与入口)
+4. [网页版一键启动（从源码）](#四网页版一键启动从源码)
+5. [许可与第三方](#五许可与第三方)
+6. [致谢](#六致谢)
+7. [文档与入口](#七文档与入口)
 
 ---
 
@@ -215,7 +216,18 @@
 
 ---
 
-## 四、许可与第三方
+## 四、网页版一键启动(从源码)
+
+不装 exe,直接从源码把星阙跑成本地网页版(适合开发者或想跑源码的用户):
+
+- **启动**:双击仓库里的 `local\Horosa_Local_Windows.bat` —— 有现成构建产物时几秒即开浏览器;首次运行自动补齐内置 Python / Java / Node 运行时并构建(Mongo / Redis 对本产品是可选依赖,默认跳过)。默认在 `127.0.0.1` 上起 网页 `8000` / 排盘 `8899` / 后端 `9999`,端口被占会自动换用空闲口。
+- **停止**:回到启动时的控制台窗口按 Enter,或直接关闭它(脚本只回收带本产品指纹的进程,绝不误伤其它软件)。设 `HOROSA_NO_BROWSER=1` 可不自动开浏览器。
+- **首次运行 SmartScreen**:未签名脚本可能触发 Windows 提示,选「更多信息 → 仍要运行」即可。
+- **Git Bash / WSL 用户**:也可用产品源里的 `start_horosa_local.sh` / `stop_horosa_local.sh`(同一套服务,跨平台)。
+
+---
+
+## 五、许可与第三方
 
 - **本项目**：[AGPL-3.0-only](LICENSE)。
 - **法律与隐私**：服务条款 / 隐私政策 / 安全说明 / 网络说明 / 开源声明，见 [docs/legal](docs/legal/)（中英双语）。
@@ -227,7 +239,7 @@
 
 ---
 
-## 五、致谢
+## 六、致谢
 
 星阙的源流不能忘。最早的星阙 Horosa 由**郑大哥**一手创建，**荀爽-Herakleios** 参与辅助设计，并把相关 App 与 Web 公开出来，后来者才有得研究、学习与延展。本 Windows 版正是在他们搭好的星阙体系、术数工作流与公开分享精神之上，继续做 Windows 交付、运行时打包、功能整合与体验改良。
 
@@ -235,7 +247,7 @@
 
 ---
 
-## 六、文档与入口
+## 七、文档与入口
 
 - 从源码本地部署：完整产品源码随仓库发布于 [`local/workspace/Horosa-Web-…/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/)（前端 `astrostudyui` · Java 后端 `astrostudysrv` · Python 排盘 `astropy` · 术数引擎 `vendor` · 星历 `flatlib-ctrad2`）；运行时准备脚本见 [`prepareruntime/`](prepareruntime/)，Windows 适配层见 [`windows-adaptations/`](windows-adaptations/)。工具链 Java 17 / Maven / Node 18+ / Python 3.11；用 Maven 构建 `astrostudysrv/` 产出后端 jar，然后 `bash start_horosa_local.sh`（Git Bash / WSL）。桌面打包工程（Electron + NSIS）私有维护、不在本仓库。
 - 社区文档：[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [SUPPORT.md](SUPPORT.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
