@@ -1,5 +1,5 @@
 diff --git a/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java b/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java
-index 81694d5..fc77ea7 100644
+index 9ae2613..06460e7 100644
 --- a/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java
 +++ b/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/controller/ChartController.java
 @@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,7 +39,7 @@ index 81694d5..fc77ea7 100644
  			Map<String, Object> reqparams = (Map<String, Object>) res.get("params");
  			if(reqparams != null) {
  				reqparams.put("doubingSu28", args.get("doubingSu28"));
-@@ -94,11 +103,20 @@ public class ChartController {
+@@ -94,11 +103,22 @@ public class ChartController {
  				applyZhengSiderealSu28(chart, args);
  				chart.put("nongli", map);
  			}else {
@@ -56,7 +56,9 @@ index 81694d5..fc77ea7 100644
 +			// B0(写 perf/perf.log):/chart 逐段耗时,纯观测、不改结果与控制流。让真机一眼看清「单盘 2-3s」
 +			// 的构成(Python 底盘 / 八字农历+装配 / 行星预测 / 推运同步),据此按热点做后续优化。
 +			// CHART_PERF_SEG_REV 兼作重建 jar 的存在性哨兵标记。
-+			QueueLog.debug(AppLoggers.Performance,
++			// PERF-R7 P1-1:debug→info——perf appender 阈值高于 debug,导致真机 perf.log 恒空、
++			// 观测断粮(v3.2.1 复盘实证);info 级每请求一行,量级与 access log 相当,无性能顾虑。
++			QueueLog.info(AppLoggers.Performance,
 +				"/chart seg ms python={} baziAssemble={} predictSign={} predSync={} total={} rev={}",
 +				(_ptPy - _pt0), (_ptBz - _ptPy), (_ptSign - _ptBz), (_ptPd - _ptSign), (_ptPd - _pt0), CHART_PERF_SEG_REV);
  			return res;

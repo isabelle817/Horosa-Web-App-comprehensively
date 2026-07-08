@@ -42,6 +42,7 @@ FILES = {
     "desktop_installer_bundle/scripts/build-renderer.cjs": "frontend build wrapper",
     "desktop_installer_bundle/scripts/sign-update.cjs": "Ed25519 signing of release assets",
     "desktop_installer_bundle/scripts/write-app-update-yml.cjs": "app-update.yml generator (updater feed)",
+    "desktop_installer_bundle/scripts/patch-nsis-template.cjs": "PERF-R7 I-1 install-speed: build-time controlled patch of app-builder-lib extractAppPackage.nsh (same-volume move-first instead of the second full-tree copy; version-pinned, exact-anchor, idempotent)",
     "desktop_installer_bundle/scripts/delta-report.py": "DELTA-V2: blockmap differential estimator + payload-manifest diff (powers the differential-efficiency release gate)",
     "desktop_installer_bundle/scripts/hostile_env_smoke.ps1": "PERF-R6 B-1: hostile-env packaged-app smoke (poisoned PYTHON*/JAVA*/proxy/GBK -> ready + /chart 200 + clean logs)",
     "desktop_installer_bundle/scripts/verify_kentang_services.py": "institutional gate: every kentang technique backend (KENTANG_SERVICE_SPECS) imports+resolves+instantiates in the packaged runtime, in BOTH forward and reverse spec order (order-poisoning coverage — the v3.2.0 太乙 404 only reproduced qizheng-before-taiyi); wired into release_selfcheck.py",

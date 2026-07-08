@@ -51,8 +51,41 @@ export default class ChartFormData extends Component{
 		this.clickOk = this.clickOk.bind(this);
 		this.clickReturn = this.clickReturn.bind(this);
 
+		// perf T-6(speculativePrecompute):表单编辑期防抖预取的调度句柄。
+		this.livePrecomputeTimer = null;
 	}
 
+	// perf T-6:字段每次变更后 300ms 防抖,把「点提交会发出的同一份参数」提前交给
+	// onLivePrecompute(由挂载方决定去暖哪个缓存;未传该 prop = 完全无行为,零影响)。
+	// 只读 state.fields 快照转平值,不改任何表单状态。
+	scheduleLivePrecompute(){
+		if(!this.props.onLivePrecompute){
+			return;
+		}
+		if(this.livePrecomputeTimer){
+			clearTimeout(this.livePrecomputeTimer);
+		}
+		this.livePrecomputeTimer = setTimeout(()=>{
+			this.livePrecomputeTimer = null;
+			try{
+				const flds = this.state.fields || {};
+				const params = {};
+				for(let key in flds){
+					params[key] = flds[key] ? flds[key].value : undefined;
+				}
+				this.props.onLivePrecompute(params);
+			}catch(e){
+				// speculative only — never surface
+			}
+		}, 300);
+	}
+
+	componentWillUnmount(){
+		if(this.livePrecomputeTimer){
+			clearTimeout(this.livePrecomputeTimer);
+			this.livePrecomputeTimer = null;
+		}
+	}
 
 	setValue(key, val){
 		let flds = this.state.fields;
@@ -67,6 +100,7 @@ export default class ChartFormData extends Component{
 		this.setState({
 			fields: flds,
 		});
+		this.scheduleLivePrecompute();
 	}
 
 	changeBirth(val){
@@ -89,6 +123,7 @@ export default class ChartFormData extends Component{
 		this.setState({
 			fields: flds,
 		});
+		this.scheduleLivePrecompute();
 	}
 
 	changeZodiacal(val){
@@ -233,6 +268,12 @@ export default class ChartFormData extends Component{
 	}
 
 	clickOk(){
+		// perf T-6:真提交在即,取消未触发的防抖预取(在途请求的合并由 services 层保证,
+		// 这里只是避免提交后再发一次冗余投机请求)。
+		if(this.livePrecomputeTimer){
+			clearTimeout(this.livePrecomputeTimer);
+			this.livePrecomputeTimer = null;
+		}
 		if(this.props.onOk){
 			this.submitted = true;
 			this.props.onOk(this.state.fields);
