@@ -87,68 +87,12 @@ Yi and Sanshi go past standalone tabs into a genuinely integrated surface.
 
 ### Tools (工具)
 
-- **AI Analysis (AI 分析)** — connects to OpenAI, Anthropic, Gemini, Ollama, OpenRouter, or a custom endpoint; supports streaming chat, conversation history, a materials library with vector retrieval, and structured export grouped by technique and tab
+- **AI Analysis (AI 分析)** — connects to OpenAI, Anthropic, Gemini, Ollama, OpenRouter, or a custom endpoint; streaming chat, conversation history, a materials library with vector retrieval, mounting any technique's chart into the context, structured export grouped by technique and tab, and sectioned Bazi / Ziwei report generation
 - **Planetarium (天文馆)** — a real-time 3D sky view built on Babylon.js
 - **Almanac (黄历)** — lunar calendar, solar terms, and date selection
 - **References (辅助)** — gua-symbol classes, the twelve palaces, and quick rule lookups
 
 Charts and cases save locally with tags, snapshots, and raw backend payloads. Everything supports JSON import/export and restores its full state when you reopen it.
-
-## New in v2.6.7 beta
-
-**v2.6.7 = classical-astrology augmentation + besiegement analysis + AI classical mount**: the natal chart gains a full set of classical / Hellenistic parameters and configurations across new Classical and Configurations tabs; a sixteen-rule besiegement analysis; the AI analysis / export snapshot gains a Classical section (consistent across all four mirrors); the Info tab gains a configurations overview; plus a high-latitude Sirius-heliacal-rising calendar fix. Backend AI-proxy + cache hardening (streaming worker pool + ParamHash local-cache governance) → astrostudyboot.jar rebuilt. Every chart computation is otherwise identical to v2.6.6; all earlier features retained.
-
-- **Classical · natal parameters** (new Classical tab): Out of Bounds, phasis with heliacal rising/setting, houses of joy, day/night sect, feral, degree quality (light/dark/empty/smoky + gender), special degrees, the 28 lunar mansions, apogee, monomoiria / ninth-part / Darijan.
-- **Classical · configuration analysis** (new Configurations tab): doryphory / overcoming / degree-besieging, aspect dynamics (applying-separating / dexter-sinister / translation / collection / aversion / nodal bending), topical almutens, accidental dignity, Behenian / Royal fixed stars, planetary hours, the Egyptian calendar, Babylonian reference stars, eclipse digits, body-part melothesia.
-- **Besiegement analysis (sixteen rules)**: three siege types (Mars-Saturn malefic / Venus-Jupiter benefic / Sun-Moon glory) + spring/autumn momentum + overcoming season + interception defense + counter-besiegement + Sun/Jupiter mutual-reception restraint + retrogradation, with verdicts.
-- **AI classical mount**: the AI analysis and export snapshot gain a Classical section; consistent across export / export-settings / mount / storage; existing users' section settings auto-merged.
-- **Addresses issue #27** (@zuojun1991 requested heliacal rising/setting + Out of Bounds): fully added on the new Classical tab.
-
-—— v2.6.6 features below (all retained in v2.6.7) ——
-
-**v2.6.6 = chart-math correction batch + primary-directions upgrade (Vertex promissor / 3000-year horizon / wire-protocol v12) + fixes for Windows issues #23 / #24 / #25 + a full UI bug-sweep + a 9-item Windows-shell hardening pass.** Degree-minute parsing, equation-of-time, solar-return seeding and synastry normalization went wrong-to-right; primary directions gained the Vertex promissor, the year horizon rose to 3000, and 4 controllers stepped `_wireRev` to v12 (jar rebuilt); the chat send button no longer stringifies to `[object Object]` (#24/#25) and Gemini 400 is fixed (#23); plus shell hardening such as interface-zoom persistence.
-
-—— v2.6.5 features below (all retained in v2.6.7) ——
-
-**v2.6.5 = comprehensive synastry / relationship-chart interaction-chain rebuild (all 5 sub-charts working) + AI "casting-time" mounting expanded 8→13 techniques + Python numeric-geo fault-tolerance + navigation search keywords + a real About-dialog icon.** **No backend Java change / no jar rebuild** (the synastry endpoint restoration is a frontend re-route back to the Java modern-chart backend at `:9999`; `ModernChartController` already shipped in v2.6.4); default chart math is byte-identical to v2.6.4; every v2.6.4-and-earlier feature is retained.
-
-- **Synastry / relationship-chart interaction chain, fully rebuilt** — all five sub-charts (Synastry / Composite / Marks / Time-Space / relationship score) work again: requests routed back to the Java modern-chart backend (`:9999`), ResizeObserver-measured container heights, `chartStyle/dispatch/onChange` propagation, direct field writes on change, `paramsToFields` no longer overwrites house-system / zodiac, and a fixed-width 50/50 zodiac selector.
-- **AI "casting-time" mounting 8→13 techniques** — Taixuan / Jingjue / Wuzhao / Shenyishu deterministic casting methods each gain a `buildXxxSnapshotForFields` snapshot builder so their cast charts mount into AI analysis; the technique registry and one-click mount copy are synchronized to all thirteen (four methods promoted to `kind:'payload'`, `buildFieldObject` falls back to `record.divTime`).
-- **Python chart-engine numeric-geo fault-tolerance** — `helper.py`'s `convertLonStrToDegree/convertLatStrToDegree` + `realsuntime.py`'s `getBaseLonByZone` accept float longitude / latitude / time-zone values from map-pick selections (no longer assume string input), fixing a potential crash on map-selected chart casting.
-- **Incidental fixes** — navigation search keywords across all 22 modules; a real `appicon.png` in the About dialog; Persian-directed "years to direction" table linkage; UranianDial glyph stroke fix; Cetian font-weight tuning; and a batch of small ephemeris / extra-chart / Babylon-sky fixes.
-- **Tests** — jest **658 passing / 70 suites** (v2.6.4: 638); service-manager + update-signature **39 passing**.
-
-—— v2.6.4 features below (all retained in v2.6.7) ——
-
-**v2.6.4 = full-stack sidereal zodiac expansion (47 ayanāṃśa) + Western lunar mansions (Nakshatra) + Indian astrology completion + AI Analysis four-way sync with dual-chart-technique configs + integrated AI Analysis "report" generator v1 + comprehensive startup-robustness pass.** Backend Java touched (8 controllers forward `siderealAyanamsa`) → `astrostudyboot.jar` rebuilt; default chart math is byte-identical to v2.6.3; every v2.6.3-and-earlier feature is retained. **Fixes Windows issue #21** ("本地排盘服务未就绪" / "local chart service not ready" startup failure with no visible state and no self-repair).
-
-- **Sidereal zodiac, full stack (jar rebuilt)** — Western charts now offer **tropical + 47 ayanāṃśa** via Swiss Ephemeris (reuses the Indian astrology registry), each precession mode producing real positional shifts. Covers every Western technique chart (natal/synastry/midpoint/3D/horary/sanshi/jieqi). `siderealAyanamsa` is plumbed through frontend → 8 Java controllers → Python chart kernel → response echo → storage.
-- **Lunar mansions (Nakshatra) in Western charts** — 27 mansions shown when sidereal mode is selected (new `astropy/astrostudy/nakshatra.py`).
-- **Indian astrology completion** — left-panel dropdown occlusion fix + ayanāṃśa 6→47 / house systems 4→24 (`SE_SIDM 0–46`).
-- **AI Analysis four-way sync** — dual-chart techniques (**Solar Return / Lunar Return / Solar Arc / Given Year / Profections / Planetary Arc / Primary Direction / Vedic Jaynes progressions**) gain "natal chart + period chart" dual configs; Indian astrology / Qizheng Siyu (su28) / Western chart mount settings now have all the adjustable knobs; Persian directed adds a "years to direction" toggle; `AI_EXPORT_SETTINGS_VERSION` 23→24 with auto migration.
-- **AI Analysis "report" generator v1 (front-end only)** — new 📄 Report tab in AI Analysis: 6 pre-built templates (Bazi 8/12/20 sections + Ziwei 8/12/20 sections) + 9 school-specific guidelines + sequential streaming + embedded chart capture (`html-to-image`) + 4 export formats (Markdown / PDF / Word / HTML); IndexedDB schema v3→v4 with auto migration (two new stores `report_templates` + `report_instances` + materials `schools` field).
-- **Startup-robustness pass (fixes issue #21)** —
-  - **Persistent backend health-light** 🟢/🟡/🔴 dot in the lower-right corner + popover showing backend URL / latency / "Retry / Restart backend / Open diagnostics / Copy info" buttons.
-  - **Rich "service not ready" Modal** — four likely causes + four one-click actions (Retry / Restart backend / Open diagnostics / Copy info), no longer a dry "please confirm Horosa local service is still running".
-  - **Transparent retry window 6→10 attempts (cumulative 12s→30s)** — covers the 35-60s slow-machine first-boot decompression window.
-  - **Service-offline banner gains action buttons** — from "operations will retry…" to "Retry now / Restart backend / Open diagnostics".
-  - **StartupGate phased copy** — silent first 6s; 6-15s "Retry" button; 15-30s "first boot can take a while" + "Restart backend"; 30s+ shows the backend URL + "Open diagnostics".
-- **AI Report v1.2–v1.4 engineering fixes (rolled into this release)** — chart-capture `ChartCaptureMount` gains an ErrorBoundary + 15s fetch timeout + serialized `captureLock`; `ConcurrentQueue` exposes `getErrors()/getStats()`, skipping auxiliary sections when post-drain success rate < 40%; truncation detection adds ellipsis recognition; continuation loop is hard-capped at 2 attempts; `renderTemplateVars` guards against nested-template recursion; unknown-school `resolveSchoolPrompt` falls back to a generic guideline; INTRO/OUTRO `maxTokens` brought in line with actual output; `ChartServiceErrorModal` / `BackendStatusDot` / `ServiceStatusBanner` are fully async with real success/error feedback; `ReportGenerator` / `ReportPane` guarded against stale-closure race + double-click duplicate triggers.
-- **Tests** — jest **638 passing / 68 suites** (v2.6.3: 522); service-manager + update-signature **39 passing**.
-
-—— v2.6.3 features below (all retained in v2.6.7) ——
-
-**v2.6.3 = AI Analysis deep polish (chat UX, settings, provider matrix, vision, usage/cost, JSON mode) + Qizheng Siyu "patterns/aspects" exported and mountable + four deterministic divination methods (Wuzhao / Taixuan / Jingjue / Shenyishu) become mountable + Jieqi chart-style button fix.** **Fixes Windows issue #20** (mounted chat content getting truncated + Solar-Return AI seeing only the natal chart).
-
-—— v2.6.2 fixes below (all retained in v2.6.7) ——
-
-**v2.6.2 = every v2.6.1 feature + a definitive fix for the Windows "upgrade install never succeeds" bug (issue #18).** Installer-only patch (NSIS `customUnInstallCheck`); the installer takes over when the old uninstaller returns non-zero.
-
-—— v2.6.1 features below (all retained in v2.6.7) ——
-
-**v2.6.1 polishes the AI-mount full options + multi-moment / range-scan output + Feng Shui "Bagua Yang-dwelling" method v2 (front-end only) + a batch of cross-module fixes.** One backend change forwards `pdYears` in `ChartController.getParams()` → `astrostudyboot.jar` rebuilt.
-
-Full changelog and release history on [GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases) — each version's Release page carries its complete changelog and assets.
 
 ## Under the Hood
 
