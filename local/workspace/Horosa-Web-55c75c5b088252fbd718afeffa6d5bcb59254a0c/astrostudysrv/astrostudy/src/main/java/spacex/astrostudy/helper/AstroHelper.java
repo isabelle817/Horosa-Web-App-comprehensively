@@ -38,6 +38,7 @@ public class AstroHelper {
 	public static final String JdnDate = PropertyPlaceholder.getProperty("jdndate", "/jdn/date");
 	public static final String Acg = PropertyPlaceholder.getProperty("acg", "/location/acg");
 	public static final String AcgPoint = PropertyPlaceholder.getProperty("acgpoint", "/location/acgpoint");
+	public static final String AcgEvent = PropertyPlaceholder.getProperty("acgevent", "/location/acgevent");
 	public static final String Azimuth = PropertyPlaceholder.getProperty("azimuth", "/calc/azimuth");
 	public static final String Cotrans = PropertyPlaceholder.getProperty("cotrans", "/calc/cotrans");
 	public static final String AstroExtraAnalysis = PropertyPlaceholder.getProperty("astroextra.analysis", "/astroextra/analysis");
@@ -107,7 +108,7 @@ public class AstroHelper {
 	}
 
 	public static Map<String, Object> getPersianChart(Map<String, Object> params){
-		return requestNoCache(PersianChart, params);
+		return request(PersianChart, params);
 	}
 	
 	public static Map<String, Object> getProfection(Map<String, Object> params){
@@ -172,11 +173,16 @@ public class AstroHelper {
 	}
 	
 	public static Map<String, Object> getAcg(Map<String, Object> params){
-		return requestNoCache(Acg, params);
+		// 参数全显式且结果确定(星历不随日内时间变),纳入 paramhash 缓存:同参二次 ~300ms→~5ms
+		return request(Acg, params);
 	}
 
 	public static Map<String, Object> getAcgPoint(Map<String, Object> params){
-		return requestNoCache(AcgPoint, params);
+		return request(AcgPoint, params);
+	}
+
+	public static Map<String, Object> getAcgEvent(Map<String, Object> params){
+		return requestNoCache(AcgEvent, params);
 	}
 	
 	public static Map<String, Object> getDice(Map<String, Object> params){
@@ -192,63 +198,63 @@ public class AstroHelper {
 	}
 
 	public static Map<String, Object> getAstroExtraAnalysis(Map<String, Object> params){
-		return requestNoCache(AstroExtraAnalysis, params);
+		return request(AstroExtraAnalysis, params);
 	}
 
 	public static Map<String, Object> getAstroExtraPrenatalSyzygy(Map<String, Object> params){
-		return requestNoCache(AstroExtraPrenatalSyzygy, params);
+		return request(AstroExtraPrenatalSyzygy, params);
 	}
 
 	public static Map<String, Object> getAstroExtraEphemeris(Map<String, Object> params){
-		return requestNoCache(AstroExtraEphemeris, params);
+		return request(AstroExtraEphemeris, params);
 	}
 
 	public static Map<String, Object> getAstroExtraProgressions(Map<String, Object> params){
-		return requestNoCache(AstroExtraProgressions, params);
+		return request(AstroExtraProgressions, params);
 	}
 
 	public static Map<String, Object> getAstroExtraJaynesProg(Map<String, Object> params){
-		return requestNoCache(AstroExtraJaynesProg, params);
+		return request(AstroExtraJaynesProg, params);
 	}
 
 	public static Map<String, Object> getAstroExtraReturns(Map<String, Object> params){
-		return requestNoCache(AstroExtraReturns, params);
+		return request(AstroExtraReturns, params);
 	}
 
 	public static Map<String, Object> getAstroExtraHarmonic(Map<String, Object> params){
-		return requestNoCache(AstroExtraHarmonic, params);
+		return request(AstroExtraHarmonic, params);
 	}
 
 	public static Map<String, Object> getAstroExtraRelocation(Map<String, Object> params){
-		return requestNoCache(AstroExtraRelocation, params);
+		return request(AstroExtraRelocation, params);
 	}
 
 	public static Map<String, Object> getAstroExtraDraconic(Map<String, Object> params){
-		return requestNoCache(AstroExtraDraconic, params);
+		return request(AstroExtraDraconic, params);
 	}
 
 	public static Map<String, Object> getAstroExtraGreatConj(Map<String, Object> params){
-		return requestNoCache(AstroExtraGreatConj, params);
+		return request(AstroExtraGreatConj, params);
 	}
 
 	public static Map<String, Object> getAstroExtraPlanetCycles(Map<String, Object> params){
-		return requestNoCache(AstroExtraPlanetCycles, params);
+		return request(AstroExtraPlanetCycles, params);
 	}
 
 	public static Map<String, Object> getAstroExtraBarbault(Map<String, Object> params){
-		return requestNoCache(AstroExtraBarbault, params);
+		return request(AstroExtraBarbault, params);
 	}
 
 	public static Map<String, Object> getAstroExtraPlanetReturn(Map<String, Object> params){
-		return requestNoCache(AstroExtraPlanetReturn, params);
+		return request(AstroExtraPlanetReturn, params);
 	}
 
 	public static Map<String, Object> getAstroExtraEclipseDetail(Map<String, Object> params){
-		return requestNoCache(AstroExtraEclipseDetail, params);
+		return request(AstroExtraEclipseDetail, params);
 	}
 
 	public static Map<String, Object> getAstroExtraRelative(Map<String, Object> params){
-		return requestNoCache(AstroExtraRelative, params);
+		return request(AstroExtraRelative, params);
 	}
 
 	public static Map<String, Object> getPlanetariumState(Map<String, Object> params){

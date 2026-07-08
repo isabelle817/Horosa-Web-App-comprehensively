@@ -7,6 +7,7 @@ import time
 import socket
 import signal
 import subprocess
+import threading
 import cherrypy
 
 try:
@@ -476,38 +477,49 @@ def ensure_chart_port_free(host, port, attempts=12, wait=0.5):
     return _chart_port_free(host, port)
 
 
-def _run_startup_warmups():
-    # PD 预热 + 印度盘预热(原样搬运,顺序 PD→india、打印与 WARMED 语义不变)。
-    # v3.0.1 perf ROUND-5 (HOROSA_PY_WARMUP_BLOCKING):默认从 engine.start() **之前**挪到端口就绪
-    # 打点之后 —— 壳的就绪门控只等 TCP 端口(HOROSA_READY/healthz warm 无任何消费者,已全仓核实),
-    # 原位置让暖机 ~0.7s(冷 1-5s)白白垫在端口绑定前面。安全性:壳的后台整盘探针是回归制
-    # (zodiacal=0),与 swisseph sid_mode 无关;真实 sidereal 请求受与稳态并发完全相同的
-    # set_sid_mode 相邻行约定保护(tests/test_swe_concurrency.py 钉住)。
-    # kill-switch:HOROSA_PY_WARMUP_BLOCKING=1 恢复「绑定前同步预热」原行为。
+# ── 启动就绪门(温启提速):warmup(PD+india)移后台线程,HOROSA_READY 提前 ~1.5-2s。
+# 正确性:业务 POST 在门上等 warmup 完成才放行 —— 与旧同步方案同语义(请求最早也要等
+# warmup 完),但端口/探活/前端导航全部提前;任何请求的最早可服务时刻不晚于旧方案。
+# 并发安全:门保证 warmup 期间无业务请求并发(沿旧注释对 swisseph 全局 sid_mode 的顾虑,
+# 见 tests/test_swe_concurrency.py);探活(GET /、/healthz、OPTIONS)不改 sid_mode,放行。
+# kill-switch:HOROSA_PY_WARMUP_SYNC=1 回退旧同步顺序。
+STARTUP_GATE = threading.Event()
+
+
+def _startup_gate_tool():
+    if STARTUP_GATE.is_set():
+        return
+    req = cherrypy.request
+    if req.method in ('GET', 'OPTIONS', 'HEAD'):
+        return  # 探活/预检不碰计算与 sid_mode
+    # 兜底超时:warmup 异常挂死也不至于永久拒绝服务(warmup 平常 1.5-2s)
+    STARTUP_GATE.wait(timeout=60)
+
+
+def _run_warmups():
     try:
         t0 = time.perf_counter()
         warm_chart = PerChart(dict(WebChartSrv.PD_WARMUP_SAMPLE))
         warm_chart.getPredict().getPrimaryDirection()
         WebChartSrv.WARMED = True
-        print('pd warmup ready in {0:.3f}s'.format(time.perf_counter() - t0))
+        print('pd warmup ready in {0:.3f}s'.format(time.perf_counter() - t0), flush=True)
     except Exception:
         traceback.print_exc()
-
-    # 印度盘后端预热:跑一个 dummy 印度盘(复用上面 PD 预热已热的 swisseph/星历),把 india
-    # 各子算法的冷计算路径载入,消除每次重启软件后首次进入印度占星的 ~3s 冷启动。在主线程串行执行
-    # (非后台线程),sid_mode 读写遵循与真实请求相同的相邻行约定;失败静默不影响服务。
+    # 印度盘预热:把 india 各子算法冷路径载入,消除首次进入印度占星的 ~3s 冷启动;
+    # 与业务请求的并发由启动门隔离(门开前无业务 POST 进入)。失败静默不影响服务。
     try:
         t1 = time.perf_counter()
         warmup_india()
-        print('india warmup ready in {0:.3f}s'.format(time.perf_counter() - t1))
+        print('india warmup ready in {0:.3f}s'.format(time.perf_counter() - t1), flush=True)
     except Exception:
         traceback.print_exc()
+    STARTUP_GATE.set()
 
 
 if __name__ == '__main__':
-    _WARMUP_BLOCKING = os.environ.get('HOROSA_PY_WARMUP_BLOCKING', '0').lower() in ('1', 'true', 'yes', 'on')
-    if _WARMUP_BLOCKING:
-        _run_startup_warmups()
+    _warmup_sync = os.environ.get('HOROSA_PY_WARMUP_SYNC', '0') == '1'
+    if _warmup_sync:
+        _run_warmups()   # 旧行为:warmup 完才继续起服务
 
     chart_port = int(os.environ.get('HOROSA_CHART_PORT', '8899'))
     cherrypy.config.update({'server.socket_host': '127.0.0.1',
@@ -517,6 +529,8 @@ if __name__ == '__main__':
                             })
 
     cherrypy.tools.cors = cherrypy._cptools.HandlerTool(CORS)
+    cherrypy.tools.startup_gate = cherrypy.Tool('before_handler', _startup_gate_tool, priority=10)
+    cherrypy.config.update({'tools.startup_gate.on': True})
 
     cherrypy.tree.mount(WebChartSrv(), '/')
     cherrypy.tree.mount(PredictSrv(), '/predict')
@@ -538,22 +552,22 @@ if __name__ == '__main__':
     # 绑定前先确保端口可用(回收上次崩溃残留的僵尸 chart python),消除「Port 8899 not free」反复起不来。
     ensure_chart_port_free('127.0.0.1', chart_port)
 
+    if not _warmup_sync:
+        threading.Thread(target=_run_warmups, name='horosa-warmup', daemon=True).start()
+    else:
+        STARTUP_GATE.set()
+
     cherrypy.engine.start()
     # P0 启动握手:监听后向 stdout 报端口,壳/launcher 可确认「此端口确为本次起的 chart 后端」(消 TOCTOU/误判)。
     print('HOROSA_READY chart_port={0}'.format(chart_port), flush=True)
-
-    # v3.0.1 perf ROUND-5:PD/india 预热默认在端口就绪之后、主线程上立即执行(见 _run_startup_warmups
-    # 注释;壳只等端口,预热不再垫在绑定前)。HOROSA_PY_WARMUP_BLOCKING=1 时已在上面原位跑过。
-    if not _WARMUP_BLOCKING:
-        _run_startup_warmups()
 
     # v3.0.1 perf ROUND-3 R3 (HOROSA_XUANSHI_WARMUP): the kentang registry's LazyMountedService
     # (marker: HOROSA_KENTANG_LAZY_MOUNT) defers webxuanshisrv's heavy import chain (xuanshi's 5
     # submodules + 99MB SQLite bundles) OFF the startup path. That saves ~5-10s of Windows cold
     # import, BUT it shifts the cost to the first user click on the 玄学史 tab. To hide that
     # click-latency behind idle time — same trick Round-2's chartProbeWarmupPromise (service-manager
-    # side) plays for the /chart cold path — spawn a background daemon thread that sleeps 5s
-    # (past the visible-window paint) then imports webxuanshisrv once. Non-blocking, non-fatal on
+    # side) plays for the /chart cold path — spawn a background daemon thread that sleeps past the
+    # visible-window paint, then imports webxuanshisrv once. Non-blocking, non-fatal on
     # error, idempotent (importlib memoizes in sys.modules). Kill-switch: HOROSA_XUANSHI_WARMUP=0
     # (or if lazy mount itself is disabled via HOROSA_KENTANG_LAZY_MOUNT=0, warmup is redundant
     # anyway since the module was already eagerly imported at mount time).
@@ -566,7 +580,9 @@ if __name__ == '__main__':
             return
         def _run():
             try:
-                _time_wu.sleep(20.0)
+                # PERF-R6:20s→10s —— streamlit 桩+裁包后各服务冷导入大幅变便宜,预热整体前移,
+                # 用户更早点开玄学史也是暖的;与 CDS eager dump(60s)完全错开,错峰结构不变。
+                _time_wu.sleep(10.0)
                 _importlib_wu.import_module('websrv.webxuanshisrv')
                 # v3.0.1 perf ROUND-4 R4 (HOROSA_XUANSHI_WARMUP): also materialize the 玄学史 global
                 # summary once so the FIRST /xuanshi/summary click hits an already-warm cache instead of
@@ -585,14 +601,15 @@ if __name__ == '__main__':
     _horosa_xuanshi_warmup()
 
     # v3.0.1 perf ROUND-4 R4 (HOROSA_QIZHENG_WARMUP): the 七政四余 起盘 itself is already fast
-    # (swe.sweObject, ~0.6s), but the qizheng service module webqizhengkinsrv transitively imports
-    # streamlit — a ~2.4s one-time COLD import paid on the user's first 七政四余 click (the kentang
-    # LazyMountedService defers it off startup, same as xuanshi). Pre-import it on a STAGGERED background
-    # daemon (7s, after the xuanshi warmup's 5s so the two heavy imports don't spike CPU together), hiding
-    # the import behind idle time. Non-blocking, non-fatal, idempotent (sys.modules memoizes → the first
-    # real request reuses the warmed module). Byte-identical: only pre-runs the SAME import the lazy mount
-    # would run on first request; zero change to compute_chart / shensha / dasha output. Kill-switch:
-    # HOROSA_QIZHENG_WARMUP=0.
+    # (swe.sweObject, ~0.6s), but the qizheng service module webqizhengkinsrv historically paid a
+    # heavy one-time COLD import on the user's first 七政四余 click (the kentang LazyMountedService
+    # defers it off startup, same as xuanshi; since v3.1.0 the upstream streamlit stub removes the
+    # biggest chunk, the pre-import still hides the remaining engine/data cost). Pre-import it on a
+    # STAGGERED background daemon (after the xuanshi warmup so the two heavy imports don't spike CPU
+    # together), hiding the import behind idle time. Non-blocking, non-fatal, idempotent
+    # (sys.modules memoizes → the first real request reuses the warmed module). Byte-identical: only
+    # pre-runs the SAME import the lazy mount would run on first request; zero change to
+    # compute_chart / shensha / dasha output. Kill-switch: HOROSA_QIZHENG_WARMUP=0.
     def _horosa_qizheng_warmup():
         import os as _os_qw
         import time as _time_qw
@@ -602,7 +619,7 @@ if __name__ == '__main__':
             return
         def _run():
             try:
-                _time_qw.sleep(24.0)
+                _time_qw.sleep(14.0)  # PERF-R6:24s→14s(紧跟 xuanshi 之后错峰)
                 _importlib_qw.import_module('websrv.webqizhengkinsrv')
             except Exception:
                 pass  # non-fatal — cold path will pay the cost on first request instead
@@ -612,7 +629,7 @@ if __name__ == '__main__':
     # v3.0.1 perf ROUND-4 R4 (HOROSA_SERVICES_WARMUP): 泛化版技法服务预热。kentang 的
     # LazyMountedService 把全部技法服务的重导入挪出了启动路径,但也意味着每个技法的**首次点击**
     # 要付一次冷导入(普查实测:MED 档 geomancy/shaozi/tieban/fendjing/beiji/nanji/chunzi/xianqin
-    # 各有 astro 数据束/SQL 初始化等一次性成本)。这里在 xuanshi(5s)/qizheng(7s)之后再错峰 9s,
+    # 各有 astro 数据束/SQL 初始化等一次性成本)。这里在 xuanshi(20s)/qizheng(24s)之后再错峰 28s,
     # 用**单个**守护线程按序逐个预导入其余服务模块,每个之间 sleep 0.8s——单线程+错峰保证预热期
     # CPU 无可感占用。字节级安全:与懒挂载首请求执行的是同一个 import(sys.modules 记忆化,首请求
     # 直接复用已热模块),不改任何计算。每个模块独立 try/except,失败=该技法回到首点付冷成本的现状。
@@ -625,9 +642,10 @@ if __name__ == '__main__':
         if _os_sw.environ.get('HOROSA_SERVICES_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
             return
         def _run():
-            _time_sw.sleep(28.0)
+            _time_sw.sleep(18.0)  # PERF-R6:28s→18s(排在 xuanshi/qizheng 之后,0.8s 间距不变)
             for _mod in (
-                # cetian 置首:它拖 streamlit(启动导入墙的 49%,ROUND-5 起改为懒挂载),预热最先补它。
+                # cetian 置首:历史上它拖 streamlit(启动导入墙的 49%,ROUND-5 起改为懒挂载;
+                # v3.1.0 上游 stub 后仍有引擎/数据一次性成本),预热最先补它。
                 'websrv.webcetiansrv',
                 'websrv.webgeomancysrv',
                 'websrv.webshaozisrv',

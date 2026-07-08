@@ -400,13 +400,49 @@ def sweHousesLon(jd, lat, lon, hsys, flag=0):
 # slow because it parses the fixstars.cat file every 
 # time..
 
+# ── 恒星计算进程级 memo(性能,输出逐字节不变):
+#   * 星等 mag 与时间无关(恒量),但 swisseph.fixstar_mag 每次重新解析 fixstars.cat
+#     → 按星名缓存一次即可;
+#   * fixstar_ut 只依赖 (star, jd, flags, 当前 sidereal 语境) —— 键含全部输入,
+#     同键必同值(纯函数),/chart 内多字段(恒星/28宿/北斗/虚拟宿)与「同一时刻重排
+#     (改宫制/显示项/性别)」的重复恒星调用直接命中。有界缓存防增长。
+_FIXSTAR_MAG_CACHE = {}
+_FIXSTAR_UT_CACHE = {}
+_FIXSTAR_UT_CACHE_MAX = 8192
+
+
+def _sidCtxKey():
+    mode = getattr(_SIDEREAL_CONTEXT, 'mode', None)
+    if mode is None:
+        return None
+    return (mode, getattr(_SIDEREAL_CONTEXT, 't0', 0.0), getattr(_SIDEREAL_CONTEXT, 'ayan_t0', 0.0))
+
+
+def _fixstarMagCached(star):
+    if star not in _FIXSTAR_MAG_CACHE:
+        _FIXSTAR_MAG_CACHE[star] = swisseph.fixstar_mag(star)
+    return _FIXSTAR_MAG_CACHE[star]
+
+
+def _fixstarUtCached(star, jd, flags):
+    key = (star, jd, flags, _sidCtxKey())
+    hit = _FIXSTAR_UT_CACHE.get(key)
+    if hit is None:
+        # applySiderealMode 已由调用方执行;此处 set→use 相邻纪律由外层保证
+        hit = swisseph.fixstar_ut(star, jd, flags)[0]
+        if len(_FIXSTAR_UT_CACHE) >= _FIXSTAR_UT_CACHE_MAX:
+            _FIXSTAR_UT_CACHE.clear()
+        _FIXSTAR_UT_CACHE[key] = hit
+    return hit
+
+
 def sweFixedStar(star, jd, flags=SEDEFAULT_FLAG):
     """ Returns a fixed star from the Ephemeris. """
     applySiderealMode()
-    sweList = swisseph.fixstar_ut(star, jd, flags)[0]
-    mag = swisseph.fixstar_mag(star)
+    sweList = _fixstarUtCached(star, jd, flags)
+    mag = _fixstarMagCached(star)
     newflags = flags | SEFLG_EQUATORIAL
-    eqlist = swisseph.fixstar_ut(star, jd, newflags)[0]
+    eqlist = _fixstarUtCached(star, jd, newflags)
     ra = eqlist[0] if eqlist[0] >= 0 else (eqlist[0] + 360) % 360
     try:
         name = const.STAR_NAMES[star]
@@ -426,10 +462,10 @@ def sweFixedStar(star, jd, flags=SEDEFAULT_FLAG):
 def sweFixedStarSu28(star, jd, flags=SEDEFAULT_FLAG):
     """ Returns a fixed star from the Ephemeris. """
     applySiderealMode()
-    sweList = swisseph.fixstar_ut(star, jd, flags)[0]
-    mag = swisseph.fixstar_mag(star)
+    sweList = _fixstarUtCached(star, jd, flags)
+    mag = _fixstarMagCached(star)
     newflags = flags | SEFLG_EQUATORIAL
-    eqlist = swisseph.fixstar_ut(star, jd, newflags)[0]
+    eqlist = _fixstarUtCached(star, jd, newflags)
     ra = eqlist[0] if eqlist[0] >= 0 else (eqlist[0] + 360) % 360
     idx = const.LIST_FIXED_SU28.index(star)
     su = const.LIST_FIXED_SU28_NAME[idx]

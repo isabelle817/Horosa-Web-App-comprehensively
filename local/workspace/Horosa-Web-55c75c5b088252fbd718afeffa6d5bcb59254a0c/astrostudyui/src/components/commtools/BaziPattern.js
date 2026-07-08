@@ -44,7 +44,7 @@ export default class BaziPattern extends Component{
 	constructor(props) {
 		super(props);
 
-        // 🛡 safeStorage(下同):浏览器存储配额满 / 隐私模式不抛错让组件崩。
+        // 🛡 safeStorage(下同):WKWebView 配额满 / 私有模式不抛错让组件崩。
         let json = safeLocalStorageGet(BaziPatternKey);
         let st = {};
         if(json){
@@ -155,7 +155,7 @@ export default class BaziPattern extends Component{
                 okCount++;
             }
         });
-        // 🛡 即便 safeLocalStorageSet 返回 false(配额满 / 隐私模式 SecurityError),
+        // 🛡 即便 safeLocalStorageSet 返回 false(WKWebView quota 满 / 隐私模式 SecurityError),
         //   组件 saveState 在每次输入 setState callback 里已经写过当前 state 快照(baziPattern 主 key),
         //   本会话 React state 也仍保有用户填写的全部内容 → 不该弹「失败」让用户以为白填了。
         //   持久化失败给 warning 友好提示告知"下次启动可能需重填"即可,不再阻塞使用。

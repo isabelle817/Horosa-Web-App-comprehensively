@@ -56,6 +56,9 @@ SU28_MODE_DOUBING = 1
 SU28_MODE_MOIRA_CURRENT = 2
 SU28_MODE_MOIRA_KAIXI = 3
 SU28_MODE_ZHENG_SIDEREAL = 4
+SU28_MODE_EQUATORIAL_SIDEREAL = 5   # G3/G4 赤道恒星制(制一):现代赤道距星案进动赤经定宿,planets 按赤经置宿,落宫仍黄道
+SU28_MODE_GUFA_LICHENG = 6           # WP-D 授时历古法立成:推变黄道宿度(极黄经)按黄经置宿;古宿固定(元时·默认)或随岁差
+SU28_MODE_EQUATORIAL_TROPICAL = 7    # 额外档·赤道回归制:固定元明赤道宿度立成(春分/牛前冬至锚、赤经常数、不随岁差),行星按赤经落宿(与 mode5「宿随星走」正相反)
 ZHENG_SIDEREAL_MODE = {
     'mode': swe.SE_SIDM_USER,
     't0': 2195875.5,
@@ -163,6 +166,36 @@ def _moira_distar_lon(rec, jd):
 def _moira_distar_lons(jd):
     """全 28 距星盘历元 tropical 黄经,返回 {宿名: 黄经}。"""
     return dict(_moira_distar_lon(rec, jd) for rec in MOIRA_DISTAR_J2000)
+
+
+def _moira_distar_ra(rec, jd):
+    """单颗距星 J2000 赤道坐标 → 盘历元赤经(度;proper motion + IAU 进动,不转黄道)。G3 赤道恒星制用。"""
+    name, rh, rm, rs, sg, dd, dm, ds, pmra, pmdec = rec
+    ra = (rh + rm / 60.0 + rs / 3600.0) * 15.0
+    dec = sg * (dd + dm / 60.0 + ds / 3600.0)
+    yr = (jd - 2451545.0) / 365.25
+    ra += pmra * 0.01 * 15.0 * yr / 3600.0
+    dec += pmdec * 0.01 * yr / 3600.0
+    T = (jd - 2451545.0) / 36525.0
+    zeta = (2306.2181 * T + 0.30188 * T * T + 0.017998 * T ** 3) / 3600.0
+    z = (2306.2181 * T + 1.09468 * T * T + 0.018203 * T ** 3) / 3600.0
+    th = (2004.3109 * T - 0.42665 * T * T - 0.041833 * T ** 3) / 3600.0
+    rr = math.radians(ra)
+    dr = math.radians(dec)
+    Z = math.radians(zeta)
+    ZZ = math.radians(z)
+    TH = math.radians(th)
+    A = math.cos(dr) * math.sin(rr + Z)
+    B = math.cos(TH) * math.cos(dr) * math.cos(rr + Z) - math.sin(TH) * math.sin(dr)
+    C = math.sin(TH) * math.cos(dr) * math.cos(rr + Z) + math.cos(TH) * math.sin(dr)
+    ra_d = math.degrees(math.atan2(A, B) + ZZ) % 360.0
+    dec_d = math.degrees(math.asin(C))
+    return (name, ra_d, dec_d)
+
+
+def _moira_distar_ras(jd):
+    """全 28 距星盘历元赤经/赤纬,返回 [(宿名, 赤经, 赤纬)]。"""
+    return [_moira_distar_ra(rec, jd) for rec in MOIRA_DISTAR_J2000]
 
 SU28_ID_BY_NAME = dict(zip(const.LIST_FIXED_SU28_NAME, const.LIST_FIXED_SU28))
 
@@ -275,8 +308,9 @@ ARCUS_VISIONIS = {
 }
 
 
-
-# ── 界系(terms)/三分(triplicity)请求级变体:perchart 共享 essential.TERMS/TABLE,按请求换表+锁 ──
+# 界系(bounds/terms)三套表:0 埃及(默认)/1 托勒密 Tetrabiblos/2 莉莉。essential.TERMS 是模块级全局,
+# 所有界主相关计算(尊贵/界主/互容接纳/围攻日木互容/主限法界)都读它。CherryPy 多线程下:/chart 请求级
+# 用锁包住「换表→整盘计算(尊贵+接纳+围攻+predictives)→还原」,防并发请求串界;默认 0=埃及 与现状逐字一致。
 _TERMS_TABLES = [tables.EGYPTIAN_TERMS, tables.TETRABIBLOS_TERMS, tables.LILLY_TERMS]
 # G15 托勒密界·狮子土星优先变体:狮子段首星 Jupiter↔Saturn 互换(度界 0-6/13-19 不变),余座同托勒密。
 # 默认走 _TERMS_TABLES[1](木优先);仅 leoBoundFirst 且 termsVariant==1 时换本表。
@@ -435,7 +469,7 @@ class PerChart:
             mode = int(value)
         except:
             return SU28_MODE_REAL
-        if mode in (SU28_MODE_REAL, SU28_MODE_DOUBING, SU28_MODE_MOIRA_CURRENT, SU28_MODE_MOIRA_KAIXI, SU28_MODE_ZHENG_SIDEREAL):
+        if mode in (SU28_MODE_REAL, SU28_MODE_DOUBING, SU28_MODE_MOIRA_CURRENT, SU28_MODE_MOIRA_KAIXI, SU28_MODE_ZHENG_SIDEREAL, SU28_MODE_EQUATORIAL_SIDEREAL, SU28_MODE_GUFA_LICHENG, SU28_MODE_EQUATORIAL_TROPICAL):
             return mode
         return SU28_MODE_REAL
 
@@ -569,6 +603,12 @@ class PerChart:
                 self.orbScale = None
 
         self.su28Mode = self.parseSu28Mode(data.get('doubingSu28', SU28_MODE_REAL))
+        # WP-D 授时历古法(mode6)子参:推变法(jiyuan闭式·默认/jintui进退/huiyuan会圆) + 古宿是否随岁差(默认固定·元时永不变)。
+        _tm = str(data.get('guolaoTuibianMethod', 'jiyuan') or 'jiyuan')
+        self.guolaoTuibianMethod = _tm if _tm in ('jiyuan', 'jintui', 'huiyuan') else 'jiyuan'
+        self.guolaoGufaPrecess = 1 if data.get('guolaoGufaPrecess') in (1, '1', True) else 0
+        # 赤道回归制(mode7)锚定(做成选项):dongzhi 牛前冬至 270°(默认) / chunfen 春分壁2.3°。
+        self.guolaoEqTropicalAnchor = 'chunfen' if str(data.get('guolaoEqTropicalAnchor', '') or '').strip() == 'chunfen' else 'dongzhi'
         self.isZhengSidereal = self.su28Mode == SU28_MODE_ZHENG_SIDEREAL or data.get('guolaoZhengSidereal') == 1 or data.get('guolaoZhengSidereal') == '1'
 
         self.zodiacal = const.TROPICAL
@@ -601,12 +641,13 @@ class PerChart:
 
         self.eastRa = None
         self.isDoubingSu28 = self.su28Mode == SU28_MODE_DOUBING
-        siderealMode = ZHENG_SIDEREAL_MODE if self.isZhengSidereal else None
         # 用户在「黄道 → 恒星黄道」下选了具体 ayanāṃśa(Lahiri/Raman/KP… 全 47)→ 用该模式;
-        # 缺省(空)走 Swiss Ephemeris 现默认(=Lahiri),与改前逐位一致,向后兼容。
+        # 缺省(空)走 Swiss Ephemeris 现默认,与改前逐位一致,向后兼容。
         self.siderealAyanamsa = ''
-        if siderealMode is None and self.zodiacal == const.SIDEREAL:
-            ayan_key = data.get('siderealAyanamsa') or data.get('ayanamsa') or ''
+        siderealMode = None
+        ayan_key = data.get('siderealAyanamsa') or data.get('ayanamsa') or ''
+        if self.isZhengSidereal:
+            # G2(七政恒星制历元可选):用户显式选 ayanāṃśa 则优先,否则回落郑氏(默认=零回归)。
             if ayan_key:
                 try:
                     from astrostudy.india.india_chart_kernel import normalize_ayanamsa
@@ -614,7 +655,17 @@ class PerChart:
                     siderealMode = resolved
                     self.siderealAyanamsa = resolved.get('key', '')
                 except Exception:
-                    siderealMode = None
+                    siderealMode = ZHENG_SIDEREAL_MODE
+            else:
+                siderealMode = ZHENG_SIDEREAL_MODE
+        elif self.zodiacal == const.SIDEREAL and ayan_key:
+            try:
+                from astrostudy.india.india_chart_kernel import normalize_ayanamsa
+                resolved = normalize_ayanamsa(ayan_key)
+                siderealMode = resolved
+                self.siderealAyanamsa = resolved.get('key', '')
+            except Exception:
+                siderealMode = None
         self.siderealMode = siderealMode
 
         self.needpars = True
@@ -632,12 +683,70 @@ class PerChart:
         if const.SATURN in objset and const.MARS in objset and const.JUPITER in objset and const.VENUS in objset:
             self.objlists.extend(const.LIST_MIDDLE_POINTS)
 
+        self.applyGuolaoSiyu()   # G10/G11 四余真交点/真远地点(默认平算零回归;在 reinit 前,宿度随新 lon 重算)
+
         self.custHouse()
 
         if self.southchart and self.pos.lat < 0:
             self.setupSouthChart()
         else:
             self.reinit()
+
+    def applyGuolaoSiyu(self):
+        """G10/G11 四余取法:罗计真交点(SE_TRUE_NODE=11)/月孛真远地点(SE_OSCU_APOG=13)。
+        默认平交点(10)/平远地点(12)零回归;仅 guolaoNodeType=='true'/guolaoLilithType=='true' 触发。
+        占星(希腊化)G12:西占月交点真平共用本链路 —— westNodeType=='true' 同样触发真交点置换
+        (与 guolaoNodeType 等效,默认 mean 零回归;两键互不污染:七政走 guolao*、西占走 west*)。
+        复用 chart 自身 sidereal context+flags;本调用在 reinit(setupPlanets)前,宿度随新 lon 重算。
+        失败安全回退保留平算(同 india _apply_true_node:南交=北交 lon/ra+180,lat/decl 不取负)。"""
+        data = self.data if isinstance(self.data, dict) else {}
+        nodeTrue = (data.get('guolaoNodeType', 'mean') == 'true'
+                    or data.get('westNodeType', 'mean') == 'true')
+        lilithTrue = data.get('guolaoLilithType', 'mean') == 'true'
+        if not nodeTrue and not lilithTrue:
+            return
+        jd = self.dateTime.jd
+        flags = getattr(self.chart, 'flags', swe.SEDEFAULT_FLAG)
+
+        def calc(swid):
+            with self.chart._siderealContext():
+                pos = swe.swisseph.calc_ut(jd, swid, flags)[0]
+                eq = swe.swisseph.calc_ut(jd, swid, flags | swe.SEFLG_EQUATORIAL)[0]
+            ra = eq[0] if eq[0] >= 0 else (eq[0] + 360) % 360
+            return pos, eq, ra
+
+        def findobj(objid):
+            return next((o for o in self.chart.objects if getattr(o, 'id', None) == objid), None)
+
+        if nodeTrue:
+            north = findobj(const.NORTH_NODE)
+            south = findobj(const.SOUTH_NODE)
+            if north is not None or south is not None:
+                try:
+                    pos, eq, ra = calc(11)
+                except Exception:
+                    pos = None
+                if pos is not None:
+                    if north is not None:
+                        north.relocate(pos[0])
+                        north.lat = pos[1]; north.lonspeed = pos[3]; north.latspeed = pos[4]
+                        north.ra = ra; north.decl = eq[1]
+                    if south is not None:
+                        south.relocate((pos[0] + 180.0) % 360.0)
+                        south.lat = pos[1]; south.lonspeed = pos[3]; south.latspeed = pos[4]
+                        south.ra = (ra + 180.0) % 360.0; south.decl = eq[1]
+
+        if lilithTrue:
+            darkmoon = findobj(const.DARKMOON)
+            if darkmoon is not None:
+                try:
+                    pos, eq, ra = calc(13)
+                except Exception:
+                    pos = None
+                if pos is not None:
+                    darkmoon.relocate(pos[0])
+                    darkmoon.lat = pos[1]; darkmoon.lonspeed = pos[3]; darkmoon.latspeed = pos[4]
+                    darkmoon.ra = ra; darkmoon.decl = eq[1]
 
     def custHouse(self):
         if self.houseCust == None:
@@ -678,7 +787,7 @@ class PerChart:
                     moon = self.chart.getObject(const.MOON)
                     if asc is None or sun is None or moon is None:
                         return
-                    if self.chart.isDiurnal():
+                    if self._diurnalWithSectBuffer():   # G13 福点回退同走 sect 缓冲(默认 geo 零回归)
                         flon = (asc.lon + moon.lon - sun.lon) % 360
                     else:
                         flon = (asc.lon + sun.lon - moon.lon) % 360
@@ -900,8 +1009,55 @@ class PerChart:
             oriental = (((planet.lon - sun.lon + 180.0) % 360.0) - 180.0) < 0
             planet.ofSect = bool(oriental == self.isDiurnal)
 
+    def _diurnalWithSectBuffer(self):
+        """G13 区分昼夜:默认纯几何地平(chart.isDiurnal);sectBuffer=='ptolemy5' 加 5° 缓冲——
+        太阳虽在地平下,但黄经距上升点 5° 内(拂晓将升)仍判昼。默认 geo 零回归。
+        sect 翻转连锁影响:得失区分凶星 / 三分昼夜序 / 福点反转 / 寿命法 hyleg 优先 / ZR 默认释放点。"""
+        base = bool(self.chart.isDiurnal())
+        data = self.data if isinstance(self.data, dict) else {}
+        if base or data.get('sectBuffer') != 'ptolemy5':
+            return base
+        try:
+            sun = self.chart.getObject(const.SUN)
+            asc = self.chart.getAngle(const.ASC)
+            d = abs(((sun.lon - asc.lon + 180.0) % 360.0) - 180.0)   # 太阳↔上升 最小角距 0..180
+            return d <= 5.0
+        except Exception:
+            return base
+
+    def _applyLotReversal(self):
+        """G20-P2 福点反转:默认 ON(sect-aware,flatlib 原值 asc+月-日/夜 asc+日-月,零回归);
+        lotReversal 显式 OFF(0)→ 福点恒用昼式 asc+月-日(不随昼夜反转)。仅显式关闭才置换。"""
+        data = self.data if isinstance(self.data, dict) else {}
+        if str(data.get('lotReversal', 1)) not in ('0', 'false', 'False'):
+            return
+        try:
+            pf = self.chart.getObject(const.PARS_FORTUNA)
+            asc = self.chart.getAngle(const.ASC)
+            sun = self.chart.getObject(const.SUN)
+            moon = self.chart.getObject(const.MOON)
+            if pf is not None and asc is not None and sun is not None and moon is not None:
+                pf.relocate((asc.lon + moon.lon - sun.lon) % 360.0)
+        except Exception:
+            pass
+
     def setupPlanets(self):
-        self.isDiurnal = self.chart.isDiurnal()
+        self.isDiurnal = self._diurnalWithSectBuffer()
+        self._applyLotReversal()   # G20-P2 福点反转(默认 ON 零回归;OFF 恒昼式)
+        # G15 迦勒底界:夜盘换夜表(土↔水位置互换);锁由 webchartsrv 请求级持有,此处重置 essential.TERMS 安全。
+        # 默认/其它界系不命中此分支(termsVariant!=3)→ 零回归。
+        try:
+            if str((self.data or {}).get('termsVariant', '')) == '3' and not self.isDiurnal:
+                essential.TERMS = _CHALDEAN_TERMS_NIGHT
+        except Exception:
+            pass
+        # 三分集水象变体:夜盘换水象「夜」表(水象 trip=火+月);锁由 webchartsrv 请求级持有,此处重置 essential.TABLE 安全。
+        # 默认 Dorothean / 普通 Ptolemaic / 昼盘 不命中此分支 → 零回归。
+        try:
+            if str((self.data or {}).get('triplicity', '')) == 'PtolemaicWaterVariant' and not self.isDiurnal:
+                essential.TABLE = _PTOLEMAIC_WATER_VARIANT_DIGNITIES_NIGHT
+        except Exception:
+            pass
         suobjs = const.LIST_OBJECTS_TRADITIONAL.copy()
         objs = const.LIST_OBJECTS_TRADITIONAL
         planets = const.LIST_SEVEN_PLANETS.copy()
@@ -1153,6 +1309,7 @@ class PerChart:
             'dayerStar': self.getDayerStar(),
             'dayofweek': dayofweekStr[self.dateTime.date.dayofweek()],
             'sunRiseTime': self.getSunRiseTime()['timeStr'],
+            'sunSetTime': self.getSunSetTime()['timeStr'],
         }
         return res
 
@@ -2203,6 +2360,85 @@ class PerChart:
         res.sort(key=lambda s: s.lon)
         return res
 
+    def getEquatorialSu28(self):
+        # 现代天赤恒星制(mode5):按赤经定宿,planets 用 RA(byLon=False)。
+        # WP-B 真修:原实现取 MOIRA_DISTAR_J2000 的 RA 定宿(_moira_distar_ras),但该表为 mode2 黄经调好——
+        #   数行赤纬非物理(亢/柳/胃/星/张/翼/鬼),黄仪取黄经恰好遮住、赤仪取赤经就爆(定宿偏 10–44°)。
+        # 改用与荀爽(REAL)同一份正确赤道距星活体源 chart.getFixedStartsSu28()(flatlib,已验在序),
+        #   仅去掉 mode0 荀爽一家的 危/鬼 年改正(那是实测微调)→ 得干净现代真星赤经恒星制。
+        # 绝不动 MOIRA_DISTAR_J2000(mode2/3/4 黄经依赖、字节默认盘)。
+        stars = self.chart.getFixedStartsSu28()
+        self.relocateSouthObjects(stars)
+        res = []
+        delta = 0.004
+        for id in const.LIST_FIXED_SU28:
+            star = stars.content[id]
+            if 90 <= star.ra < 270:
+                star.ra = star.ra - delta
+            else:
+                star.ra = star.ra + delta
+            res.append(star)
+        res.sort(key=takeRa)
+        return res
+
+    def getGufaLichengSu28(self):
+        # WP-D 授时历古法立成:推变黄道术(元明赤道宿度→黄道宿度立成,极黄经)→ 28 宿黄道起界(360 frame)。
+        # 角宿黄道起点由元时春分(壁6°)推导≈黄经193°(=元时 Spica/α Vir 实位,岁差核对吻合)。
+        # 古宿固定(默认·永不变):宿界钉死元时;随岁差(guolaoGufaPrecess=1):宿界东移≈50.29″/年(授时历元 1280 起)。
+        from astrostudy import guolao_tuibian as gt
+        table = gt.mansion_huangdao_table(self.guolaoTuibianMethod)   # 28 宿黄道距度(365.2575 古度)
+        scale = 360.0 / gt.ZHOUTIAN_ANCIENT
+        anchor = (gt.chidao_to_huangdao(0.0, self.guolaoTuibianMethod) * scale) % 360.0   # 角宿黄道起点(元时)
+        if self.guolaoGufaPrecess:
+            try:
+                anchor = (anchor + (float(self.year) - 1280.0) * (50.29 / 3600.0)) % 360.0
+            except Exception:
+                pass
+        res = []
+        cum = 0.0
+        for idx, name in enumerate(gt.SU28_NAMES):
+            lon = (anchor + cum) % 360.0
+            sig = const.LIST_SIGNS[int(lon / 30) % 12]
+            star = {
+                'ra': lon, 'decl': 0, 'name': name,
+                'wuxing': const.Su28WuXing[name], 'animal': const.Su28Animal[name],
+                'id': SU28_ID_BY_NAME[name], 'lon': lon, 'lat': 0,
+                'sign': sig, 'signlon': lon % 30, 'type': const.OBJ_FIXED_STAR
+            }
+            res.append(object.Object.fromDict(star))
+            cum += table[idx] * scale
+        res.sort(key=lambda s: s.lon)
+        return res
+
+    def getEquatorialTropicalSu28(self):
+        # 额外档·赤道回归制(mode7):宿界=固定元明赤道宿度立成(× 360/365.2575),以春分/牛前冬至为锚、赤经常数、不随岁差;
+        # 行星按盘历元赤经(byRA)落入 → 宿界钉死、真实恒星随岁差从宿界西移穿过(与 mode5「宿随星走」正相反)。
+        # 不调 _moira_distar_ras、不做 IAU 进动(这正是与 mode5 的分界)。中性命名,无软件名/书名。
+        from astrostudy import guolao_tuibian as gt
+        scale = 360.0 / gt.ZHOUTIAN_ANCIENT       # 365.2575 古度 → 360° 赤经
+        cum = gt._cumulative_equatorial()         # 各宿起始累积赤道(角起 0,365.2575 古度)
+        # 锚定常数(本档唯一关键决策点·做成选项):
+        #   dongzhi 牛前冬至(默认):牛宿前缘 = 冬至 RA 270° → offset = 270 − 牛起(scaled)
+        #   chunfen 春分壁2.3:壁宿2.3度 = 春分 RA 0° → offset = 0 − (壁起+2.3)(scaled)
+        if self.guolaoEqTropicalAnchor == 'chunfen':
+            anchor_pos = (cum[gt.SU28_NAMES.index('壁')] + 2.3) * scale
+            offset = (0.0 - anchor_pos) % 360.0
+        else:
+            anchor_pos = cum[gt.SU28_NAMES.index('牛')] * scale
+            offset = (270.0 - anchor_pos) % 360.0
+        res = []
+        for i, name in enumerate(gt.SU28_NAMES):
+            ra = (cum[i] * scale + offset) % 360.0
+            star = {
+                'ra': ra, 'decl': 0, 'name': name,
+                'wuxing': const.Su28WuXing[name], 'animal': const.Su28Animal[name],
+                'id': SU28_ID_BY_NAME[name], 'lon': ra, 'lat': 0,
+                'sign': const.LIST_SIGNS[int(ra / 30) % 12], 'signlon': ra % 30, 'type': const.OBJ_FIXED_STAR
+            }
+            res.append(object.Object.fromDict(star))
+        res.sort(key=takeRa)
+        return res
+
     def fillPlanetSu28(self, res, byLon=False):
         obj = const.LIST_ALL_POINTS
         for id in obj:
@@ -2270,6 +2506,24 @@ class PerChart:
         if self.su28Mode in (SU28_MODE_MOIRA_CURRENT, SU28_MODE_MOIRA_KAIXI, SU28_MODE_ZHENG_SIDEREAL):
             res = self.getMoiraFixedStarSu28()
             self.fillPlanetSu28(res, byLon=True)
+            return res
+
+        # G3/G4 赤道恒星制(制一): 现代赤道距星案进动赤经定宿,planets 用 RA。
+        if self.su28Mode == SU28_MODE_EQUATORIAL_SIDEREAL:
+            res = self.getEquatorialSu28()
+            self.fillPlanetSu28(res)
+            return res
+
+        # WP-D 授时历古法立成(mode6): 推变黄道宿度(极黄经)沿黄经置宿(planets 用黄经)。古宿固定(元时)或随岁差。
+        if self.su28Mode == SU28_MODE_GUFA_LICHENG:
+            res = self.getGufaLichengSu28()
+            self.fillPlanetSu28(res, byLon=True)
+            return res
+
+        # 额外档·赤道回归制(mode7): 固定元明赤道宿度立成(春分/牛前冬至锚、赤经常数、不随岁差),planets 用赤经(byRA)。
+        if self.su28Mode == SU28_MODE_EQUATORIAL_TROPICAL:
+            res = self.getEquatorialTropicalSu28()
+            self.fillPlanetSu28(res)
             return res
 
         # 荀爽 19 年测量(REAL): 赤道距星活体,沿赤经置宿(planets 用 RA)。
@@ -2419,10 +2673,42 @@ class PerChart:
         }
         return res
 
+    def getSunSetTime(self):
+        # 日没:太阳落在下降点(西方地平)。算法同 getSunRiseTime 迭代法,改以 DESC 为目标、起 17:00。
+        dt = Datetime(self.date, "17:00:00", self.zone)
+        dist = 99
+        speed = 1 / (4 / 60 / 24)
+        count = 1
+        thredholds = 50
+        while abs(dist) > 0.5 and count < thredholds:
+            chart = Chart(dt, self.pos, self.zodiacal, hsys=self.house, IDs=[const.SUN], needpars=False)
+            desc = chart.getAngle(const.DESC)
+            sun = chart.getObject(const.SUN)
+            dist = distance(sun.lon, desc.lon) / 2
+            deltatm = dist / speed
+            newjd = dt.jd + deltatm
+            dt = Datetime.fromJD(newjd, self.zone)
+            count = count + 1
+
+        if count >= thredholds:
+            dt = Datetime(self.date, "17:00:00", self.zone)
+
+        sunT = dt.toCNString()
+        parts = sunT.split(' ')
+        res = {
+            'datetime': dt,
+            'timeStr': parts[1]
+        }
+        return res
+
 
     def getTimerStar(self):
         birth = '{0}-{1}-{2}'.format(self.year, self.month, self.day)
-        tmoffset = getOffsetByDate(birth, self.zone, self.lon)
+        # G6 报时星太阳时:true=真(经度时差+均时差,默认零回归)/mean=平(仅经度)/off=钟表(不校正)。
+        solarMode = self.data.get('trueSolarTime', 'true') if isinstance(self.data, dict) else 'true'
+        if solarMode not in ('true', 'mean', 'off'):
+            solarMode = 'true'
+        tmoffset = getOffsetByDate(birth, self.zone, self.lon, solarMode)
         offsetjdn = tmoffset / 3600.0 / 24.0
 
         dt = Datetime(self.date, self.time, self.zone)

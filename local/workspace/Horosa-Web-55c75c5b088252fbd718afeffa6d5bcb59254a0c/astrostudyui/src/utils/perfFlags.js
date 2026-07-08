@@ -8,12 +8,7 @@
 //   localStorage.setItem('horosa.perf.chartSCU', '0')       // 盘面重组件 shouldComponentUpdate
 //   localStorage.setItem('horosa.perf.hookRaf', '0')        // 排盘 hook rAF 化
 //   localStorage.setItem('horosa.perf.freezeInactiveTabs','0')// 冻结非激活 TabPane 重渲
-//   localStorage.setItem('horosa.perf.planetariumRenderGating','0')// 天文馆:隐藏/非激活时暂停渲染循环
-//   localStorage.setItem('horosa.perf.planetariumOnDemandRender','0')// 天文馆:静止时按需渲染(非每帧)
-//   localStorage.setItem('horosa.perf.planetariumIdleHeartbeat','0')// 天文馆:按需渲染的 1fps 兜底心跳
-//   localStorage.setItem('horosa.perf.planetariumMetricsThrottle','0')// 天文馆:FPS/网格读数节流到 ~2Hz
-//   localStorage.setItem('horosa.perf.planetariumTimeEditDebounce','0')// 天文馆:可编辑时间的后端重算去抖
-//   localStorage.setItem('horosa.perf.techniqueResultCache','0')// 技法结果:确定性技法(紫微/七政…)同参复用
+//   localStorage.setItem('horosa.perf.requestDedupe', '0')  // 计算请求 去重+短TTL缓存
 // 恢复:对应 key removeItem 或设 '1'。
 
 function flagEnabled(key){
@@ -49,6 +44,10 @@ export function hookRafEnabled(){
 
 export function freezeInactiveTabsEnabled(){
 	return flagEnabled('horosa.perf.freezeInactiveTabs');
+}
+
+export function requestDedupeEnabled(){
+	return flagEnabled('horosa.perf.requestDedupe');
 }
 
 // 天文馆性能门控(只动渲染时机,不动任何排盘/外推内容):

@@ -32,6 +32,15 @@ import XQIcon from '../xq-icons';
 import { normalizeDayBoundary, DAY_BOUNDARY_AFTER23, DAY_BOUNDARY_AFTER24, normalizeLateZiHourMode, LATE_ZI_HOUR_NEXT_DAY, LATE_ZI_HOUR_TODAY, lateZiHourModeToBit } from '../../utils/dayBoundary';
 import styles from './PageHeader.less';
 
+// Windows 发行版:「关于」内的法律文档与官方下载渠道指向本平台仓库(windows-adaptations #23)。
+const HOROSA_OFFICIAL_REPO = 'https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows';
+const HOROSA_LEGAL_URL = `${HOROSA_OFFICIAL_REPO}/tree/main/docs/legal`;
+const HOROSA_RELEASES_URL = `${HOROSA_OFFICIAL_REPO}/releases`;
+function openHorosaLink(url){
+	if(typeof window === 'undefined' || !url){ return; }
+	try{ window.open(url, '_blank', 'noopener,noreferrer'); }catch(e){ /* noop */ }
+}
+
 const Option = XQSelect.Option;
 const PAGE_LABELS = {
 	astrochart: '占星',
@@ -773,6 +782,16 @@ function PageHeader(props){
 							</div>
 						</div>
 						<div className={styles.aboutDesc}>本地优先的玄学与星座桌面应用，涵盖占星、八字、紫微、七政四余、三式与数算等技法，并内置 AI 分析与挂载上下文。</div>
+						<div className={styles.aboutLegal}>
+							<div className={styles.aboutLegalText}>
+								<strong>开源 · 永久免费。</strong>星阙 Horosa 以 AGPL-3.0 开源许可发布。未来如有收费，仅限创始人 / 官方渠道；请仅从官方渠道下载，勿轻信其他来源。玄学内容仅供文化研究与娱乐，不构成任何专业建议。
+							</div>
+							<div className={styles.aboutLegalLinks}>
+								<button type="button" className={styles.aboutLegalLink} onClick={()=>openHorosaLink(HOROSA_LEGAL_URL)}>用户协议与隐私政策</button>
+								<span className={styles.aboutLegalSep}>·</span>
+								<button type="button" className={styles.aboutLegalLink} onClick={()=>openHorosaLink(HOROSA_RELEASES_URL)}>官方下载渠道</button>
+							</div>
+						</div>
 						{hasUpdateBridge() ? (
 							<div className={styles.aboutActions}>
 								<XQButton size="small" variant="primary" onClick={()=>{ if(typeof window !== 'undefined' && typeof window.__horosaTriggerUpdateCheck === 'function'){ window.__horosaTriggerUpdateCheck(); } }}>检查更新</XQButton>

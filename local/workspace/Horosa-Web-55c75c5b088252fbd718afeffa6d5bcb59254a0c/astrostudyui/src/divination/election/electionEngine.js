@@ -11,6 +11,33 @@ import { aspectsOf } from '../engine/aspectsEngine';
 import { PLANETS } from '../data/planets';
 import { natalIntegration } from './natalIntegration';
 import { mundaneIntegration } from './mundaneIntegration';
+import { schoolOf } from './westernSchools';
+import { norm360 } from '../engine/utils';
+
+// WP-8 危象日(crisis days):自病始时刻月位行进 45°/90°/180°/270° 前后为危象期(~7 日律)。
+// 传统文献未给统一判定容许度 → 纯陈述不设 orb 不扣分:报已行度数与最近危象点距离,由用户裁量。
+// 仅手术/用药用事产出(危象=病程七日律,他事无义);切走用事后 extra 里的病始输入保留、此处门控不显示。
+function buildCrisis(facts, opts, topic){
+	if(!topic || topic.topic_id !== 'surgery') return null;
+	const base = opts && opts.crisisBase;
+	if(!base || base.moonLon == null || !Number.isFinite(Number(base.moonLon))) return null;
+	const moon = facts.planets.moon;
+	if(!moon || moon.lon == null) return null;
+	const elapsed = norm360(moon.lon - Number(base.moonLon));
+	const marks = [45, 90, 180, 270];
+	let nearest = null;
+	marks.forEach((m) => {
+		const d = Math.abs(elapsed - m);
+		if(nearest === null || d < nearest.dist) nearest = { mark: m, dist: d };
+	});
+	return {
+		baseDate: base.date || '',
+		elapsedDeg: Math.round(elapsed * 10) / 10,
+		nearestMark: nearest.mark,
+		distToMark: Math.round(nearest.dist * 10) / 10,
+		text: `自病始（${base.date || '—'}）月已行 ${Math.round(elapsed * 10) / 10}°；最近危象点 ${nearest.mark}°（45/90/180/270° 为危象期，~7 日律），相距 ${Math.round(nearest.dist * 10) / 10}°。`,
+	};
+}
 
 // 应期参考：月亮临近相位（按误差升序，越紧越近发动）。
 function buildTiming(facts){
@@ -41,18 +68,21 @@ function buildRecommendations(facts, topic, sections, flags, scored){
 	return recs;
 }
 
-export function runElection(result, topicId, natalFacts, mundaneSet){
+// opts.westSchool:西方子流派档(westernSchools.js 五档;缺省 modern_main=现状行为)。
+export function runElection(result, topicId, natalFacts, mundaneSet, opts){
 	const facts = buildFacts(result);
 	if(!facts) return null;
+	const school = schoolOf(opts && opts.westSchool);
 	const topic = TOPIC_MASTER[topicId] || TOPIC_MASTER.marriage;
-	const sections = runModules(facts, topic);
-	const flags = evalHardFlags(facts, topic);
-	const topicPack = evaluateTopicPack(facts, topic);
-	const scored = scoreReport(sections, flags);
+	const sections = runModules(facts, topic, school);
+	const flags = evalHardFlags(facts, topic, school);
+	const topicPack = evaluateTopicPack(facts, topic, opts);
+	const scored = scoreReport(sections, flags, school);
 	const natal = natalFacts ? natalIntegration(natalFacts, facts) : null;
 	const mundane = mundaneSet ? mundaneIntegration(facts, mundaneSet) : null;
 	return {
 		facts, topic,
+		westSchool: { id: school.id, cn: school.cn },
 		overall: {
 			score: scored.score, grade: scored.grade, gradeCn: GRADE_CN[scored.grade],
 			headline: buildHeadline(topic, scored, flags),
@@ -63,6 +93,7 @@ export function runElection(result, topicId, natalFacts, mundaneSet){
 		topicPack,
 		natal,
 		mundane,
+		crisis: buildCrisis(facts, opts, topic),
 		timing: buildTiming(facts),
 		recommendations: buildRecommendations(facts, topic, sections, flags, scored),
 		castMoment: castMoment(topicId),

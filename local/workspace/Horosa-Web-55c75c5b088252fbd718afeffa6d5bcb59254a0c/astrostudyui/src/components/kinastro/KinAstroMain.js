@@ -6,6 +6,10 @@ import { convertLatToStr, convertLonToStr } from '../astro/AstroHelper';
 import { resolveGeoZone } from '../../utils/timezone';
 import CanPingMain from '../shusuan/CanPingMain';
 import HeLuoMain from '../shusuan/HeLuoMain';
+import YanQinBranchPanel from '../yanqin/YanQinBranchPanel';
+import YanQinControls from '../yanqin/YanQinControls';
+import { buildYanqinYanfaSnapshot } from '../yanqin/yanqinSnapshot';
+import { buildTiebanFramework, buildTiebanFrameworkSnapshot, TIEBAN_SCHOOLS, TIEBAN_KE_SYSTEMS } from '../../utils/tiebanFrameworkLocal';
 import SpaceTimePanel, { buildDateTimeFromFields, formatSpaceTime } from '../comp/SpaceTimePanel';
 import XQIcon from '../xq-icons';
 import { XQButton as Button, XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
@@ -49,6 +53,7 @@ const TECHNIQUE_CONFIG = {
 			{ key: 'palaces', label: '宫位' },
 			{ key: 'verses', label: '条文' },
 			{ key: 'dayun', label: '大运' },
+			{ key: 'framework', label: '框架' },
 		],
 	},
 	fendjing: {
@@ -156,6 +161,7 @@ const TECHNIQUE_CONFIG = {
 			{ key: 'palaces', label: '宫位' },
 			{ key: 'stars', label: '星禽' },
 			{ key: 'swallow', label: '吞啖' },
+			{ key: 'yanfa', label: '演法' },
 		],
 	},
 	cetian: {
@@ -270,20 +276,28 @@ export async function buildKinAstroSnapshotForFields(fields, serviceKey){
 	if(!serviceKey){
 		return '';
 	}
-	try{
-		const payload = parseFieldsDateTime(fields);
-		if(!payload){
-			return '';
-		}
-		const pan = await postKinAstro(serviceKey, payload);
-		if(!pan){
-			return '';
-		}
-		const text = buildSnapshotText(pan);
-		return (text && text !== '暂无 kinastro 数据') ? text : '';
-	}catch(e){
+	const payload = parseFieldsDateTime(fields);
+	if(!payload){
 		return '';
 	}
+	let text = '';
+	try{
+		const pan = await postKinAstro(serviceKey, payload);
+		if(pan){
+			const t = buildSnapshotText(pan);
+			text = (t && t !== '暂无 kinastro 数据') ? t : '';
+		}
+	}catch(e){
+		text = '';
+	}
+	// 演禽:追加右栏「演法」内容(起禽四禽/择日/占卜/投胎 + 当前流派),纯前端,后端不可达也出。
+	if(serviceKey === 'xianqin'){
+		try{
+			const yanfa = buildYanqinYanfaSnapshot(payload);
+			if(yanfa){ text = text ? (text + '\n\n' + yanfa) : yanfa; }
+		}catch(e){ /* 演法失败不影响命盘快照 */ }
+	}
+	return text;
 }
 
 function kinAstroSnapshotKey(serviceKey){
@@ -308,11 +322,12 @@ function setRuntimeKinAstroTechnique(moduleKey, serviceKey){
 	}
 }
 
-function saveKinAstroAISnapshots(config, pan){
+function saveKinAstroAISnapshots(config, pan, extraSnapshot){
 	if(!config || !pan){
 		return;
 	}
-	const content = buildSnapshotText(pan);
+	const base = buildSnapshotText(pan);
+	const content = extraSnapshot ? `${base}\n\n${extraSnapshot}` : base;
 	const meta = {
 		source: 'kentang2017/kinastro',
 		serviceKey: config.serviceKey,
@@ -755,6 +770,11 @@ class KinAstroMain extends Component{
 			tiebanMethod: 'kunji',
 			tiebanStartAge: 0,
 			tiebanDayunSteps: 8,
+			tiebanSchool: 'south',      // 流派 §3.1:south 南派(默认·港台主流) / north 北派(中州)
+			tiebanKeSystem: 'qing8',    // 刻制 §11.4:qing8 清八刻(默认) / ming100 明百刻 / dou12 十二刻斗宫
+			tiebanKe: 1,                // 考刻刻位 1-8(框架层示意;精确刻分走后端考刻)
+			tiebanTwinFen: 'off',       // 双胞胎三分 §11.6:off / shang上 / zhong中 / xia下
+			tiebanGuofang: false,       // 过房/养子 对条标注 §11.6
 			fatherBirthYear: null,
 			fatherDeathYear: null,
 			motherBirthYear: null,
@@ -798,6 +818,13 @@ class KinAstroMain extends Component{
 				canpingMethod: 'ming',
 				canpingLiunian: null,
 				heluoQuHuaGong: 'tuWangKunGen',
+				heluoZiShu: 'pair',            // 取数法【分歧B】pair 成对全取★ / single 每支阴阳取一
+				heluoJiGong: 'manualSanYuan',  // 五寄中宫【分歧D】manualSanYuan 手册三元表★ / legacy 旧代码
+				heluoZhiZun: true,             // 三至尊卦【分歧E】坎屯蹇 实现★ / 忽略
+				heluoPureGanKun: 'current',    // 纯乾坤落爻【分歧F】current★ / alt 抄本异
+				heluoLiunianStep2: 'ying',     // 流年第二步【分歧H】ying 应爻法★ / sequential 顺行
+				heluoHuangdiOffset: '2697',    // 纪年基准【分歧J】黄帝纪元差,公历+此=黄帝年(默认 2697)
+				heluoShowLiuRi: true,          // 流日显示(展开流月后是否列 30 日)
 			};
 		this.unmounted = false;
 		this.timeHook = {};
@@ -929,7 +956,8 @@ class KinAstroMain extends Component{
 		}
 		let text = '';
 		try{
-			text = `${buildSnapshotText(pan) || ''}`.trim();
+			const suffix = this.tiebanFrameworkSuffix(pan);
+			text = `${buildSnapshotText(pan) || ''}${suffix ? `\n\n${suffix}` : ''}`.trim();
 		}catch(e){
 			text = '';
 		}
@@ -1142,7 +1170,7 @@ class KinAstroMain extends Component{
 				return;
 			}
 			this.setState({ pan, loading: false }, ()=>{
-				saveKinAstroAISnapshots(this.config, pan);
+				saveKinAstroAISnapshots(this.config, pan, this.tiebanFrameworkSuffix(pan));
 			});
 		}catch(e){
 			if(this._inFlightSig === sig){
@@ -1284,13 +1312,56 @@ class KinAstroMain extends Component{
 							</label>
 						) : null}
 						{this.config.serviceKey === 'heluo' ? (
-								<label className="horosa-huangji-select-field is-wide">
-									<span>取化工法</span>
-									<Select value={this.state.heluoQuHuaGong} onChange={(value)=>this.setState({ heluoQuHuaGong: value })}>
-										<Option value="tuWangKunGen">土王寄坤艮</Option>
-										<Option value="siFangBoOnly">直取四方伯</Option>
-									</Select>
-								</label>
+								<>
+									<label className="horosa-huangji-select-field">
+										<span>取数法</span>
+										<Select value={this.state.heluoZiShu} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ heluoZiShu: value })}>
+											<Option value="pair">成对全取</Option>
+											<Option value="single">每支取一</Option>
+										</Select>
+									</label>
+									<label className="horosa-huangji-select-field">
+										<span>五寄中宫</span>
+										<Select value={this.state.heluoJiGong} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ heluoJiGong: value })}>
+											<Option value="manualSanYuan">手册三元表</Option>
+											<Option value="legacy">旧法·性别</Option>
+										</Select>
+									</label>
+									<label className="horosa-huangji-select-field">
+										<span>取化工法</span>
+										<Select value={this.state.heluoQuHuaGong} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ heluoQuHuaGong: value })}>
+											<Option value="tuWangKunGen">土王寄坤艮</Option>
+											<Option value="siFangBoOnly">直取四方伯</Option>
+										</Select>
+									</label>
+									<label className="horosa-huangji-select-field">
+										<span>纯乾坤落爻</span>
+										<Select value={this.state.heluoPureGanKun} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ heluoPureGanKun: value })}>
+											<Option value="current">通行</Option>
+											<Option value="alt">抄本异</Option>
+										</Select>
+									</label>
+									<label className="horosa-huangji-select-field">
+										<span>流年次步</span>
+										<Select value={this.state.heluoLiunianStep2} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ heluoLiunianStep2: value })}>
+											<Option value="ying">应爻法</Option>
+											<Option value="sequential">顺行</Option>
+										</Select>
+									</label>
+									<label className="horosa-huangji-select-field horosa-heluo-switch-field">
+										<span>三至尊卦</span>
+										<Switch checked={this.state.heluoZhiZun} onChange={(v)=>this.setState({ heluoZhiZun: v })} />
+									</label>
+									<label className="horosa-huangji-select-field horosa-heluo-switch-field">
+										<span>流月列流日</span>
+										<Switch checked={this.state.heluoShowLiuRi} onChange={(v)=>this.setState({ heluoShowLiuRi: v })} />
+									</label>
+									<label className="horosa-huangji-select-field is-wide">
+										<span>纪年基准（黄帝纪元差，默认 2697）</span>
+										<InputNumber min={0} max={9999} value={parseInt(this.state.heluoHuangdiOffset, 10) || 2697} onChange={(v)=>this.setState({ heluoHuangdiOffset: `${v || 2697}` })} />
+									</label>
+									<div className="horosa-cetian-settings-hint horosa-heluo-diverge-hint">诸法分歧：默认取「成对全取 · 手册三元表」（古本/手册主流）。改设置即时重排先后天卦、元堂图、旺相休囚死、十吉与纪年。占事卦/日课本轮未开，命卦为唯一用途。</div>
+								</>
 							) : null}
 							{this.config.serviceKey === 'tieban' ? (
 							<>
@@ -1308,6 +1379,40 @@ class KinAstroMain extends Component{
 								<label className="horosa-huangji-select-field">
 									<span>大运步数</span>
 									<InputNumber min={1} max={12} value={this.state.tiebanDayunSteps} onChange={(value)=>this.setState({ tiebanDayunSteps: value || 8 })} />
+								</label>
+								<label className="horosa-huangji-select-field">
+									<span>流派</span>
+									<Select value={this.state.tiebanSchool} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ tiebanSchool: value })}>
+										<Option value="south">南派(岭南)</Option>
+										<Option value="north">北派(中州)</Option>
+									</Select>
+								</label>
+								<label className="horosa-huangji-select-field">
+									<span>刻制</span>
+									<Select value={this.state.tiebanKeSystem} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ tiebanKeSystem: value })}>
+										<Option value="qing8">清八刻</Option>
+										<Option value="ming100">明百刻</Option>
+										<Option value="dou12">十二刻斗宫</Option>
+									</Select>
+								</label>
+								<label className="horosa-huangji-select-field">
+									<span>考刻刻位</span>
+									<Select value={this.state.tiebanKe} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ tiebanKe: value })}>
+										{[1, 2, 3, 4, 5, 6, 7, 8].map((k)=>(<Option key={k} value={k}>{['初', '二', '三', '四', '五', '六', '七', '八'][k - 1]}刻</Option>))}
+									</Select>
+								</label>
+								<label className="horosa-huangji-select-field">
+									<span>双胞胎分</span>
+									<Select value={this.state.tiebanTwinFen} dropdownMatchSelectWidth={false} onChange={(value)=>this.setState({ tiebanTwinFen: value })}>
+										<Option value="off">不分</Option>
+										<Option value="shang">上分</Option>
+										<Option value="zhong">中分</Option>
+										<Option value="xia">下分</Option>
+									</Select>
+								</label>
+								<label className="horosa-huangji-select-field horosa-heluo-switch-field">
+									<span>过房/养子</span>
+									<Switch checked={this.state.tiebanGuofang} onChange={(v)=>this.setState({ tiebanGuofang: v })} />
 								</label>
 								<label className="horosa-huangji-select-field is-wide">
 									<span>四柱覆写</span>
@@ -1607,6 +1712,7 @@ class KinAstroMain extends Component{
 										<InputNumber min={1} max={30} value={this.state.lunarDay} disabled={this.state.calendarMode !== 'manualLunar'} onChange={(value)=>this.setState({ lunarDay: value || 1 })} />
 									</label>
 								</div>
+								<YanQinControls />
 							</div>
 						) : null}
 					</div>
@@ -1744,7 +1850,108 @@ class KinAstroMain extends Component{
 						))}
 					</div>
 				) : null}
+				{this.renderTiebanFramework(pan)}
 			</div>
+		);
+	}
+
+	tiebanFrameworkSuffix(pan){
+		if(this.config.serviceKey !== 'tieban' || !pan){ return ''; }
+		try{ return buildTiebanFrameworkSnapshot(this.tiebanFrameworkOf(pan)) || ''; }catch(e){ return ''; }
+	}
+
+	renderTiebanFramework(pan){
+		const fw = this.tiebanFrameworkOf(pan);
+		if(!fw){ return null; }
+		const keLabel = ['初', '二', '三', '四', '五', '六', '七', '八'];
+		const twinLabel = { off: '', shang: '·上分', zhong: '·中分', xia: '·下分' }[this.state.tiebanTwinFen] || '';
+		return (
+			<div className="horosa-kinastro-tieban-framework">
+				<div className="horosa-kinastro-tieban-fw-head">
+					<h3>框架推演</h3>
+					<span className="horosa-kinastro-tieban-fw-tags">{fw.schoolInfo.label} · {fw.keSystemInfo.label} · {fw.sanyuanLabel}{twinLabel}{this.state.tiebanGuofang ? ' · 过房对条' : ''}</span>
+				</div>
+				<div className="horosa-kinastro-tieban-fw-grid">
+					<div className="horosa-huangji-info-card">
+						<div className="horosa-huangji-info-heading">考刻六亲（年父母·月兄弟·日夫妻·时子女）</div>
+						{fw.liuQin.map((q)=>(
+							<div className="horosa-huangji-info-row" key={q.pillar}><span>{q.label}·{q.liuqin}</span><strong>{fmtValue(q.ganzhi)}{q.shengxiao ? `（属${q.shengxiao}）` : ''} · 太玄 {fmtValue(q.taixuanGan)}/{fmtValue(q.taixuanZhi)}</strong></div>
+						))}
+						<div className="horosa-huangji-info-row"><span>八刻天干</span><strong className="horosa-kinastro-tieban-keline">{fw.eightKe.map((k)=>(<em key={k.ke} className={k.active ? 'is-active' : ''}>{keLabel[k.ke - 1]}{k.gan}</em>))}</strong></div>
+						{fw.ju ? <div className="horosa-huangji-info-row"><span>九十六局</span><strong>{fw.ju.label} · {fw.keSystemInfo.juStruct}</strong></div> : null}
+					</div>
+					<div className="horosa-huangji-info-card">
+						<div className="horosa-huangji-info-heading">八卦滚（{fw.baseGua.name}起 · {fw.roll.seq.length}卦{fw.roll.verseCount}条结构）</div>
+						<div className="horosa-kinastro-tieban-bagua-strip">
+							{fw.roll.seq.map((g)=>(
+								<div className="horosa-kinastro-tieban-bagua-item" key={g.idx}>{this.renderTiebanGua(g.lines)}<span>{g.name}</span></div>
+							))}
+						</div>
+						<div className="horosa-huangji-info-row"><span>三元取数</span><strong>{fw.sanyuanLabel} 权重{fw.roll.weight} · 变爻 {fw.roll.bianYao9.pos}·{fw.roll.bianYao9.ying}／{fw.roll.bianYao6.pos}爻</strong></div>
+						<div className="horosa-kinastro-tieban-fw-note">精确条文号由坤集密码表定（秘传），框架层只推卦象。</div>
+					</div>
+					<div className="horosa-huangji-info-card">
+						<div className="horosa-huangji-info-heading">批断顺序</div>
+						<div className="horosa-kinastro-tieban-piduan">
+							{fw.piduan.map((pp, i)=>(<span className="horosa-kinastro-tieban-piduan-step" key={pp.key}>{i + 1}.{pp.name}<em>{pp.pillar}</em></span>))}
+						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
+	tiebanFrameworkOf(pan){
+		const pillars = pan.pillars || [];
+		const gz = (k, i)=>{ const byKey = pillars.find((pp)=>pp.key === k); return (byKey && byKey.ganzhi) || (pillars[i] && pillars[i].ganzhi) || ''; };
+		const fourPillars = { year: gz('year', 0), month: gz('month', 1), day: gz('day', 2), hour: gz('hour', 3) };
+		const birthYear = parseInt(`${pan.dateStr || ''}`.slice(0, 4), 10) || 0;
+		return buildTiebanFramework(fourPillars, { school: this.state.tiebanSchool, keSystem: this.state.tiebanKeSystem, ke: this.state.tiebanKe, gender: this.state.gender, birthYear });
+	}
+
+	renderTiebanGua(lines){
+		const rows = [];
+		for(let p = 6; p >= 1; p -= 1){
+			const yang = lines[p - 1] === 1;
+			rows.push(<span className="horosa-kinastro-tieban-yao" key={p}>{yang ? <i className="is-yang" /> : <i className="is-yin"><b /><b /></i>}</span>);
+		}
+		return <div className="horosa-kinastro-tieban-gua">{rows}</div>;
+	}
+
+	renderTiebanFrameworkTab(){
+		const pan = this.state.pan;
+		const fw = pan ? this.tiebanFrameworkOf(pan) : null;
+		if(!fw){ return <div className="horosa-huangji-empty">起盘后显示框架参考</div>; }
+		const GAN = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
+		const ZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
+		return (
+			<>
+				<div className="horosa-huangji-info-card">
+					<div className="horosa-huangji-info-heading">流派 · 刻制</div>
+					<div className="horosa-huangji-info-row"><span>流派</span><strong>{fw.schoolInfo.label}</strong></div>
+					<div className="horosa-huangji-info-row"><span>主算柱</span><strong>{fw.schoolInfo.zhuGan}</strong></div>
+					<div className="horosa-huangji-info-row"><span>卦数偏好</span><strong>{fw.schoolInfo.guaPref} · 取数 {fw.schoolInfo.quShu}</strong></div>
+					<div className="horosa-huangji-info-row"><span>条文</span><strong>{fw.schoolInfo.tiaowen}（{fw.schoolInfo.note}）</strong></div>
+					<div className="horosa-huangji-info-row"><span>刻制</span><strong>{fw.keSystemInfo.label} · {fw.keSystemInfo.note}</strong></div>
+				</div>
+				<div className="horosa-huangji-info-card">
+					<div className="horosa-huangji-info-heading">太玄配数表（相合干支同数）</div>
+					<div className="horosa-huangji-info-row"><span>天干</span><strong>{GAN.map((g)=>`${g}${fw.taixuanTable.gan[g]}`).join(' ')}</strong></div>
+					<div className="horosa-huangji-info-row"><span>地支</span><strong>{ZHI.map((z)=>`${z}${fw.taixuanTable.zhi[z]}`).join(' ')}</strong></div>
+				</div>
+				<div className="horosa-huangji-info-card">
+					<div className="horosa-huangji-info-heading">九十六局（12时辰×8刻）</div>
+					{fw.ju ? <div className="horosa-huangji-info-row"><span>本命</span><strong>{fw.ju.label}</strong></div> : null}
+					<div className="horosa-huangji-info-row"><span>刻制定局</span><strong>{fw.keSystemInfo.juStruct}</strong></div>
+					<div className="horosa-huangji-info-row"><span>结构</span><strong>96局给大运流年粗分类（好/坏/起伏），六亲精细到384爻</strong></div>
+				</div>
+				<div className="horosa-huangji-info-card">
+					<div className="horosa-huangji-info-heading">借用子系统（杂用诸法之零件）</div>
+					{fw.subsystems.map((sub)=>(
+						<div className="horosa-huangji-info-row" key={sub.key}><span>{sub.name}</span><strong>{sub.struct}<em style={{ display: 'block', fontStyle: 'normal', opacity: 0.6, fontSize: '11px', marginTop: '2px' }}>源 {sub.source} · {sub.use}</em></strong></div>
+					))}
+				</div>
+			</>
 		);
 	}
 
@@ -2233,12 +2440,24 @@ class KinAstroMain extends Component{
 		);
 	}
 
+	buildHeluoOpts(){
+		return {
+			ziShuMode: this.state.heluoZiShu,
+			jiGongMode: this.state.heluoJiGong,
+			zhiZunEnabled: this.state.heluoZhiZun,
+			pureGanKunVariant: this.state.heluoPureGanKun,
+			liunianStep2: this.state.heluoLiunianStep2,
+			huangdiOffset: parseInt(this.state.heluoHuangdiOffset, 10) || 2697,
+			showLiuRi: this.state.heluoShowLiuRi,
+		};
+	}
+
 	renderCenter(){
 		if(this.config.serviceKey === 'canping'){
 			return <CanPingMain slot="center" fields={this.props.fields} method={this.state.canpingMethod} />;
 		}
 		if(this.config.serviceKey === 'heluo'){
-			return <HeLuoMain slot="center" fields={this.props.fields} quHuaGong={this.state.heluoQuHuaGong} />;
+			return <HeLuoMain slot="center" fields={this.props.fields} gender={this.state.gender} quHuaGong={this.state.heluoQuHuaGong} opts={this.buildHeluoOpts()} />;
 		}
 		const pan = this.state.pan;
 		if(!pan){
@@ -2437,10 +2656,13 @@ class KinAstroMain extends Component{
 			return <div className="horosa-huangji-section-list"><CanPingMain slot="aux" fields={this.props.fields} method={this.state.canpingMethod} /></div>;
 		}
 		if(this.config.serviceKey === 'heluo'){
-			return <div className="horosa-huangji-section-list"><HeLuoMain slot="aux" fields={this.props.fields} quHuaGong={this.state.heluoQuHuaGong} /></div>;
+			return <div className="horosa-huangji-section-list"><HeLuoMain slot="aux" fields={this.props.fields} gender={this.state.gender} quHuaGong={this.state.heluoQuHuaGong} opts={this.buildHeluoOpts()} /></div>;
 		}
-		const snapshot = buildSnapshotText(this.state.pan);
+		const snapshot = (()=>{ const base = buildSnapshotText(this.state.pan); const suffix = this.tiebanFrameworkSuffix(this.state.pan); return suffix ? `${base}\n\n${suffix}` : base; })();
 		const visibleTabs = this.config.tabs.filter((item)=>{
+			if(item.key === 'yanfa'){
+				return this.config.serviceKey === 'xianqin';
+			}
 			if(!this.state.pan){
 				return item.key === 'overview' || item.key === 'snapshot';
 			}
@@ -2453,6 +2675,9 @@ class KinAstroMain extends Component{
 			}
 			if(item.key === 'settings'){
 				return this.config.serviceKey === 'cetian';
+			}
+			if(item.key === 'framework'){
+				return this.config.serviceKey === 'tieban' && !!this.state.pan;
 			}
 			return this.getTabSections(item.key).length > 0;
 		});
@@ -2469,6 +2694,10 @@ class KinAstroMain extends Component{
 							<div className="horosa-huangji-section-list">{this.renderClassics()}</div>
 						) : item.key === 'settings' ? (
 							<div className="horosa-huangji-section-list">{this.renderCetianSettings()}</div>
+						) : item.key === 'yanfa' ? (
+							<div className="horosa-huangji-section-list"><YanQinBranchPanel fields={this.props.fields} /></div>
+						) : item.key === 'framework' ? (
+							<div className="horosa-huangji-section-list">{this.renderTiebanFrameworkTab()}</div>
 						) : (
 							<div className="horosa-huangji-section-list">{this.renderRows(this.getTabSections(item.key))}</div>
 						)}
@@ -2479,8 +2708,11 @@ class KinAstroMain extends Component{
 	}
 
 	renderBottomQuickDock(){
-		const snapshot = buildSnapshotText(this.state.pan);
+		const snapshot = (()=>{ const base = buildSnapshotText(this.state.pan); const suffix = this.tiebanFrameworkSuffix(this.state.pan); return suffix ? `${base}\n\n${suffix}` : base; })();
 		const visibleTabs = this.config.tabs.filter((item)=>{
+			if(item.key === 'yanfa'){
+				return this.config.serviceKey === 'xianqin';
+			}
 			if(!this.state.pan){
 				return item.key === 'overview' || item.key === 'snapshot';
 			}
@@ -2493,6 +2725,9 @@ class KinAstroMain extends Component{
 			}
 			if(item.key === 'settings'){
 				return this.config.serviceKey === 'cetian';
+			}
+			if(item.key === 'framework'){
+				return this.config.serviceKey === 'tieban' && !!this.state.pan;
 			}
 			return this.getTabSections(item.key).length > 0;
 		});

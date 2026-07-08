@@ -15,6 +15,8 @@ import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.util.EntityUtils;
 
 import com.google.common.net.HttpHeaders;
@@ -28,6 +30,35 @@ import boundless.utility.JsonUtility;
 import boundless.utility.StringUtility;
 
 public class HttpUriRequestHystrixCommand extends HystrixCommand<String> {
+
+	// ── 共享连接池客户端(性能):此前每请求 HttpClientBuilder.create().build() 新建客户端
+	// (实例构建+TCP 握手 5-20ms/次,本地 :8899 转发高频)。默认路径(非 Zipkin、无自定义
+	// SSL 工厂)复用单例;超时/代理为请求级差异,经 HttpRequestBase.setConfig 每请求下发,
+	// 不受共享影响。Zipkin / 自定义 sslFactory 两分支保留原「独享客户端」行为。
+	// 响应经 try-with-resources 关闭以归还连接(EntityUtils.toString 已消费实体)。
+	private static volatile CloseableHttpClient SHARED_CLIENT = null;
+
+	private static CloseableHttpClient sharedClient(){
+		CloseableHttpClient c = SHARED_CLIENT;
+		if(c == null){
+			synchronized(HttpUriRequestHystrixCommand.class){
+				c = SHARED_CLIENT;
+				if(c == null){
+					PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+					cm.setMaxTotal(32);
+					cm.setDefaultMaxPerRoute(8);
+					c = HttpClientBuilder.create()
+						.setConnectionManager(cm)
+						.setSSLContext(HttpClientUtility.sslCtx)
+						.setSSLHostnameVerifier(HttpClientUtility.hostnameVerifier)
+						.evictIdleConnections(30, java.util.concurrent.TimeUnit.SECONDS)
+						.build();
+					SHARED_CLIENT = c;
+				}
+			}
+		}
+		return c;
+	}
 	private String user;
 	private String password;
 	private HttpUriRequest request;
@@ -100,19 +131,29 @@ public class HttpUriRequestHystrixCommand extends HystrixCommand<String> {
 			// 代理转发 127.0.0.1 卡顿/超时(12–17s)→「排盘失败:本地排盘服务未就绪」;重启/修复无效(代理配置持久)。
 			// 外部请求(api.openai.com 等)仍照常走代理(getHttpHost),AI 流式 #9 不受影响。
 			RequestConfig requestConfig = RequestConfig.custom().setConnectTimeout(timeoutMS).setSocketTimeout(timeoutMS).setProxy(isLoopbackTarget(request) ? null : HttpClientUtility.getHttpHost()).build();
-			HttpClientBuilder builder = null;
-			if(BraveHelper.existZipkin()){
-				builder = BraveHelper.getHttpClientBuilder(request.getURI().toString());
+			boolean pooled = !BraveHelper.existZipkin() && sslFactory == null;
+			CloseableHttpClient client;
+			if(pooled){
+				client = sharedClient();
+				// 超时/代理为请求级配置,挂在请求对象上(共享客户端不受影响)
+				if(request instanceof HttpRequestBase){
+					((HttpRequestBase) request).setConfig(requestConfig);
+				}
 			}else{
-				builder = HttpClientBuilder.create();
+				HttpClientBuilder builder = null;
+				if(BraveHelper.existZipkin()){
+					builder = BraveHelper.getHttpClientBuilder(request.getURI().toString());
+				}else{
+					builder = HttpClientBuilder.create();
+				}
+				builder.setDefaultRequestConfig(requestConfig);
+				if(sslFactory == null) {
+					builder.setSSLContext(HttpClientUtility.sslCtx).setSSLHostnameVerifier(HttpClientUtility.hostnameVerifier);				
+				}else {
+					builder.setSSLSocketFactory(sslFactory);
+				}
+				client = builder.build();
 			}
-			builder.setDefaultRequestConfig(requestConfig);
-			if(sslFactory == null) {
-				builder.setSSLContext(HttpClientUtility.sslCtx).setSSLHostnameVerifier(HttpClientUtility.hostnameVerifier);				
-			}else {
-				builder.setSSLSocketFactory(sslFactory);
-			}
-			CloseableHttpClient client = builder.build();
 			HttpClientContext localContext = null;
 			if(!StringUtility.isNullOrEmpty(password)){
 				CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
@@ -143,6 +184,7 @@ public class HttpUriRequestHystrixCommand extends HystrixCommand<String> {
 				Map<String, String> headermap = HttpClientUtility.getHeadersMap(request.getAllHeaders());
 				
 				CloseableHttpResponse response = client.execute(request, localContext);
+				try{
 				Map<String, String> repsheaders = HttpClientUtility.getHeadersMap(response.getAllHeaders());
 				if(respHeadMap != null) {
 					respHeadMap.putAll(repsheaders);
@@ -181,14 +223,19 @@ public class HttpUriRequestHystrixCommand extends HystrixCommand<String> {
 				}
 				String str = EntityUtils.toString(response.getEntity(), charset);
 				return str;
+				}finally{
+					try{ response.close(); }catch(Exception e){ /* 归还连接 */ }
+				}
 			}catch(Exception e){
 				HttpClientUtility.log.error("请求{}失败, cause:{}", stripQuery(request.getURI().toString()), e.getMessage());
 				throw e;
 			}finally{
-				try{
-					client.close();
-				}catch(Exception e){
-					e.printStackTrace();
+				if(!pooled){
+					try{
+						client.close();
+					}catch(Exception e){
+						e.printStackTrace();
+					}
 				}
 			}
 		}catch(Exception e){

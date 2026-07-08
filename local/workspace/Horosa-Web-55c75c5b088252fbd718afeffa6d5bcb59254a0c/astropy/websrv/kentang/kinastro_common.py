@@ -11,6 +11,49 @@ try:
 except Exception:
     zh_convert = None
 
+# 桌面 runtime 不打包 streamlit(UI 框架,≈330MB 依赖树;排盘计算零调用)。
+# kinastro vendor 模块顶层 `import streamlit`,计算路径只用 @st.cache_data 装饰器。
+# 此处在 sys.modules 预注入兼容桩(vendor 文件零改,本模块是全部 kentang adapter
+# 的公共入口、且在 vendor import 之前加载):cache_data 退化为透传装饰器,其余
+# 属性 no-op。开发机装有 streamlit 时真包优先,行为不变。
+# 配套哨兵:astropy/tests/test_runtime_deps_slim.py + 打包脚本 kentang import gate。
+def _ensure_streamlit_stub():
+    try:
+        import streamlit  # noqa: F401  真包在场,无需桩
+        return
+    except ImportError:
+        pass
+    import types
+
+    def _cache_data(*args, **_kwargs):
+        if args and callable(args[0]) and not _kwargs:
+            return args[0]  # 裸 @st.cache_data 直接装饰形态
+
+        def _wrap(fn):
+            return fn
+        return _wrap
+
+    class _StubModule(types.ModuleType):
+        def __getattr__(self, _name):
+            def _noop(*_args, **_kw):
+                return None
+            return _noop
+
+    stub = _StubModule("streamlit")
+    stub.__horosa_slim_stub__ = True  # 哨兵测试据此区分桩与真包
+    stub.cache_data = _cache_data
+    stub.cache_resource = _cache_data
+    components = _StubModule("streamlit.components")
+    v1 = _StubModule("streamlit.components.v1")
+    stub.components = components
+    components.v1 = v1
+    sys.modules["streamlit"] = stub
+    sys.modules["streamlit.components"] = components
+    sys.modules["streamlit.components.v1"] = v1
+
+
+_ensure_streamlit_stub()
+
 
 CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 HOROSA_WEB_ROOT = os.path.abspath(os.path.join(CUR_DIR, "..", "..", ".."))

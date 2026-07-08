@@ -69,14 +69,18 @@ function reduceDi(d) {
 	return v;
 }
 
-// 5 寄中宫：按三元(民國年) + 阴阳(年干奇偶) + 男女
-function wuJiGong(minguoYear, yangGan, isMale) {
-	if (minguoYear <= 12) return isMale ? '艮' : '坤';        // 上元
-	if (minguoYear <= 72) {                                   // 中元
-		const ay = (yangGan && isMale) || (!yangGan && !isMale); // 阳男 or 阴女
-		return ay ? '艮' : '坤';
+// 5 寄中宫【分歧 D】。mode:
+//  'manualSanYuan'(手册§3.4 三元表·默认)——统一按「阳男阴女→艮/阴男阳女→坤(上中元);阳男阴女→离/阴男阳女→兑(下元)」;
+//  'legacy'(旧代码)——上下元按性别、中元按阳男阴女(自相不一致)。三元界按民国年(甲子起60年一元)。
+function wuJiGong(minguoYear, yangGan, isMale, mode = 'manualSanYuan') {
+	const ay = (yangGan && isMale) || (!yangGan && !isMale); // 阳男 or 阴女(=阳男阴女组)
+	if (mode === 'legacy') {
+		if (minguoYear <= 12) return isMale ? '艮' : '坤';   // 上元 按性别
+		if (minguoYear <= 72) return ay ? '艮' : '坤';        // 中元 按阳男阴女
+		return isMale ? '離' : '兌';                          // 下元 按性别
 	}
-	return isMale ? '離' : '兌';                               // 下元
+	if (minguoYear <= 72) return ay ? '艮' : '坤';            // 上元+中元
+	return ay ? '離' : '兌';                                  // 下元
 }
 
 // 爻位往上一爻（环行：上爻 6→初爻 1）。供 流年/流月 链式累变（liuNian/liuYue）用。
@@ -107,6 +111,7 @@ function yuanTangPure(gua, hourZhi, isMale) {
 	let reverse = false;
 	if (gua && gua.up === '乾') reverse = !isMale && yangLing;        // 乾：女命阳令 自上而下
 	else reverse = isMale && !yangLing;                              // 坤：男命阴令 自上而下
+	if (gua && gua.pureGanKunVariant === 'alt') reverse = !reverse;  // 【分歧F】抄本落爻反向·待核
 	return reverse ? 7 - base : base;
 }
 
@@ -116,7 +121,16 @@ function flipLine(lines, pos) { const l = lines.slice(); l[pos - 1] = l[pos - 1]
 export function nodeFromYao(lines, pos) { return flipLine(lines, pos); }
 
 // ── 起命 ──
-export function calculate({ fourPillars, gender = '男', hourZhi, birthYear, monthZhi, monthYangLing }) {
+// opts【分歧参数,默认=现状零回归,唯 jiGongMode 默认手册表(§3.4)会动到「取卦数=5」的盘】:
+//   ziShuMode 'pair'(成对全取★)|'single'(每支阴阳取一数·手册未给精确式·实验)
+//   jiGongMode 'manualSanYuan'(手册三元表★)|'legacy'(旧代码)
+//   zhiZunEnabled true★(实现三至尊卦)|false(忽略)
+//   pureGanKunVariant 'current'★|'alt'(纯卦乾坤落爻反向·抄本异·待核)
+export function calculate({ fourPillars, gender = '男', hourZhi, birthYear, monthZhi, monthYangLing, opts = {} }) {
+	const ziShuMode = opts.ziShuMode || 'pair';
+	const jiGongMode = opts.jiGongMode || 'manualSanYuan';
+	const zhiZunEnabled = opts.zhiZunEnabled !== false;
+	const pureGanKunVariant = opts.pureGanKunVariant || 'current';
 	const [yG, yZ] = splitGz(fourPillars.year);
 	const pillars = ['year', 'month', 'day', 'hour'].map((k) => fourPillars[k]);
 	let tian = 0;
@@ -127,15 +141,20 @@ export function calculate({ fourPillars, gender = '男', hourZhi, birthYear, mon
 		const gn = GAN_NUM[g];
 		if (gn % 2 === 1) tian += gn; else di += gn;
 		const [odd, even] = ZHI_PAIR[z] || [0, 0];
-		tian += odd; di += even;
+		if (ziShuMode === 'single') {
+			// 【异说 B·实验】每支按阴阳取一数:阳支(子寅辰午申戌)取奇入天数、阴支取偶入地数。手册未给精确式。
+			if (YANG_ZHI.has(z)) tian += odd; else di += even;
+		} else {
+			tian += odd; di += even;   // 成对全取(古本/实证)
+		}
 	});
 	const isMale = !(gender === '女' || gender === 'F' || gender === 'female' || gender === 0);
 	const minguo = (birthYear || 0) - 1911;
 	const yangGan = GAN.indexOf(yG) % 2 === 0;          // 甲丙戊庚壬=阳
 	let tNum = reduceTian(tian);
 	let dNum = reduceDi(di);
-	const tGua = tNum === 5 ? wuJiGong(minguo, yangGan, isMale) : LUOSHU_TRIGRAM[tNum];
-	const dGua = dNum === 5 ? wuJiGong(minguo, yangGan, isMale) : LUOSHU_TRIGRAM[dNum];
+	const tGua = tNum === 5 ? wuJiGong(minguo, yangGan, isMale, jiGongMode) : LUOSHU_TRIGRAM[tNum];
+	const dGua = dNum === 5 ? wuJiGong(minguo, yangGan, isMale, jiGongMode) : LUOSHU_TRIGRAM[dNum];
 
 	// 相盪：阳命=子寅辰午申戌年；阳男阴女 天上地下，阴男阳女 天下地上
 	const yangMing = YANG_ZHI.has(yZ);
@@ -149,10 +168,10 @@ export function calculate({ fourPillars, gender = '男', hourZhi, birthYear, mon
 	const yangLing = monthYangLing !== undefined
 		? monthYangLing
 		: ['子', '丑', '寅', '卯', '辰', '巳'].includes(monthZhi);
-	const xianGuaCtx = { up, low, yangLing };
+	const xianGuaCtx = { up, low, yangLing, pureGanKunVariant };
 
 	const yuan = yuanTang(xianLines, hourZhi, isMale, xianGuaCtx);
-	const { name: houName, lines: houLines, yuan: houYuan } = transformHoutian(xianName, xianLines, yuan, yangLing);
+	const { name: houName, lines: houLines, yuan: houYuan } = transformHoutian(xianName, xianLines, yuan, yangLing, { zhiZunEnabled });
 
 	return {
 		gender: isMale ? '男' : '女',
@@ -168,9 +187,10 @@ function swapTrigrams(l) { return [l[3], l[4], l[5], l[0], l[1], l[2]]; }
 // 三至尊卦：坎為水/水雷屯/水山蹇。九五(爻5)阴令、上六(爻6)阳令 →「变而不易」(只翻爻、不互换上下卦、元堂位不动)。
 // 阳令=冬至后~夏至前(子丑寅卯辰巳/十一~四月)；阴令=夏至后~冬至前(午~亥/五~十月)。
 const ZHI_ZUN = new Set(['坎為水', '水雷屯', '水山蹇']);
-export function transformHoutian(xianName, xianLines, yuan, yangLing) {
+export function transformHoutian(xianName, xianLines, yuan, yangLing, opts = {}) {
+	const zhiZunEnabled = opts.zhiZunEnabled !== false;  // 【分歧E】默认实现三至尊卦
 	const flipped = flipLine(xianLines, yuan);            // ① 元堂爻 阴阳互变
-	if (ZHI_ZUN.has(xianName)) {
+	if (zhiZunEnabled && ZHI_ZUN.has(xianName)) {
 		const buYi = (yuan === 5 && !yangLing) || (yuan === 6 && yangLing); // 九五阴令 / 上六阳令
 		if (buYi) {
 			const { name } = linesToGua(flipped);        // 变而不易：不互换上下卦、元堂位不动
@@ -218,7 +238,8 @@ export function daYun(xian, hou, birthYear = 0) {
 // 流年：在某大限爻内逐年起值年卦。每年在「上一年的卦」上变一爻——動爻自上一年動爻「往上一爻」(到上爻则回初爻)累变。
 // 阳爻管9年：阳年首年本卦不变(動爻=元堂)、阴年首年先变元堂；第2、3年连变两次应爻(取上一年動爻之应)；第4年起从上一年動爻往上一爻累变。
 // 阴爻管6年：首年先变元堂(不分阴阳年、无应爻步)，其后逐年往上一爻累变。每年返回 {age,year,ganzhi,gua,pos(動爻)}。
-export function liuNian(seg, birthYear = 0) {
+export function liuNian(seg, birthYear = 0, opts = {}) {
+	const step2 = opts.step2 || 'ying';   // 【分歧H】'ying'应爻法★ | 'sequential'逐爻上行(CSDN简化)
 	const g = NAME_TO_TRI[seg.gua];
 	if (!g) return [];
 	let lines = guaLines(g.up, g.low);
@@ -236,10 +257,16 @@ export function liuNian(seg, birthYear = 0) {
 		const firstYangYear = birthYear ? isYangYear(yearOf(0)) : true;
 		if (!firstYangYear) { lines = flipLine(lines, seg.pos); }   // 阴年首年变元堂，阳年首年不变
 		push(0, lines, seg.pos);
-		const p1 = ying(seg.pos); lines = flipLine(lines, p1); push(1, lines, p1);   // 第2年变应爻
-		const p2 = ying(p1); lines = flipLine(lines, p2); push(2, lines, p2);        // 第3年再变(上一年動爻之)应爻
-		let prev = p2;
-		for (let i = 3; i < seg.years; i += 1) { prev = up1(prev); lines = flipLine(lines, prev); push(i, lines, prev); }
+		if (step2 === 'sequential') {
+			// 【分歧H·简化】第2年起直接逐爻上行(不走应爻)
+			let prev = seg.pos;
+			for (let i = 1; i < seg.years; i += 1) { prev = up1(prev); lines = flipLine(lines, prev); push(i, lines, prev); }
+		} else {
+			const p1 = ying(seg.pos); lines = flipLine(lines, p1); push(1, lines, p1);   // 第2年变应爻
+			const p2 = ying(p1); lines = flipLine(lines, p2); push(2, lines, p2);        // 第3年再变(上一年動爻之)应爻
+			let prev = p2;
+			for (let i = 3; i < seg.years; i += 1) { prev = up1(prev); lines = flipLine(lines, prev); push(i, lines, prev); }
+		}
 	} else {
 		lines = flipLine(lines, seg.pos); push(0, lines, seg.pos);   // 首年变元堂
 		let prev = seg.pos;
@@ -598,6 +625,52 @@ export function mingGe(chart, jg) {
 	return { jiHit, xiongHit, jiCount: jiHit.length, xiongCount: xiongHit.length, jiGe: jiGrade(jiHit.length), xiongGe: xiongGrade(xiongHit.length) };
 }
 
+// ── §6.2 卦气旺衰（旺相休囚死）──
+// 当令者旺、令生者相、生令者休、克令者囚、令克者死。卦→五行取上/下三画卦（GUA_WUXING）。
+const WANGSHUAI_TABLE = {
+	春: { 木: '旺', 火: '相', 水: '休', 金: '囚', 土: '死' },
+	夏: { 火: '旺', 土: '相', 木: '休', 水: '囚', 金: '死' },
+	秋: { 金: '旺', 水: '相', 土: '休', 火: '囚', 木: '死' },
+	冬: { 水: '旺', 木: '相', 金: '休', 土: '囚', 火: '死' },
+	四季: { 土: '旺', 金: '相', 火: '休', 木: '囚', 水: '死' },
+};
+export function wangShuai(guaName2, season) {
+	const t = NAME_TO_TRI[guaName2];
+	const tbl = WANGSHUAI_TABLE[season];
+	if (!t || !tbl) return null;
+	const one = (tri) => ({ tri, wuxing: GUA_WUXING[tri], state: tbl[GUA_WUXING[tri]] });
+	return { low: one(t.low), up: one(t.up), season }; // 内卦(体)/外卦
+}
+
+// ── §6.6 纪年：黄帝纪元 + 三元九运 + 干支 ──
+// huangdiOffset 默认 2697（公历=黄帝纪元−2697）；三元九运用玄空口径(1864 甲子起,180 年循环,每运20年)。
+export function jiNian(birthYear, opts = {}) {
+	if (!(birthYear > 0)) return null;
+	const offset = opts.huangdiOffset || 2697;
+	const cyc = (((birthYear - 1864) % 180) + 180) % 180;   // 0..179
+	const yuan = ['上元', '中元', '下元'][Math.floor(cyc / 60)];
+	const yunNo = Math.floor(cyc / 20) + 1;                  // 1..9
+	return { huangdi: birthYear + offset, huangdiOffset: offset, yuan, yunNo, ganzhi: yearGanzhi(birthYear) };
+}
+
+// ── §6.3 河洛十吉判据（结构化，复用 judge/mingGe 内部判据，按手册十项命名）──
+export function shiJi(chart, jg) {
+	if (!chart || !jg) return null;
+	const x = chart.xian;
+	const gv = ((guaInfo(x.name) || {}).verdict) || '';
+	const yv = ((yaoText(x.name, x.yuan) || {}).verdict) || '';
+	const zz = zhongZong(x.lines, x.yuan);
+	const shun = shunFanShu(chart.tian, chart.di, chart.yangLing).shun;
+	const items = [
+		['卦名吉', gv === '吉'], ['爻位吉', x.yuan === 2 || x.yuan === 5], ['辞吉', yv === '吉'],
+		['得时', !!jg.deTime], ['有援', !!jg.yuanTang.youYing], ['数顺时', shun],
+		['得体', !!jg.deTi.present], ['得位', !!jg.yuanTang.dangWei], ['合理', !!jg.yuanTang.heLi],
+		['众宗', zz === '眾宗'],
+	];
+	const hit = items.filter((r) => r[1]).map((r) => r[0]);
+	return { items: items.map(([name, ok]) => ({ name, ok })), hitCount: hit.length, hit };
+}
+
 // 爻辞查找：本卦元堂(动爻)之爻辞
 export function yaoText(guaName2, pos) {
 	const g = TIAOWEN[guaName2];
@@ -613,8 +686,10 @@ export function yaoName(lines, pos) {
 	return pos === 1 ? `初${yang ? '九' : '六'}` : (pos === 6 ? `上${yang ? '九' : '六'}` : `${yang ? '九' : '六'}${num}`);
 }
 
-export function buildSnapshotText(chart, jg, dy) {
+export function buildSnapshotText(chart, jg, dy, extra = {}) {
 	if (!chart) return '';
+	const snapOpts = extra.opts || {};
+	const season = extra.season || (extra.monthZhi && SEASON[extra.monthZhi]) || '';
 	const lines = [];
 	lines.push('[起命]');
 	lines.push(`天数${chart.tian}→${chart.tianGua}　地数${chart.di}→${chart.diGua}`);
@@ -643,7 +718,7 @@ export function buildSnapshotText(chart, jg, dy) {
 		// birthYear 由 dy.all[0].yearStart 反推(daYun 传 birthYear 时 segs 带 yearStart);缺则流年仍出 岁/卦/动爻(year/干支为空)。
 		const birthYear = (dy.all[0] && dy.all[0].yearStart) ? (dy.all[0].yearStart - dy.all[0].ageStart + 1) : 0;
 		const ynRows = [];
-		dy.all.forEach((s) => { liuNian(s, birthYear).forEach((r) => { ynRows.push(r); }); });
+		dy.all.forEach((s) => { liuNian(s, birthYear, { step2: snapOpts.liunianStep2 }).forEach((r) => { ynRows.push(r); }); });
 		if (ynRows.length) {
 			lines.push('');
 			lines.push('[流年·岁运]');
@@ -653,8 +728,28 @@ export function buildSnapshotText(chart, jg, dy) {
 			});
 		}
 	}
+	// [断验] 纪年 + 卦气旺衰 + 十吉(与中栏/命盘页显示同源)
+	const byr = (dy && dy.all && dy.all[0] && dy.all[0].yearStart) ? (dy.all[0].yearStart - dy.all[0].ageStart + 1) : (extra.birthYear || 0);
+	const jn = jiNian(byr, { huangdiOffset: snapOpts.huangdiOffset });
+	const sj = jg ? shiJi(chart, jg) : null;
+	const wsX = season ? wangShuai(chart.xian.name, season) : null;
+	const wsH = season ? wangShuai(chart.hou.name, season) : null;
+	if (jn || sj || wsX) {
+		lines.push('');
+		lines.push('[断验]');
+		if (jn) lines.push(`纪年：黄帝${jn.huangdi}年 · ${jn.yuan}${jn.yunNo}运 · ${jn.ganzhi}`);
+		if (season) lines.push(`时令：${season}`);
+		if (wsX) lines.push(`先天卦气：内${wsX.low.wuxing}${wsX.low.state}/外${wsX.up.wuxing}${wsX.up.state}`);
+		if (wsH) lines.push(`后天卦气：内${wsH.low.wuxing}${wsH.low.state}/外${wsH.up.wuxing}${wsH.up.state}`);
+		if (sj) {
+			const miss = sj.items.filter((x) => !x.ok).map((x) => x.name);
+			lines.push(`十吉：${sj.hitCount}/10${sj.hit.length ? ` 合[${sj.hit.join('、')}]` : ''}${miss.length ? ` 缺[${miss.join('、')}]` : ''}`);
+		}
+	}
 	return lines.join('\n');
 }
 
 export { TRI_TO_NAME, NAME_TO_TRI, NAME_INDEX, guaName, guaLines, linesToGua, sanCai, shortName, GAN, ZHI, TIAOWEN };
+// 内核函数导出(供分歧开关「真实生效」单元测直接断言,内部计算仍走上方引用)
+export { wuJiGong, yuanTangPure };
 export default calculate;

@@ -30,7 +30,7 @@ class WebCalcSrv:
             coordLat = data['coordLat']
             coordLon = data['coordLon']
 
-            res = swisseph.azalt(jdn, lon, lat, height, coordLon, coordLat, 0, press, temp, coordType)
+            res = swisseph.azalt(jdn, coordType, [lon, lat, height], press, temp, [coordLon, coordLat, 0.0])
             res = {
                 'azimuth': res[0],
                 'altitudeTrue': res[1],

@@ -36,8 +36,8 @@ public class CalcController {
 		int coordType = TransData.getValueAsInt("coordType", 0);
 		
 		Map<String, Object> params = new HashMap<String, Object>();
-		if(jdn == Double.NaN || lat == Double.NaN || lon == Double.NaN || height == Double.NaN || temp == Double.NaN
-				 || press == Double.NaN || coordLat == Double.NaN || coordLon == Double.NaN) {
+		if(Double.isNaN(jdn) || Double.isNaN(lat) || Double.isNaN(lon) || Double.isNaN(height) || Double.isNaN(temp)
+				 || Double.isNaN(press) || Double.isNaN(coordLat) || Double.isNaN(coordLon)) {
 			throw new ErrorCodeException(320001, "params.error");
 		}
 		params.put("jdn", jdn);
@@ -63,7 +63,7 @@ public class CalcController {
 		int type = TransData.getValueAsInt("type", -1);
 		
 		Map<String, Object> params = new HashMap<String, Object>();
-		if(lat == Double.NaN || lon == Double.NaN) {
+		if(Double.isNaN(lat) || Double.isNaN(lon)) {
 			throw new ErrorCodeException(320002, "params.error");
 		}
 		params.put("lat", lat);

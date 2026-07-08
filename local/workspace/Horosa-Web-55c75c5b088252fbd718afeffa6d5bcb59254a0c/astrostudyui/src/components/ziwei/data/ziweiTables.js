@@ -1,5 +1,5 @@
-// 紫微斗数排盘数据表 loader（镜像服务端排盘 helper 的载入/拆表逻辑）。
-// 原始 JSON 自服务端资源逐字节迁来(byte-exact)，此处 import + 必要变换：
+// 紫微斗数排盘数据表 loader（镜像 Java ZiWeiHelper 的载入/拆表逻辑）。
+// 原始 JSON 自 astrostudycn 后端资源逐字节迁来(byte-exact)，此处 import + 必要变换：
 //   - 火铃/将前/小限：原始用三合组键"寅午戌" → 拆成 子..亥 每支一项。
 //   - 四化：不在此(复用 ZWConst.getActiveSiHuaGan，单一真值源、随流派切换)。
 import starsMainJson from './tables/ziweistarsmain.json';

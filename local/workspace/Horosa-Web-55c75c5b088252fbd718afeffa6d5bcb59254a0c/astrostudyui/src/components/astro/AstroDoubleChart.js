@@ -1,4 +1,6 @@
 import * as d3 from 'd3';
+import { buildChartDrawSig, sameChartDrawSig, chartDrawnAtNonZeroSize } from '../../utils/chartDrawGuard';
+import { chartDrawGuardEnabled } from '../../utils/perfFlags';
 import { Component } from 'react';
 import {randomStr} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
@@ -83,6 +85,24 @@ class AstroDoubleChart extends Component{
 			chartobj.natualChart.err || chartobj.dirChart.err){
 			return;
 		}
+		// 重绘签名守卫(与 ZiWeiChart 同款):cDU 无条件 drawChart,父层无关 setState 也会
+		// 穿透到这里整树 d3 重建。签名=draw 实际消费的全部 props 引用+主题+尺寸;全等→跳过。
+		if(chartDrawGuardEnabled()){
+			const sig = buildChartDrawSig(this.state.chartid, {
+				value: this.props.value,
+				chartDisplay: this.props.chartDisplay,
+				planetDisplay: this.props.planetDisplay,
+				lotsDisplay: this.props.lotsDisplay,
+				showAstroMeaning: this.props.showAstroMeaning,
+				termHighlight: this.props.termHighlight,
+				width: this.props.width,
+				height: this.props.height,
+			});
+			if(sameChartDrawSig(this._lastDrawSig, sig)){
+				return;
+			}
+			this._pendingDrawSig = sig;
+		}
 		
 		let planetDisp = new Set();
 		if(this.props.planetDisplay !== undefined && this.props.planetDisplay !== null){
@@ -111,6 +131,11 @@ class AstroDoubleChart extends Component{
 				planetDisp,
 				this.props.termHighlight
 			);
+			// 仅「非零尺寸成功绘制」后记录签名:隐藏期(0×0)不记 → 变可见时尺寸变 → 必重画。
+			if(this._pendingDrawSig && chartDrawnAtNonZeroSize(this.state.chartid)){
+				this._lastDrawSig = this._pendingDrawSig;
+				this._pendingDrawSig = null;
+			}
 		}
 	}
 

@@ -5,6 +5,10 @@ export function buildElectionSnapshot(j){
 	const L = [];
 	L.push('[起盘信息]');
 	L.push(`用事类型：${j.topic.cn}`);
+	// 西方子流派:仅非默认档写入(默认现代主流=快照文本与既往逐字一致)。
+	if(j.westSchool && j.westSchool.id && j.westSchool.id !== 'modern_main'){
+		L.push(`西方流派：${j.westSchool.cn}`);
+	}
 	L.push(`起盘时刻：${j.castMoment}`);
 	L.push('[总评]');
 	L.push(`${j.overall.score}/100　${j.overall.gradeCn}`);
@@ -23,6 +27,10 @@ export function buildElectionSnapshot(j){
 		L.push(`（满足 ${j.topicPack.passed}/${j.topicPack.total}）`);
 		j.topicPack.items.forEach((it) => L.push(`- ${it.pass ? '✓' : '✗'} ${it.kind === 'avoid' ? '忌' : '宜'}：${it.label}`));
 		if(j.topicPack.notes) L.push('注：' + j.topicPack.notes);
+	}
+	if(j.crisis && j.crisis.text){
+		L.push('[危象日参照]');
+		L.push(j.crisis.text);
 	}
 	L.push('[应期]');
 	if(j.timing && j.timing.length){

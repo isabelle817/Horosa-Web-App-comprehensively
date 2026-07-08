@@ -65,7 +65,8 @@ function startIdlePreload(){
 	}, 2000);
 }
 
-import AstroChartMain3D from '../components/astro3d/AstroChartMain3D';
+// 3D 星盘动态化(首包瘦身):babylon 系重组件不入主包;lazyPreloadable 自带 Suspense+错误边界,并进 idle 预取队列(用户点击时通常已就绪)。
+const AstroChartMain3D = lazyPreloadable(() => import('../components/astro3d/AstroChartMain3D'));
 const PlanetariumMain = lazyPreloadable(() => import('../components/planetarium/PlanetariumMain'));
 const AuxChartMain = lazyPreloadable(() => import('../components/auxchart/AuxChartMain'));
 const IndiaChartMain = lazyPreloadable(() => import('../components/astro/IndiaChartMain'));
@@ -140,6 +141,7 @@ const mainTabIcons = {
     AI分析: <XQIcon name="ai" />,
     黄历: <XQIcon name="calendar" />,
     玄学史: <XQIcon name="other" />,
+    '3D星盘': <XQIcon name="sphere3d" />,
     辅助: <XQIcon name="support" />,
     书籍阅读: <XQIcon name="book" />,
     星阙直播: <XQIcon name="live" />,
@@ -172,6 +174,7 @@ const navigationPages = [
     { label: '黄历', key: 'calendar', icon: 'calendar', group: '工具', keywords: '黄历 农历 老黄历 择日 宜忌 节气' },
     { label: '辅助', key: 'cntradition', icon: 'support', group: '工具', keywords: '辅助 工具 真太阳时' },
     { label: '玄学史', key: 'xuanshi', icon: 'other', group: '工具', keywords: '玄学史 历史 星象 天象 列传 朝代 地图 关系 二十四史 野载 正史 omen 玄史 中国玄学史' },
+    { label: '3D星盘', key: 'astrochart3D', icon: 'sphere3d', group: '工具', keywords: '3D 星盘 三维 天球 立体 球面 星空 相位 映点 接纳 互容 围攻 夹宫 希腊点 3d' },
 ];
 
 // 占星主面板「相关技法」快捷入口 —— 纯静态数据,hoist 到模块级(每次 render 复用同一引用),
@@ -813,26 +816,6 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                   </FreezeInactive>
                 </TabPane>
 
-                <TabPane tab={mainTab('3D')} key="astrochart3D">
-                  <FreezeInactive active={activeMainTab === "astrochart3D"}>
-                    <AstroChartMain3D
-                        value={chartObj}
-                        onChange={changeCond}
-                        fields={fields}
-                        fieldsAry={aryfields}
-                        height={height}
-                        currentTab={activeMainTab}
-                        chartDisplay={chartDisplay}
-                        planetDisplay={planetDisplay}
-                        lotsDisplay={lotsDisplay}
-                        showPlanetHouseInfo={showPlanetHouseInfo}
-                        showAstroMeaning={showAstroMeaning}
-                        dispatch={dispatch}
-                        hook={predictHook.astrochart3D}
-                    />
-                  </FreezeInactive>
-                </TabPane>
-
                 <TabPane tab={mainTab('天文馆', '工具')} key="planetarium">
                   <FreezeInactive active={activeMainTab === "planetarium"}>
                     <PlanetariumMain
@@ -882,6 +865,26 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
                         fields={fields}
                         dispatch={dispatch}
                         predictHook={predictHook}
+                    />
+                  </FreezeInactive>
+                </TabPane>
+
+                <TabPane tab={mainTab('3D星盘', '工具')} key="astrochart3D">
+                  <FreezeInactive active={activeMainTab === "astrochart3D"}>
+                    <AstroChartMain3D
+                        value={chartObj}
+                        onChange={changeCond}
+                        fields={fields}
+                        fieldsAry={aryfields}
+                        height={height}
+                        currentTab={activeMainTab}
+                        chartDisplay={chartDisplay}
+                        planetDisplay={planetDisplay}
+                        lotsDisplay={lotsDisplay}
+                        showPlanetHouseInfo={showPlanetHouseInfo}
+                        showAstroMeaning={showAstroMeaning}
+                        dispatch={dispatch}
+                        hook={predictHook.astrochart3D}
                     />
                   </FreezeInactive>
                 </TabPane>

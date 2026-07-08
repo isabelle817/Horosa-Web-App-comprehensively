@@ -1,10 +1,3 @@
-// export const ServerRoot = 'http://zyqspace.7766.org:9999';
-// export const MobileServer = 'http://zyqspace.7766.org:8099';
-// export const Chart3DServer = 'http://zyqspace.7766.org:8888';
-// export const WebSockServer = 'ws://zyqspace.7766.org:26900/ws';
-// export const RtmpPushServer = 'rtmp://zyqspace.7766.org:1935';
-// export const RtmpPlayServer = 'http://zyqspace.7766.org:18888';
-// export const HasRtspPlayer = true;
 
 
 const isLocalHost =
@@ -102,7 +95,6 @@ function resolveLocalServerRoot(){
 
 export const ServerRoot = isLocalHost ? resolveLocalServerRoot() : 'https://srv.horosa.com';
 export const MobileServer = 'https://mobileweb.horosa.com';
-export const Chart3DServer = 'https://chart3d.horosa.com';
 export const WebSockServer = 'ws://www.horosa.com:26900/ws';
 export const RtmpPushServer = 'https://rtmpush.horosa.com';
 export const RtmpPlayServer = 'https://rtmp.horosa.com';

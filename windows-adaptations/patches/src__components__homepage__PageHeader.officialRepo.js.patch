@@ -1,0 +1,14 @@
+diff --git a/astrostudyui/src/components/homepage/PageHeader.js b/astrostudyui/src/components/homepage/PageHeader.js
+index 1f34d52..bcd90d3 100644
+--- a/astrostudyui/src/components/homepage/PageHeader.js
++++ b/astrostudyui/src/components/homepage/PageHeader.js
+@@ -32,7 +32,8 @@ import XQIcon from '../xq-icons';
+ import { normalizeDayBoundary, DAY_BOUNDARY_AFTER23, DAY_BOUNDARY_AFTER24, normalizeLateZiHourMode, LATE_ZI_HOUR_NEXT_DAY, LATE_ZI_HOUR_TODAY, lateZiHourModeToBit } from '../../utils/dayBoundary';
+ import styles from './PageHeader.less';
+ 
+-const HOROSA_OFFICIAL_REPO = 'https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-MacOS';
++// Windows 发行版:「关于」内的法律文档与官方下载渠道指向本平台仓库(windows-adaptations #23)。
++const HOROSA_OFFICIAL_REPO = 'https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows';
+ const HOROSA_LEGAL_URL = `${HOROSA_OFFICIAL_REPO}/tree/main/docs/legal`;
+ const HOROSA_RELEASES_URL = `${HOROSA_OFFICIAL_REPO}/releases`;
+ function openHorosaLink(url){

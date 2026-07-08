@@ -623,7 +623,7 @@ class MundaneMain extends Component{
 						))}
 					</div>
 				) : <div style={{ fontSize: 12, opacity: 0.55, padding: '4px 0' }}>本盘无临角/合月行星主导,{scope}天气倾向不显著(合于时令)。</div>}
-				<div style={{ fontSize: 10.5, opacity: 0.42, marginTop: 8, lineHeight: '15px' }}>§14 其他专门子流派:金融/财经(首盘·Bradley 指数·周期宏观)见独立金融页;地震占星属研究性·统计未证实,仅备探索、不作预测断言。</div>
+				<div style={{ fontSize: 10.5, opacity: 0.42, marginTop: 8, lineHeight: '15px' }}>其他专门子流派:金融/财经(首盘·Bradley 指数·周期宏观)见独立金融页;地震占星属研究性·统计未证实,仅备探索、不作预测断言。</div>
 			</div>
 		);
 	}
@@ -917,7 +917,7 @@ class MundaneMain extends Component{
 	renderPrimaryDirectionNote(){
 		return (
 			<div style={{ ...CARD, marginTop: 10 }}>
-				<div style={CARD_TITLE}><span style={{ width: 3, height: 14, background: '#6a4c93', borderRadius: 2, display: 'inline-block' }} />主限四轴向运（§11.2）</div>
+				<div style={CARD_TITLE}><span style={{ width: 3, height: 14, background: '#6a4c93', borderRadius: 2, display: 'inline-block' }} />主限四轴向运</div>
 				<div style={{ fontSize: 11.5, opacity: 0.78, lineHeight: '18px' }}>
 					把本盘上升 / 天顶按主限弧推向各行星,标记国运重大转折年。此法走专用主限推运引擎(精度对齐独立校验),独立成页以保精度。
 				</div>
@@ -943,7 +943,7 @@ class MundaneMain extends Component{
 		const apexCn = (id) => MUN_PLANET_CN[String(id).toLowerCase()] || id;
 		return (
 			<div style={CARD}>
-				<div style={CARD_TITLE}><span style={{ width: 3, height: 14, background: ACC, borderRadius: 2, display: 'inline-block' }} />盘型 · 格局（§17）</div>
+				<div style={CARD_TITLE}><span style={{ width: 3, height: 14, background: ACC, borderRadius: 2, display: 'inline-block' }} />盘型 · 格局</div>
 				{dist ? (
 					<div style={{ marginBottom: 10 }}>
 						{dist.jonesInfo ? <div style={{ fontSize: 13, lineHeight: '20px' }}>分布型 <b style={{ color: ACC }}>{dist.jonesInfo.cn}</b> <span style={{ opacity: 0.7, fontSize: 11.5 }}>{dist.jonesInfo.text}</span></div> : null}
@@ -981,7 +981,7 @@ class MundaneMain extends Component{
 		const toneColor = ind.tone === '吉' ? '#2e7d32' : (ind.tone === '凶' ? '#c0392b' : '#8a6d3b');
 		return (
 			<div style={{ ...CARD, marginTop: 10 }}>
-				<div style={CARD_TITLE}><span style={{ width: 3, height: 14, background: toneColor, borderRadius: 2, display: 'inline-block' }} />会合指示星（§16.3）</div>
+				<div style={CARD_TITLE}><span style={{ width: 3, height: 14, background: toneColor, borderRadius: 2, display: 'inline-block' }} />会合指示星</div>
 				<div style={{ fontSize: 12.5, lineHeight: '20px' }}>木土会合于 <b style={{ color: toneColor }}>{ind.signCn}</b>（{ELEMENT_CN[ind.element] || ind.element} · 角距 {ind.sep}°）</div>
 				<div style={{ fontSize: 12.5, marginTop: 3 }}>指示星 <b style={{ color: toneColor }}>{ind.strongerCn}</b> <span style={{ color: toneColor, fontWeight: 700 }}>（{ind.tone}）</span></div>
 				<div style={{ fontSize: 11.5, opacity: 0.75, marginTop: 3, lineHeight: '17px' }}>{ind.toneText}</div>

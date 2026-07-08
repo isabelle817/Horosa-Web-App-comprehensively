@@ -11,6 +11,8 @@ import { generateCandidates, rankResults, buildScanRecommendation } from '../../
 import ChartSearchModal from '../astro/ChartSearchModal';
 import { fetchMundaneEvents, chartAtMoment } from '../../divination/mundane/momentPipeline';
 import { fetchPreciseJieqiSeed } from '../../utils/preciseCalcBridge';
+import { WEST_SCHOOLS, WEST_SCHOOL_ORDER, schoolOf } from '../../divination/election/westernSchools';
+import { SIGNS, SIGN_ORDER } from '../../divination/data/signs';
 import moment from 'moment';
 
 const Option = XQSelect.Option;
@@ -42,7 +44,7 @@ const GRADE_DOT = { 极佳: '#2f9e6f', 不错: '#1aa3b8', 中等: '#3b82f6', 欠
 class ElectionMain extends Component{
 	constructor(props){
 		super(props);
-		this.state = { scanning: false, scanResults: null, scanOpen: false, scanMode: 'hours', natalRec: null, natalFacts: null, natalLoading: false, mundaneSet: null, mundaneLoading: false };
+		this.state = { scanning: false, scanResults: null, scanOpen: false, scanMode: 'hours', natalRec: null, natalFacts: null, natalLoading: false, mundaneSet: null, mundaneLoading: false, crisisLoading: false };
 		this._fields = null; this._setTime = null; this._topicId = 'marriage';
 		this.runScan = this.runScan.bind(this);
 		this.useCandidate = this.useCandidate.bind(this);
@@ -97,6 +99,21 @@ class ElectionMain extends Component{
 
 	clearMundane(){ this.setState({ mundaneSet: null }); }
 
+	// WP-8 危象日:病始日期(正午)排盘取月黄经,存 extra.crisisBase(引擎纯陈述不扣分)。
+	async fetchCrisisBase(dateStr, setExtra){
+		if(!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)){ setExtra({ crisisBase: null }); return; }
+		const geo = this.geoFromFields();
+		const fieldsLike = { zone: geo.zone, lon: geo.lon, lat: geo.lat, gpsLat: geo.gpsLat, gpsLon: geo.gpsLon, hsys: geo.hsys, zodiacal: geo.zodiacal, siderealAyanamsa: geo.siderealAyanamsa, tradition: geo.tradition };
+		this.setState({ crisisLoading: true });
+		try{
+			const R = await chartAtMoment(`${dateStr} 12:00:00`, fieldsLike);
+			const F = R ? buildFacts(R) : null;
+			const moonLon = F && F.planets.moon ? F.planets.moon.lon : null;
+			setExtra({ crisisBase: moonLon != null ? { date: dateStr, moonLon } : null });
+		}catch(e){ setExtra({ crisisBase: null }); }
+		this.setState({ crisisLoading: false });
+	}
+
 	async selectNatal(rec){
 		if(!rec || !rec.birth){ return; }
 		const parts = `${rec.birth}`.split(' ');
@@ -136,7 +153,7 @@ class ElectionMain extends Component{
 			return fetchChart(buildChartParams(f), { cache: true }).then((rsp) => {
 				const R = rsp && rsp.Result;
 				if(!R) return null;
-				const rep = runElection(R, topicId);
+				const rep = runElection(R, topicId, null, null, this._elecOpts || { westSchool: this._westSchool });
 				return {
 					label: c.label, dt: c.dt, idx: c.idx,
 					score: rep.overall.score, grade: rep.overall.gradeCn,
@@ -154,46 +171,95 @@ class ElectionMain extends Component{
 		this.setState({ scanOpen: false });
 	}
 
-	renderLeftExtra({ extra, setExtra, fields, setTime }){
+	renderLeftExtra({ extra, setExtra, fields, setTime, patchFields }){
 		this._fields = fields; this._setTime = setTime; this._topicId = extra.topicId || 'marriage';
+		this._westSchool = extra.westSchool || 'modern_main';
+		this._elecOpts = { westSchool: this._westSchool, surgeryPart: extra.surgeryPart || null, crisisBase: extra.crisisBase || null };
+		const curSchool = schoolOf(this._westSchool);
 		return (
 			<div className="horosa-field-block">
-				<div className="horosa-field-label">用事类型</div>
+				<div className="horosa-field-label">西方流派</div>
+				<XQSelect style={{ width: '100%' }} size="small"
+					value={this._westSchool}
+					dropdownMatchSelectWidth={false}
+					onChange={(val) => {
+						setExtra({ westSchool: val });
+						// 宫制联动:该档定义了宫制且与当前不同 → 换宫制重排(patchFields 自动 refetch);
+						// 现代主流档 hsys=null 不联动(保持用户当前宫制=零回归)。
+						const sch = schoolOf(val);
+						if(sch.hsys !== null && fields.hsys && fields.hsys.value !== sch.hsys){
+							patchFields({ hsys: sch.hsys });
+						}
+					}}>
+					{WEST_SCHOOL_ORDER.map((id) => (
+						<Option key={id} value={id}>{WEST_SCHOOLS[id].cn}</Option>
+					))}
+				</XQSelect>
+				<div className="horosa-divi-note" style={{ marginTop: 4, fontSize: 11, lineHeight: 1.55, opacity: 0.72 }}>{curSchool.desc}</div>
+				<div className="horosa-field-label" style={{ marginTop: 12 }}>用事类型</div>
 				<XQSelect style={{ width: '100%' }} size="small"
 					value={extra.topicId || 'marriage'}
 					onChange={(val) => setExtra({ topicId: val })}>
 					{ELECTION_TOPICS.map((t) => (<Option key={t.value} value={t.value}>{t.label}</Option>))}
 				</XQSelect>
+				{this._topicId === 'surgery' ? (
+					<div style={{ marginTop: 8 }}>
+						<div className="horosa-field-label">手术部位（星座主管）</div>
+						<XQSelect style={{ width: '100%' }} size="small" allowClear
+							placeholder="选部位后判「月不落部位星座」"
+							value={extra.surgeryPart || undefined}
+							dropdownMatchSelectWidth={false}
+							onChange={(val) => setExtra({ surgeryPart: val || null })}>
+							{SIGN_ORDER.map((sg) => (
+								<Option key={sg} value={sg}>{SIGNS[sg].cn} · {(SIGNS[sg].body_parts || []).join('/')}</Option>
+							))}
+						</XQSelect>
+						<div className="horosa-field-label" style={{ marginTop: 8 }}>病始日期（危象日参照，可选）</div>
+						<input type="date" className="horosa-native-date" style={{ width: '100%', boxSizing: 'border-box' }}
+							value={(extra.crisisBase && extra.crisisBase.date) || ''}
+							onChange={(e) => this.fetchCrisisBase(e.target.value, setExtra)} />
+						{this.state.crisisLoading ? <div className="horosa-divi-note" style={{ marginTop: 4 }}>取病始时刻月位…</div> : null}
+					</div>
+				) : null}
 				<div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
 					<XQButton size="small" iconName="search" onClick={() => this.runScan('hours')}>本日逐时择优</XQButton>
 					<XQButton size="small" onClick={() => this.runScan('days')}>未来14日</XQButton>
 				</div>
-				<div className="horosa-field-label" style={{ marginTop: 12 }}>本命合参（可选）</div>
-				{this.state.natalRec ? (
-					<div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '6px 9px', borderRadius: 8, background: 'var(--horosa-accent-soft, rgba(184,134,11,0.08))', border: '1px solid var(--horosa-border-soft, rgba(184,134,11,0.18))' }}>
-						<span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{this.state.natalRec.name || '本命'} · {this.state.natalRec.birth}</span>
-						<XQButton size="small" onClick={this.clearNatal}>清除</XQButton>
+				{/* 本命合参 + 时势合参:并排两列(已选态为紧凑 chip,姓名省略号 + × 清除) */}
+				<div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+					<div style={{ flex: 1, minWidth: 0 }}>
+						<div className="horosa-field-label">本命合参（可选）</div>
+						{this.state.natalRec ? (
+							<div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, padding: '4px 6px 4px 9px', borderRadius: 8, background: 'var(--horosa-accent-soft, rgba(184,134,11,0.08))', border: '1px solid var(--horosa-border-soft, rgba(184,134,11,0.18))' }}
+								title={`${this.state.natalRec.name || '本命'} · ${this.state.natalRec.birth}`}>
+								<span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{this.state.natalRec.name || '本命'}</span>
+								<XQButton size="small" iconName="delete" title="清除" onClick={this.clearNatal} />
+							</div>
+						) : (
+							<ChartSearchModal onOk={this.selectNatal}>
+								<XQButton size="small" style={{ width: '100%' }} loading={this.state.natalLoading}>选本命盘</XQButton>
+							</ChartSearchModal>
+						)}
 					</div>
-				) : (
-					<ChartSearchModal onOk={this.selectNatal}>
-						<XQButton size="small" style={{ width: '100%' }} loading={this.state.natalLoading}>选本命盘合参</XQButton>
-					</ChartSearchModal>
-				)}
-				<div className="horosa-field-label" style={{ marginTop: 12 }}>时势合参（可选）</div>
-				{this.state.mundaneSet ? (
-					<div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, padding: '6px 9px', borderRadius: 8, background: 'var(--horosa-accent-soft, rgba(184,134,11,0.08))', border: '1px solid var(--horosa-border-soft, rgba(184,134,11,0.18))' }}>
-						<span style={{ flex: 1 }}>已拉时势盘（入宫 / 新满月 / 食）</span>
-						<XQButton size="small" onClick={this.clearMundane}>清除</XQButton>
+					<div style={{ flex: 1, minWidth: 0 }}>
+						<div className="horosa-field-label">时势合参（可选）</div>
+						{this.state.mundaneSet ? (
+							<div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11.5, padding: '4px 6px 4px 9px', borderRadius: 8, background: 'var(--horosa-accent-soft, rgba(184,134,11,0.08))', border: '1px solid var(--horosa-border-soft, rgba(184,134,11,0.18))' }}
+								title="已拉时势盘（入宫 / 新满月 / 食）">
+								<span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>已拉时势盘</span>
+								<XQButton size="small" iconName="delete" title="清除" onClick={this.clearMundane} />
+							</div>
+						) : (
+							<XQButton size="small" style={{ width: '100%' }} loading={this.state.mundaneLoading} onClick={this.fetchMundaneSet}>拉时势盘</XQButton>
+						)}
 					</div>
-				) : (
-					<XQButton size="small" style={{ width: '100%' }} loading={this.state.mundaneLoading} onClick={this.fetchMundaneSet}>拉时势盘合参</XQButton>
-				)}
+				</div>
 			</div>
 		);
 	}
 
 	renderRight({ chart, extra }){
-		return <ElectionJudgment chart={chart} topicId={extra.topicId || 'marriage'} natalFacts={this.state.natalFacts} mundaneSet={this.state.mundaneSet} />;
+		return <ElectionJudgment chart={chart} topicId={extra.topicId || 'marriage'} westSchool={extra.westSchool || 'modern_main'} surgeryPart={extra.surgeryPart || null} crisisBase={extra.crisisBase || null} natalFacts={this.state.natalFacts} mundaneSet={this.state.mundaneSet} />;
 	}
 
 	renderScanModal(){

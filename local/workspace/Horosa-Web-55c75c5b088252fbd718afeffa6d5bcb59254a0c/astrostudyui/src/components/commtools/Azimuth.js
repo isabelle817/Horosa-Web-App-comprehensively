@@ -11,7 +11,8 @@ import {convertLatStrToDegree, convertLonStrToDegree, splitDegree} from '../astr
 import { message } from 'antd';
 
 // 🛡 纯前端球面三角法地平坐标:输入 jdn / 观测点 / 黄道或赤道坐标 → 真高度+视高度+方位角(0=南顺时针,与既有 getAzimuthStr 兼容)。
-//   本地计算无需联网,误差 < 0.5°,对地平坐标显示足够。
+//   弃用后端 /calc/azimuth(RSA body 在 prod WKWebView 上偶发字段穿透 → params.error/raw "param error"),
+//   纯本地计算永久根治。误差 < 0.5°,对地平坐标显示足够。
 function calcAzimuthLocal({jdn, latObs, lonObs, coordLon, coordLat, coordType, temp, press}){
 	const D2R = Math.PI / 180.0;
 	const R2D = 180.0 / Math.PI;
@@ -120,7 +121,7 @@ class Azimuth extends Component{
 	}
 
 	requestCalc(){
-		// 🆕 纯本地球面三角法计算地平坐标,离线可用,稳定。
+		// 🆕 纯本地球面三角法计算地平坐标,不再发后端 → 永久根治 prod WKWebView 偶发的 "param error"。
 		if(!this.state.time || typeof this.state.time.calcJdn !== 'function'){
 			message.error('请先选择时间');
 			return;

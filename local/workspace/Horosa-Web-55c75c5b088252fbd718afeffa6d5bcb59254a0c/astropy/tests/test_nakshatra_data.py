@@ -7,7 +7,8 @@
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+# ⚠️ 只插仓根;绝不插 tests/../..(=Horosa-Web):那会让本仓 astropy 目录遮蔽 PyPI 天文库
+# astropy,炸掉 vendor kintaiyi 的收集(见 tests/test_pkg_hygiene.py 守护)。
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from astrostudy.india.nakshatra_data import (  # noqa: E402

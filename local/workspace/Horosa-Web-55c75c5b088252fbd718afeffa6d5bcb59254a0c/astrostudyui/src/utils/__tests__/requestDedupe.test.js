@@ -1,0 +1,76 @@
+// 计算请求去重层单测:白名单判定 / in-flight 共享 / TTL 命中 / 失败不缓存 / 深拷贝隔离。
+import { dedupeEligible, dedupedRequest, __clearDedupe, __dedupeStats } from '../requestDedupe';
+
+const URL_ACG = 'http://127.0.0.1:9999/location/acg';
+const BODY_A = JSON.stringify({ date: '1990/06/22', mode: 'mundo' });
+
+beforeEach(() => {
+	__clearDedupe();
+	window.localStorage.removeItem('horosa.perf.requestDedupe');
+});
+
+describe('dedupeEligible 白名单', () => {
+	it('计算端点 + JSON body → 命中', () => {
+		expect(dedupeEligible(URL_ACG, { body: BODY_A })).toBe(true);
+		expect(dedupeEligible('http://x/chart', { body: BODY_A })).toBe(true);
+		expect(dedupeEligible('http://x/predict/pd', { body: BODY_A })).toBe(true);
+		expect(dedupeEligible('http://x/astroextra/analysis', { body: BODY_A })).toBe(true);
+	});
+	it('随机/写/流式/无 body/非 POST → 直通', () => {
+		expect(dedupeEligible('http://x/predict/dice', { body: BODY_A })).toBe(false);
+		expect(dedupeEligible('http://x/user/save', { body: BODY_A })).toBe(false);
+		expect(dedupeEligible('http://x/aianalysis/stream', { body: BODY_A })).toBe(false);
+		expect(dedupeEligible(URL_ACG, {})).toBe(false);
+		expect(dedupeEligible(URL_ACG, { body: BODY_A, method: 'GET' })).toBe(false);
+	});
+	it('perfFlag=0 → 全部直通(kill-switch)', () => {
+		window.localStorage.setItem('horosa.perf.requestDedupe', '0');
+		expect(dedupeEligible(URL_ACG, { body: BODY_A })).toBe(false);
+	});
+});
+
+describe('dedupedRequest 行为', () => {
+	it('in-flight:并发同参只执行一次 runner,各自拿深拷贝', async () => {
+		let calls = 0;
+		let release;
+		const gate = new Promise((r) => { release = r; });
+		const runner = () => { calls += 1; return gate.then(() => ({ Result: { v: 1 } })); };
+		const p1 = dedupedRequest(URL_ACG, { body: BODY_A }, runner);
+		const p2 = dedupedRequest(URL_ACG, { body: BODY_A }, runner);
+		expect(__dedupeStats().inflight).toBe(1);
+		release();
+		const [a, b] = await Promise.all([p1, p2]);
+		expect(calls).toBe(1);
+		expect(a).toEqual(b);
+		expect(a).not.toBe(b);           // 深拷贝隔离
+		a.Result.v = 999;
+		expect(b.Result.v).toBe(1);      // 互不污染
+	});
+	it('TTL 命中:完成后同参不再执行 runner', async () => {
+		let calls = 0;
+		const runner = () => { calls += 1; return Promise.resolve({ Result: { v: calls } }); };
+		const a = await dedupedRequest(URL_ACG, { body: BODY_A }, runner);
+		const b = await dedupedRequest(URL_ACG, { body: BODY_A }, runner);
+		expect(calls).toBe(1);
+		expect(b.Result.v).toBe(1);
+		expect(a).not.toBe(b);
+	});
+	it('不同参数各自执行', async () => {
+		let calls = 0;
+		const runner = () => { calls += 1; return Promise.resolve({ ok: calls }); };
+		await dedupedRequest(URL_ACG, { body: BODY_A }, runner);
+		await dedupedRequest(URL_ACG, { body: JSON.stringify({ date: 'x' }) }, runner);
+		expect(calls).toBe(2);
+	});
+	it('失败不缓存:reject 后重试重新执行', async () => {
+		let calls = 0;
+		const runner = () => {
+			calls += 1;
+			return calls === 1 ? Promise.reject(new Error('boom')) : Promise.resolve({ ok: true });
+		};
+		await expect(dedupedRequest(URL_ACG, { body: BODY_A }, runner)).rejects.toThrow('boom');
+		const b = await dedupedRequest(URL_ACG, { body: BODY_A }, runner);
+		expect(calls).toBe(2);
+		expect(b.ok).toBe(true);
+	});
+});

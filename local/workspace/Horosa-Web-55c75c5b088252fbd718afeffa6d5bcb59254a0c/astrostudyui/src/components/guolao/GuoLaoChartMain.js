@@ -1898,7 +1898,7 @@ function fieldsToParams(fields){
 		_su28Rev: GUOLAO_SU28_CACHE_REV,
 	};
 
-	// G2 恒星制岁差:仅恒星宿度制 + 用户选了 ayanāṃśa 才透传(复用既有 siderealAyanamsa 键;服务端已转发并采用;缺=郑氏默认零回归)。
+	// G2 恒星制岁差:仅恒星宿度制 + 用户选了 ayanāṃśa 才透传(复用既有 siderealAyanamsa 键;ChartController 已转发、perchart 已用;缺=郑氏默认零回归)。
 	const guolaoAyan = guolaoAyanamsaFromFields(fields);
 	if(su28Mode === GUOLAO_SU28_MODE_ZHENG_SIDEREAL && guolaoAyan){
 		params.siderealAyanamsa = guolaoAyan;

@@ -643,7 +643,25 @@ ensure_frontend_build
 
 JAR="${ROOT}/astrostudysrv/astrostudyboot/target/astrostudyboot.jar"
 BUNDLE_JAR="${ROOT}/../runtime/mac/bundle/astrostudyboot.jar"
-if [ -f "${BUNDLE_JAR}" ]; then
+
+# ── Java exploded 启动(性能):打包产物 bundle/boot-exploded = fat jar 原样解开。
+# 嵌套 jar 的 NestedJarFile 读取是启动主开销(实测 fat jar 7.0s → exploded 2.6s,同字节同源)。
+# exploded 存在即优先(HOROSA_JAVA_EXPLODED=0 可关);dev 机无该目录 → 自动走旧 fat-jar 路径,零变化。
+BOOT_EXPLODED="${ROOT}/../runtime/mac/bundle/boot-exploded"
+JAVA_EXPLODED_MODE=0
+if [ "${HOROSA_JAVA_EXPLODED:-1}" = "1" ] && [ -f "${BOOT_EXPLODED}/org/springframework/boot/loader/JarLauncher.class" ]; then
+  JAVA_EXPLODED_MODE=1
+  # 保鲜守卫(dev 机):target jar 比 exploded 新说明后端刚重建而 exploded 是旧的 →
+  # 自动回退 fat-jar 路径,绝不跑旧代码。用户机无 target jar,不触发。
+  if [ -f "${JAR}" ] && [ "${JAR}" -nt "${BOOT_EXPLODED}/META-INF/MANIFEST.MF" ]; then
+    diag_log "java exploded stale vs target jar -> fallback to fat-jar path"
+    JAVA_EXPLODED_MODE=0
+  else
+    diag_log "java exploded mode ON: ${BOOT_EXPLODED}"
+  fi
+fi
+
+if [ "${JAVA_EXPLODED_MODE}" != "1" ] && [ -f "${BUNDLE_JAR}" ]; then
   if [ ! -f "${JAR}" ]; then
     diag_log "target jar missing, fallback to bundled jar: ${BUNDLE_JAR}"
     echo "backend target jar missing, using bundled jar fallback."
@@ -667,7 +685,7 @@ if [ -f "${BUNDLE_JAR}" ]; then
     fi
   fi
 fi
-if [ ! -f "${JAR}" ]; then
+if [ "${JAVA_EXPLODED_MODE}" != "1" ] && [ ! -f "${JAR}" ]; then
   diag_log "missing jar after fallback: ${JAR}"
   echo "missing ${JAR}"
   echo "请先回到仓库根目录执行："
@@ -792,7 +810,12 @@ JAVA_LAUNCH_CMD=(env \
   needtranslog="${NEED_TRANSLOG}")
 
 if [ "${DESKTOP_JAVA_FAST_START}" = "1" ]; then
-  JAVA_FAST_TOOL_OPTIONS="-Dlog4j2.statusLevel=WARN -Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom -Dspring.backgroundpreinitializer.ignore=true -XX:TieredStopAtLevel=1"
+  JAVA_FAST_TOOL_OPTIONS="-Dlog4j2.statusLevel=WARN -Djava.awt.headless=true -Djava.security.egd=file:/dev/./urandom -Dspring.backgroundpreinitializer.ignore=true"
+  if [ "${JAVA_EXPLODED_MODE}" != "1" ]; then
+    # 旧 fat-jar 路径原样保留 C1 快启;exploded 路径不再限档(C2 全速:启动 2.6s 仍远快于旧 7.0s,
+    # 计算吞吐实测 641→680 rps,双赢。实测表见 perf 基线 CSV)。
+    JAVA_FAST_TOOL_OPTIONS="${JAVA_FAST_TOOL_OPTIONS} -XX:TieredStopAtLevel=1"
+  fi
   if [ -n "${DESKTOP_JAVA_EXTRA_TOOL_OPTIONS}" ]; then
     JAVA_FAST_TOOL_OPTIONS="${JAVA_FAST_TOOL_OPTIONS} ${DESKTOP_JAVA_EXTRA_TOOL_OPTIONS}"
   fi
@@ -807,16 +830,48 @@ if [ "${DESKTOP_SPRING_LAZY_INIT}" = "1" ]; then
   )
 fi
 
-JAVA_LAUNCH_CMD+=(
-  # #9:让内置 Java 自动走 macOS/Windows 系统代理(getHttpHost/流式 client 经 ProxySelector 取用)。
-  # localhost/127.0.0.1 默认 bypass,本地 :9999/:8899 不受影响;无系统代理则等同直连。
-  "${JAVA_BIN}" -Djava.net.useSystemProxies=true -Dhorosa.runtime.owner=horosa-desktop -jar "${JAR}"
-  --server.port="${BACKEND_PORT}"
-  --server.address=127.0.0.1
-  --astrosrv=http://127.0.0.1:${CHART_PORT}
-  --mongodb.ip=127.0.0.1
-  --redis.ip=127.0.0.1
-)
+# #9:让内置 Java 自动走 macOS/Windows 系统代理(getHttpHost/流式 client 经 ProxySelector 取用)。
+# localhost/127.0.0.1 默认 bypass,本地 :9999/:8899 不受影响;无系统代理则等同直连。
+CDS_JSA="${BOOT_EXPLODED}/.app-cds.jsa"
+# ⚠️ CDS 铁律:JDK 对 classpath「目录」做 dump 校验(non-empty directory 拒绝),唯 `-cp .`
+# 豁免;且运行加载 .jsa 的 classpath 必须与训练一致 → exploded 的训练与运行都固定为
+# 「cd boot-exploded && java -cp . JarLauncher」,用 bash -c 'cd "$0" && exec "$@"' 包一层。
+if [ "${JAVA_EXPLODED_MODE}" = "1" ] && [ "${HOROSA_JAVA_CDS:-1}" = "1" ] && [ -s "${CDS_JSA}" ]; then
+  # exploded + AppCDS(.jsa 由首启后台自训练产出;archive 失配时 JVM 自动忽略退普通启动,天然安全)
+  diag_log "java launch: exploded + AppCDS (${CDS_JSA})"
+  JAVA_LAUNCH_CMD+=(
+    /bin/bash -c 'cd "$0" && exec "$@"' "${BOOT_EXPLODED}"
+    "${JAVA_BIN}" -XX:SharedArchiveFile="${CDS_JSA}" -Xlog:cds=off
+    -Djava.net.useSystemProxies=true -Dhorosa.runtime.owner=horosa-desktop
+    -cp . org.springframework.boot.loader.JarLauncher
+    --server.port="${BACKEND_PORT}"
+    --server.address=127.0.0.1
+    --astrosrv=http://127.0.0.1:${CHART_PORT}
+    --mongodb.ip=127.0.0.1
+    --redis.ip=127.0.0.1
+  )
+elif [ "${JAVA_EXPLODED_MODE}" = "1" ]; then
+  diag_log "java launch: exploded (no CDS yet)"
+  JAVA_LAUNCH_CMD+=(
+    /bin/bash -c 'cd "$0" && exec "$@"' "${BOOT_EXPLODED}"
+    "${JAVA_BIN}" -Djava.net.useSystemProxies=true -Dhorosa.runtime.owner=horosa-desktop
+    -cp . org.springframework.boot.loader.JarLauncher
+    --server.port="${BACKEND_PORT}"
+    --server.address=127.0.0.1
+    --astrosrv=http://127.0.0.1:${CHART_PORT}
+    --mongodb.ip=127.0.0.1
+    --redis.ip=127.0.0.1
+  )
+else
+  JAVA_LAUNCH_CMD+=(
+    "${JAVA_BIN}" -Djava.net.useSystemProxies=true -Dhorosa.runtime.owner=horosa-desktop -jar "${JAR}"
+    --server.port="${BACKEND_PORT}"
+    --server.address=127.0.0.1
+    --astrosrv=http://127.0.0.1:${CHART_PORT}
+    --mongodb.ip=127.0.0.1
+    --redis.ip=127.0.0.1
+  )
+fi
 
 launch_detached "${JAVA_LOG}" env \
   "${JAVA_LAUNCH_CMD[@]}" >"${JAVA_PID_FILE}"
@@ -891,6 +946,63 @@ fi
 trap - EXIT
 warm_runtime_routes_min_sync
 warm_runtime_routes
+
+# ── AppCDS 首启后台自训练:exploded 模式且 .jsa 未生成时,主服务就绪后在冷门端口
+# 以相同 classpath/lazy 配置起一个训练副本,heartbeat 就绪即 SIGTERM 触发 dump,
+# 原子落盘 .app-cds.jsa → 下次启动自动加载(温启再 -0.3~0.4s)。
+# .jsa 必须在最终安装路径训练(AppCDS 校验 classpath 绝对路径),故不能随包分发、只能就地自训。
+# 失败/端口占用/目录只读 → 静默放弃,下次启动再试;runtime 更新=整目录替换,.jsa 随之失效重训。
+maybe_train_cds_background() {
+  [ "${JAVA_EXPLODED_MODE:-0}" = "1" ] || return 0
+  [ "${HOROSA_JAVA_CDS:-1}" = "1" ] || return 0
+  local jsa="${BOOT_EXPLODED}/.app-cds.jsa"
+  [ -s "${jsa}" ] && return 0
+  local dir
+  dir="$(dirname "${jsa}")"
+  [ -w "${dir}" ] || { diag_log "cds train skip: dir not writable"; return 0; }
+  local train_port=39997
+  local lazy_env="false"
+  if [ "${DESKTOP_SPRING_LAZY_INIT}" = "1" ]; then lazy_env="true"; fi
+  diag_log "cds train scheduled (port ${train_port})"
+  (
+    sleep 6
+    if curl -s -o /dev/null -m 1 "http://127.0.0.1:${train_port}/heartbeat" 2>/dev/null; then exit 0; fi
+    tmp_jsa="${jsa}.tmp.$$"
+    env SPRING_MAIN_LAZY_INITIALIZATION="${lazy_env}" \
+      HOROSA_DESKTOP_MONGO_OPTIONAL="${DESKTOP_MONGO_OPTIONAL}" \
+      HOROSA_DESKTOP_MONGO_SKIP_PING="${DESKTOP_MONGO_SKIP_PING}" \
+      HOROSA_MONGO_FALLBACK_DIR="${MONGO_FALLBACK_DIR}" \
+      needtranslog="${NEED_TRANSLOG}" \
+      /bin/bash -c 'cd "$0" && exec "$@"' "${BOOT_EXPLODED}" \
+      "${JAVA_BIN}" -XX:ArchiveClassesAtExit="${tmp_jsa}" \
+      -Dlog4j2.statusLevel=WARN -Djava.awt.headless=true \
+      -Djava.security.egd=file:/dev/./urandom -Dspring.backgroundpreinitializer.ignore=true \
+      -Djava.net.useSystemProxies=true -Dhorosa.runtime.owner=horosa-cds-train \
+      -cp . org.springframework.boot.loader.JarLauncher \
+      --server.port="${train_port}" --server.address=127.0.0.1 \
+      --astrosrv=http://127.0.0.1:${CHART_PORT} --mongodb.ip=127.0.0.1 --redis.ip=127.0.0.1 \
+      >/dev/null 2>&1 &
+    tpid=$!
+    tries=0
+    while [ "${tries}" -lt 120 ]; do
+      if curl -s -o /dev/null -m 1 "http://127.0.0.1:${train_port}/heartbeat" 2>/dev/null; then break; fi
+      kill -0 "${tpid}" 2>/dev/null || break
+      tries=$((tries + 1))
+      sleep 0.5
+    done
+    kill -TERM "${tpid}" 2>/dev/null || true
+    # dump 49MB archive 需 15-30s(优雅关停+写盘),等待窗放到 90s 再强杀
+    tries=0
+    while [ "${tries}" -lt 90 ]; do
+      kill -0 "${tpid}" 2>/dev/null || break
+      tries=$((tries + 1))
+      sleep 1
+    done
+    kill -9 "${tpid}" 2>/dev/null || true
+    if [ -s "${tmp_jsa}" ]; then mv -f "${tmp_jsa}" "${jsa}"; else rm -f "${tmp_jsa}" 2>/dev/null || true; fi
+  ) >/dev/null 2>&1 &
+}
+maybe_train_cds_background
 
 diag_log "services ready: backend=${BACKEND_PORT} chartpy=${CHART_PORT}"
 diag_log "===== run end (success) ====="

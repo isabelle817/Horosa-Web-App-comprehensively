@@ -166,10 +166,12 @@ apply_patch _JIEQI_FAST_APPROACH           astropy/astrostudy/jieqi/NongLi.py   
 # BirthJieQi(R3 patch 已重生成,现同时携带 R5 _ascChart):卯时/上升求解只读 ASC → 瘦 Chart(仅太阳、
 # needpars=False);3 个代表日期 golden 全等,398-490ms → 30-36ms。guard 沿用 HOROSA_JIEQI_FAST_APPROACH(§12 已应用则跳过)。
 
-echo "== 19. v3.0.1 perf ROUND-5 (webchartsrv 追加:七政 streamlit 懒导入 + 预热挪至端口就绪后 + /chart 三段计时;patch 已并入 §14 同一文件) =="
-# §14 的 webchartsrv patch 已重生成,现同时携带:HOROSA_CETIAN_LAZY(webcetiansrv 顶层 streamlit=启动导入墙
-# 49% → 懒导入,预热线程空闲补齐)、HOROSA_PY_WARMUP_BLOCKING(PD/india 同步预热从 engine.start 前挪到端口
-# 就绪后,=1 恢复原行为)、HOROSA_PY_CHART_TIMING(=1 时打 CHART_PY_PERF init/build/encode 三段,纯观测)。
+echo "== 19. v3.0.1 perf ROUND-5 (webchartsrv 追加:cetian 懒挂载 + /chart 三段计时;patch 已并入 §14 同一文件) =="
+# §14 的 webchartsrv patch 已于 v3.1.0 基线重生成,现同时携带:HOROSA_CETIAN_LAZY(cetian 懒挂载;历史上
+# webcetiansrv 拖 streamlit=启动导入墙 49%,v3.1.0 上游 stub 后仍省引擎冷导入)、HOROSA_PY_CHART_TIMING
+# (=1 时打 CHART_PY_PERF init/build/encode 三段,纯观测)。
+# 注:Windows ROUND-5 的 HOROSA_PY_WARMUP_BLOCKING/_run_startup_warmups 已被 v3.1.0 上游「启动就绪门」
+# (STARTUP_GATE + HOROSA_PY_WARMUP_SYNC,warmup 后台线程 + 业务 POST 门闸)取代收编,不再由本 overlay 携带。
 # guard 沿用 §14 的 HOROSA_SERVICES_WARMUP(pristine 必缺 → 全量重放,patch 含全部追加)。
 
 echo "== 20. v3.0.1 perf ROUND-5 B-F3 (农历「日级」外部缓存读写桌面版停用;年表持久化不动) — REQUIRES a jar rebuild =="
@@ -180,5 +182,11 @@ apply_patch nongli_day_persist_v1          astrostudysrv/astrostudy/src/main/jav
 apply_patch quiet_println_v1               astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java astrostudycn__OnlyFourColumns.quietPrintln.java.patch
 echo "   ^^ astrostudy+astrostudycn are BACKEND Java. After these patches rebuild astrostudyboot.jar (SKILL gotcha #5):"
 echo "      astrostudy install -> astrostudycn install -> astrostudyboot clean package, then copy to bundle."
+
+echo "== 21. v3.1.0 官方仓库链接平台化(「关于」法律文档 + 官方下载渠道指向 Windows 仓库) =="
+# Mac v3.1.0 在 PageHeader「关于」里挂了 docs/legal 与 releases 链接,但 HOROSA_OFFICIAL_REPO 硬编码为
+# Mac 仓库 URL —— Windows 用户点「官方下载渠道」会落到错误平台的下载页。改指本仓库(docs/legal 已随
+# 同步 tracked 进本仓库,链接同构有效)。marker = Windows 仓库 URL 本身。
+apply_patch "comprehensively-improved-Windows" astrostudyui/src/components/homepage/PageHeader.js src__components__homepage__PageHeader.officialRepo.js.patch
 
 echo "== done. Verify: npm run selfcheck (windows-ahead / perf sentinels must all pass). =="

@@ -4,6 +4,7 @@ import { XQButton as Button, XQModal as Modal, XQTabs as Tabs } from '../xq-ui';
 import XQIcon from '../xq-icons';
 import * as Constants from '../../utils/constants';
 import request from '../../utils/request';
+import { createSignatureMemo, stableSignature } from '../../utils/memoBySignature';
 import {randomStr,} from '../../utils/helper';
 import ZiWeiInput from './ZiWeiInput';
 import ZiWeiChart from './ZiWeiChart';
@@ -534,6 +535,8 @@ function buildZiWeiInfoData(chart, fields){
 class ZiWeiMain extends Component{
 	constructor(props) {
 		super(props);
+		// 本地引擎签名记忆(生辰+开关往返切换免重算);kill-switch horosa.perf.localEngineMemo
+		this._localEngineMemo = createSignatureMemo(4);
 		this.state = {
 			result: null,
 			rules: null,
@@ -677,12 +680,24 @@ class ZiWeiMain extends Component{
 			try {
 				const birth = { date: params.date, time: params.time, zone: params.zone, lon: params.lon, lat: params.lat, gpsLon: params.gpsLon, gpsLat: params.gpsLat, ad: 1, gender: params.gender };
 				const opts = { timeAlg: params.timeAlg, after23NewDay: params.after23NewDay, lateZiHourUseNextDay: params.lateZiHourUseNextDay, daxianSpan: ZWEngineOptions.daxianSpan, tianmaBasis: ZWEngineOptions.tianmaBasis, starSet: ZWEngineOptions.starSet, shangShi: ZWEngineOptions.shangShi, leapMonth: ZWEngineOptions.leapMonth, lateZi: ZWEngineOptions.lateZi, yearBoundary: ZWEngineOptions.yearBoundary, huoling: ZWEngineOptions.huoling, kongNaming: ZWEngineOptions.kongNaming };
-				let localChart = calcZiwei(birth, opts);
-				if(ZWEngineOptions.sanPan && ZWEngineOptions.sanPan !== 'tian'){ localChart = deriveSanPan(localChart, ZWEngineOptions.sanPan); }
-				if(localChart && Array.isArray(localChart.houses) && localChart.houses.length === 12){
-					result.chart = { ...result.chart, ...localChart };   // 保留 Java 顶层兼容字段、仅换排盘核心
-					// WP-G:格局随本地盘重算(切开关后主星可移位/四化变,Java 默认盘 patterns 会失配)。失败回退 Java。
-					try{ const lp = detectPatterns(result.chart); if(Array.isArray(lp)){ result.patterns = lp; } }catch(e2){ /* 保留 Java patterns */ }
+				// 签名记忆:同 生辰+引擎开关+三盘 往返切换(A→B→A)免重算本地引擎全套
+				// (calcZiwei+deriveSanPan+detectPatterns ≈50-200ms)。缓存值冻结存放,
+				// 使用时浅拷贝再 spread 进 result.chart,防调用侧改写污染缓存。
+				const memoKey = stableSignature(birth, opts, ZWEngineOptions.sanPan || 'tian');
+				let memoVal = this._localEngineMemo.get(memoKey);
+				if(!memoVal){
+					let localChart = calcZiwei(birth, opts);
+					if(ZWEngineOptions.sanPan && ZWEngineOptions.sanPan !== 'tian'){ localChart = deriveSanPan(localChart, ZWEngineOptions.sanPan); }
+					let localPatterns = null;
+					if(localChart && Array.isArray(localChart.houses) && localChart.houses.length === 12){
+						// WP-G:格局随本地盘重算(切开关后主星可移位/四化变,Java 默认盘 patterns 会失配)。失败回退 Java。
+						try{ const lp = detectPatterns({ ...result.chart, ...localChart }); if(Array.isArray(lp)){ localPatterns = lp; } }catch(e2){ /* 保留 Java patterns */ }
+					}
+					memoVal = this._localEngineMemo.set(memoKey, { localChart, localPatterns });
+				}
+				if(memoVal.localChart && Array.isArray(memoVal.localChart.houses) && memoVal.localChart.houses.length === 12){
+					result.chart = { ...result.chart, ...memoVal.localChart };   // 保留 Java 顶层兼容字段、仅换排盘核心
+					if(Array.isArray(memoVal.localPatterns)){ result.patterns = memoVal.localPatterns; }
 				}
 			} catch(e){ /* 本地异常 → 保留 Java 盘(零回归兜底) */ }
 		}
