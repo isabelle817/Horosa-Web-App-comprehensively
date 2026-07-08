@@ -20,6 +20,7 @@ class CanPingMain extends Component {
 		super(props);
 		this.state = { method: props.method || 'ming' };
 		this.lastSnapKey = '';
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 	}
 
 	componentDidMount() {
@@ -30,6 +31,7 @@ class CanPingMain extends Component {
 			this._lateZiHourListener = () => { if(!this._unmounted) this.forceUpdate(); };
 			window.addEventListener('horosa:day-boundary-changed', this._dayBoundaryListener);
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 	}
 	componentDidUpdate() { this.saveSnap(); }
@@ -41,6 +43,36 @@ class CanPingMain extends Component {
 			}
 			if(this._lateZiHourListener){
 				window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			}
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。与 saveSnap 同源同构(getModel→buildSnapshotText)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'canping'){
+			return;
+		}
+		// 与 saveSnap 同语义:双盘对比时只 center 实例回填,避免 aux 覆盖 center 的导出快照。
+		if(this.props.slot === 'aux'){
+			return;
+		}
+		let text = '';
+		try{
+			const m = this.getModel();
+			if(m){
+				text = `${buildSnapshotText(m.r, { liunianRows: (m.series && m.series.rows) || null }) || ''}`.trim();
+			}
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('canping', text, { source: 'react', savedAt: Date.now() });
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
 			}
 		}
 	}

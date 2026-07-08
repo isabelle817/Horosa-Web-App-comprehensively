@@ -4,7 +4,7 @@ import DateTime from '../comp/DateTime';
 import SpaceTimePanel, { buildDateTimeFromFields, formatSpaceTime } from '../comp/SpaceTimePanel';
 import XQIcon from '../xq-icons';
 import { XQButton as Button, XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
-import { saveModuleAISnapshotLazy } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { ServerRoot, ResultKey } from '../../utils/constants';
 import { buildKentangEndpoint } from '../../integrations/kentang/serviceRoot';
 import { openKentangCaseDrawer, getKentangSavedCasePayload } from '../../utils/kentangCaseSave';
@@ -169,6 +169,7 @@ class HuangJiMain extends Component{
 		this.changeXinyiOption = this.changeXinyiOption.bind(this);
 		this.randomHistoryYear = this.randomHistoryYear.bind(this);
 		this.renderBottomQuickDock = this.renderBottomQuickDock.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (fields)=>{
@@ -184,6 +185,9 @@ class HuangJiMain extends Component{
 
 	componentDidMount(){
 		this.unmounted = false;
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 		if(!this.restoreFromCurrentCase(true)){
 			this.fetchPan(this.props.fields);
 		}
@@ -199,6 +203,31 @@ class HuangJiMain extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的盘(pan+xinyi)即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'huangji'){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildSnapshotText(this.state.pan, this.state.xinyi) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('huangji', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	restoreFromCurrentCase(force){

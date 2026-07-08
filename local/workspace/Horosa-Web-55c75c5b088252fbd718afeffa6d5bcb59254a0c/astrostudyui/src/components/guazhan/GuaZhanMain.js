@@ -8,7 +8,7 @@ import {randomStr, randomNum, littleEndian,} from '../../utils/helper';
 import GuaZhanInput from './GuaZhanInput';
 import GuaZhanChart from './GuaZhanChart';
 import GuaDesc from './GuaDesc';
-import { getGua64, Gua64, Gua8, randYao, ZiList, HourZi, SixGods, getXunEmpty } from '../gua/GuaConst';
+import { getGua64, Gua64, Gua8, randYao, ZiList, HourZi, SixGods, getXunEmpty, LiuQi } from '../gua/GuaConst';
 import DateTime from '../comp/DateTime';
 import { saveModuleAISnapshot, saveModuleAISnapshotLazy, loadModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { getStore } from '../../utils/storageutil';
@@ -101,6 +101,10 @@ export function buildGuaSnapshotText(fields, st){
 	if(fields && fields.lon && fields.lat){
 		lines.push(`经纬度：${fields.lon.value} ${fields.lat.value}`);
 	}
+	// 求测人性别(Win issue #29):性别影响取用神(如占婚男取妻财、女取官鬼)→ 必须随挂载/导出给 AI。
+	if(fields && fields.gender && (fields.gender.value === 0 || fields.gender.value === 1)){
+		lines.push(`求测人性别：${fields.gender.value === 1 ? '男' : '女'}`);
+	}
 	if(startTime){
 		lines.push(`起卦时间：${startTime}${timeGz ? ` ${timeGz}时` : ''}`);
 	}
@@ -162,12 +166,23 @@ export function buildGuaSnapshotText(fields, st){
 			const name = item.name ? `，爻名:${item.name}` : '';
 			lines.push(`第${idx + 1}爻：${yaoType}${moving}${god}${name}`);
 		});
-		// 之卦(变卦)/互卦逐爻装卦：地支/五行/六亲/世应取自该卦 yaoname；六神(六兽)沿用本卦同位(按日干起、各卦同序)。
+		// 之卦(变卦)/互卦逐爻装卦：地支/五行/世应取自该卦 yaoname;但【六亲必须以「本卦之宫」五行论】——
+		// 京房纳甲:用神系统锚定本卦,之卦/互卦的六亲不按其自身宫五行(否则与中间栏显示错位,Win issue #30:
+		// 之卦酉金应为妻财[本卦离宫火克金],却被算成兄弟[变卦乾宫金比和])。六神沿用本卦同位(按日干起、各卦同序)。
 		const godAt = (i)=>(yao[i] && yao[i].god ? `，六神:${yao[i].god}` : '');
+		const benGongElem = (nowGua && nowGua.house && nowGua.house.elem) || null;
+		// 把「该卦自身宫论出的六亲」(yaoname 第3-4字)改成「按本卦宫论」;保留地支五行(前2字)与世应(第5字起)。
+		const fixLiuqinToBenGong = (nm)=>{
+			if(!benGongElem || typeof nm !== 'string' || nm.length < 4){ return nm; }
+			const branchElem = nm[1]; // 爻地支五行(金/木/水/火/土)
+			const lq = LiuQi[benGongElem] && LiuQi[benGongElem][branchElem];
+			return lq ? (nm.slice(0, 2) + lq + nm.slice(4)) : nm;
+		};
 		const pushGuaYao = (label, gua)=>{
 			if(!gua || !Array.isArray(gua.yaoname)){ return; }
 			lines.push(`${label}逐爻（初→上）：`);
-			gua.yaoname.forEach((nm, idx)=>{
+			gua.yaoname.forEach((nm0, idx)=>{
+				const nm = fixLiuqinToBenGong(nm0); // 六亲改按本卦宫(与显示一致),地支五行/世应不变
 				// 阴阳爻取该卦线值 gua.value[idx]（1=阳/0=阴），与本卦逐爻一致。
 				const v = Array.isArray(gua.value) ? gua.value[idx] : undefined;
 				const yinYang = v === 1 ? '阳爻' : (v === 0 ? '阴爻' : '');
@@ -248,6 +263,7 @@ class GuaZhanMain extends Component{
 		this.restoreFromCurrentCase = this.restoreFromCurrentCase.bind(this);
 		this.setRightPanelTab = this.setRightPanelTab.bind(this);
 		this.navigateFeature = this.navigateFeature.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		this.state = {
 			yao: this.emptyYao(),
@@ -1122,6 +1138,29 @@ class GuaZhanMain extends Component{
 				}
 			};
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的卦即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/rehydrate 未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'guazhan'){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildGuaSnapshotText(this.props.fields, this.state) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('guazhan', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
 		}
 	}
 
@@ -1155,6 +1194,9 @@ class GuaZhanMain extends Component{
 		}
 		if(typeof window !== 'undefined' && this._lateZiHourListener){
 			window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+		}
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 	}
 

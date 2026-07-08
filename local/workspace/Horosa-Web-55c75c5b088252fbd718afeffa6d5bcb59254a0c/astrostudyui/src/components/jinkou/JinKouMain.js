@@ -632,6 +632,7 @@ class JinKouMain extends Component{
 		this.requestRunYear = this.requestRunYear.bind(this);
 		this.requestBirthYearGanZi = this.requestBirthYearGanZi.bind(this);
 		this.saveJinKouSnapshot = this.saveJinKouSnapshot.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 		this.clickSaveCase = this.clickSaveCase.bind(this);
 		this.renderInfoTable = this.renderInfoTable.bind(this);
 
@@ -962,6 +963,50 @@ class JinKouMain extends Component{
 		});
 	}
 
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示的盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(rehydrate/未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。数据源与 render() 完全一致(均取 this.state)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'jinkou'){
+			return;
+		}
+		const liureng = this.state ? this.state.liureng : null;
+		if(!liureng){
+			return;
+		}
+		let snapshotText = '';
+		try{
+			const flds = this.state.calcFields ? this.state.calcFields : this.props.fields;
+			const params = flds ? this.genGodsParams(flds) : null;
+			const appliedBirth = getAppliedBirth(this.state);
+			const displayRunYear = resolveDisplayRunYear(this.state.runyear, appliedBirth, flds);
+			const localJinKouData = buildJinKouData(liureng, {
+				diFen: this.state.diFen,
+				guirengType: this.state.guireng,
+				isDiurnal: this.state.calcIsDiurnal,
+			});
+			const jinkouData = normalizeKinjinkouData(this.state.jinkouPan, localJinKouData);
+			snapshotText = `${buildJinKouSnapshotText(
+				params,
+				liureng,
+				displayRunYear,
+				jinkouData,
+				this.state.wuxing,
+				this.state.guireng,
+				appliedBirth && appliedBirth.gender ? appliedBirth.gender.value : 1
+			) || ''}`.trim();
+		}catch(e){
+			snapshotText = '';
+		}
+		if(snapshotText){
+			saveModuleAISnapshot('jinkou', snapshotText);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = snapshotText;
+			}
+		}
+	}
+
 	async requestGods(fields, chartObj){
 		if(fields === undefined || fields === null){
 			return;
@@ -1252,6 +1297,7 @@ class JinKouMain extends Component{
 				}
 			};
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 		if(this.props.fields){
 			this.requestGods(this.props.fields, this.props.value);
@@ -1265,6 +1311,9 @@ class JinKouMain extends Component{
 		}
 		if(typeof window !== 'undefined' && this._lateZiHourListener){
 			window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+		}
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 	}
 

@@ -4,7 +4,7 @@ import DateTime from '../comp/DateTime';
 import SpaceTimePanel, { buildDateTimeFromFields, formatSpaceTime } from '../comp/SpaceTimePanel';
 import XQIcon from '../xq-icons';
 import { XQButton as Button, XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
-import { saveModuleAISnapshotLazy } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { ServerRoot, ResultKey } from '../../utils/constants';
 import { buildKentangEndpoint } from '../../integrations/kentang/serviceRoot';
 import { openKentangCaseDrawer, getKentangSavedCasePayload } from '../../utils/kentangCaseSave';
@@ -131,6 +131,7 @@ class ShenYiShuMain extends Component{
 		this.clickSaveCase = this.clickSaveCase.bind(this);
 		this.restoreFromCurrentCase = this.restoreFromCurrentCase.bind(this);
 		this.setRightPanelTab = this.setRightPanelTab.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (fields)=>{
@@ -146,6 +147,7 @@ class ShenYiShuMain extends Component{
 
 	componentDidMount(){
 		this.unmounted = false;
+		window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		if(this.restoreFromCurrentCase(true)){
 			return;
 		}
@@ -188,6 +190,30 @@ class ShenYiShuMain extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+	}
+
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'shenyishu'){
+			return;
+		}
+		const pan = this.state ? this.state.pan : null;
+		if(!pan){
+			return;
+		}
+		let text = '';
+		try{
+			text = `${buildSnapshotText(pan) || ''}`.trim();
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('shenyishu', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
 	}
 
 	restoreFromCurrentCase(force){

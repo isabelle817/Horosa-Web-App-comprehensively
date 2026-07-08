@@ -72,6 +72,7 @@ import { buildShenYiShuSnapshotForFields } from '../components/shenyishu/ShenYiS
 import { buildGuolaoSnapshotForFields } from '../components/guolao/GuoLaoChartMain';
 import { buildSuzhanSnapshotText } from '../components/suzhan/SuZhanMain';
 import { buildGermanySnapshotForFields } from '../components/germany/AstroMidpoint';
+import { buildRelativeSnapshotText } from '../components/astro/AstroRelative';
 import { buildPredictiveSnapshotText } from './predictiveAiSnapshot';
 import { runHorary } from '../divination/horary/horaryEngine';
 import { buildHorarySnapshot } from '../divination/horary/horarySnapshot';
@@ -702,6 +703,30 @@ async function regenerateSanshiUnifiedSnapshot(record, payload){
 		return sections.join('\n\n').trim();
 	}
 	return buildSanshiUnifiedFallbackSnapshot(record, payload || {});
+}
+
+// 无头合盘(synastry):从两张命盘 record 现算关系快照 —— 比较盘(互摄相位/中点/映点)+ 组合盘(复合图)+ 影响盘(双盘叠加)。
+// 供 AI 报告「合盘」技法直接选两张盘生成,无需先在合盘页挂载。后端 /modern/relative(:9999,RSA);任一产品失败优雅跳过。
+export async function buildRelativeSnapshotForRecords(recordA, recordB){
+	if(!recordA || !recordB) return '';
+	const mk = (r)=>{ const [d, t] = `${(r && r.birth) || ''}`.split(' '); return { date: d || '', time: t || '', zone: (r && r.zone) || '', lat: (r && r.lat) || '', lon: (r && r.lon) || '' }; };
+	const fetchOne = async (relativeCode, currentTab)=>{
+		const params = { inner: mk(recordA), outer: mk(recordB), hsys: (recordA && recordA.hsys) || 0, zodiacal: (recordA && recordA.zodiacal) || 0, siderealAyanamsa: (recordA && recordA.siderealAyanamsa) || '', relative: relativeCode };
+		let data;
+		try { data = await request(`${Constants.ServerRoot}/modern/relative`, { body: JSON.stringify(params), silent: true }); }
+		catch(_){ return ''; }
+		if(!data || data[Constants.ResultKey] === undefined || data[Constants.ResultKey] === null) return '';
+		try { return buildRelativeSnapshotText({ currentTab, result: data[Constants.ResultKey], chartA: { record: recordA }, chartB: { record: recordB }, params: { hsys: params.hsys, zodiacal: params.zodiacal } }); }
+		catch(_){ return ''; }
+	};
+	const comp = await fetchOne(0, 'Comp');            // 比较盘:互摄相位/中点相位/映点
+	const composite = await fetchOne(1, 'Composite');  // 组合盘:复合图盘
+	const synastry = await fetchOne(2, 'Synastry');    // 影响盘:双盘叠加
+	const stripHeader = (txt)=>{ const i = `${txt || ''}`.indexOf('\n['); return i > 0 ? `${txt}`.slice(i + 1) : `${txt || ''}`; }; // 去重复的 [关系起盘信息] 段(仅留首份)
+	const parts = [];
+	if(comp && comp.trim()) parts.push(comp);
+	[composite, synastry].forEach((t)=>{ if(t && t.trim()) parts.push(parts.length ? stripHeader(t) : t); });
+	return parts.join('\n\n');
 }
 
 function generateCaseTechniqueSnapshot(record, moduleName, payload){

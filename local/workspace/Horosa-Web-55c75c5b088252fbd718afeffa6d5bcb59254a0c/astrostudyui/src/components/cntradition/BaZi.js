@@ -12,7 +12,7 @@ import FourZhuGuaDesc from './FourZhuGuaDesc';
 import BaZiLuckFlowPanel from './BaZiLuckFlowPanel';
 import BaZiAppInfoPanel from './BaZiAppInfoPanel';
 import { BaZiLegacyMain, BaZiLegacyInfoPanel } from './BaZiLegacyView';
-import { saveModuleAISnapshotLazy, } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { buildLocalBaziResult, buildFlowDays, buildFlowHours } from '../../utils/baziLunarLocal';
 
 const TabPane = Tabs.TabPane;
@@ -557,6 +557,7 @@ class BaZi extends Component{
 		this.onInfoTabChange = this.onInfoTabChange.bind(this);
 		this.changeBaziChartStyle = this.changeBaziChartStyle.bind(this);
 		this.onFlowSelectionChange = this.onFlowSelectionChange.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = (fields)=>{
@@ -760,8 +761,34 @@ class BaZi extends Component{
 	}
 
 
+	// 实时刷新:AI 导出/分析前广播 horosa:refresh-module-snapshot 时,用「当前显示盘」同步重建快照,
+	// 修复 reload/rehydrate 后惰性缓存为空、导出报「当前页面没有可导出文本」。入参与 requestBazi 落快照处(同口径):
+	// params=this.genParams(this.props.fields)(当前左栏参数)、result=this.state.result(当前渲染的盘)。只补监听,不动显示/计算。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'bazi'){
+			return;
+		}
+		let text = '';
+		try{
+			if(this.props.fields && this.state.result){
+				const params = this.genParams(this.props.fields);
+				text = `${buildBaziSnapshotText(params, this.state.result) || ''}`.trim();
+			}
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('bazi', text);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
+			}
+		}
+	}
+
 	componentDidMount(){
 		this.unmounted = false;
+		window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		if(this.props.fields){
 			this.requestBazi(this.props.fields, {
 				silent: true,
@@ -771,6 +798,7 @@ class BaZi extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		if(this.prefetchTimer){
 			clearTimeout(this.prefetchTimer);
 			this.prefetchTimer = null;

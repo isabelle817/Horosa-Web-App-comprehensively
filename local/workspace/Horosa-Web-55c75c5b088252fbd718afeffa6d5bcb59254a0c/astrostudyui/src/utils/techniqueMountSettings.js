@@ -441,6 +441,7 @@ const GUOLAO_FIELDS = [
 // → timeAlg 对中点盘 inert，故只暴露 hsys/zodiacal（守"不放无效选项"；原审计 D-❌6「读 timeAlg」有误）。
 const GERMANY_FIELDS = ASTRO_CHART_FIELDS.filter((f)=>['hsys', 'zodiacal'].includes(f.name));
 
+
 // 推运·三分主星：区间光体三分主星分掌人生阶段。builder buildTriplicityRulersSnapshotText(chartObj,opts) 已收 opts。
 const TRIPLICITY_FIELDS = [
 	{ name: 'division', label: '划分法', type: 'select', default: TRIPLICITY_DEFAULT_OPTS.division, group: '划分',
@@ -577,9 +578,11 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 	astrochart_like: { kind: 'record', fields: ASTRO_CHART_FIELDS },
 	indiachart: { kind: 'record', fields: INDIA_CHART_FIELDS, emptyHint: '印度盘按出生信息起盘，可调岁差制/分宫制。' },
 	suzhan: { kind: 'record', fields: ASTRO_CHART_FIELDS },
-	// 演禽/策天：经 ken 后端按出生 fields 起盘，跟随时间换算（纯命盘类、无事盘）。
-	xianqin: { kind: 'record', fields: TIME_FIELDS },
-	cetian: { kind: 'record', fields: TIME_FIELDS },
+	// 演禽/策天：经 ken 后端按出生时间起盘（纯命盘类、无事盘）。
+	// 注：禽星盘只取生辰原始时刻，ken 引擎不消费 日界/晚子时/真太阳时换算（parseFieldsDateTime 只读 date/time/zone/lat/lon）→
+	// 此前挂 TIME_FIELDS 是「可选但无效」的死设置，移除以免误导（报告配置/AI 挂载两处都不再显示无效项）。
+	xianqin: { kind: 'record', fields: [], emptyHint: '演禽按出生时间起盘，无独立可调排盘设置。' },
+	cetian: { kind: 'record', fields: [], emptyHint: '策天飞星按出生时间起盘，无独立可调排盘设置。' },
 	// 皇极经世：双栖——命盘侧按出生重算(buildHuangJiSnapshotForFields)，又可存事盘(报数/起例确定性结果)。
 	// 与五兆/太玄/荆诀/神易数 同列 sectionsOnly：事盘按 payload.snapshot 出正文不重算，且去掉事盘上误显的
 	// TIME_FIELDS 覆盖(对已定型存案无意义、覆盖重算会落空)；命盘侧重算不受 schema.kind 影响(buildTechniqueContext chart 分支仍重算)。

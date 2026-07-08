@@ -30,6 +30,7 @@ class HeLuoMain extends Component {
 		super(props);
 		this.state = { daxianKey: '', openYao: '', liunianKey: '', liuyueKey: '', yearForMonth: null, monthForDay: null };
 		this.lastSnapKey = '';
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 	}
 
 	componentDidMount() {
@@ -40,6 +41,7 @@ class HeLuoMain extends Component {
 			this._lateZiHourListener = () => { if(!this._unmounted) this.forceUpdate(); };
 			window.addEventListener('horosa:day-boundary-changed', this._dayBoundaryListener);
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 	}
 	componentDidUpdate() { this.saveSnap(); }
@@ -51,6 +53,34 @@ class HeLuoMain extends Component {
 			}
 			if(this._lateZiHourListener){
 				window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			}
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前显示盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖 saveSnap 的 lastSnapKey 去重缓存是否已物化
+	// (rehydrate/未重排时缓存可能为空,此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	// 仅 center 实例(主信息)出快照,与 saveSnap 的 slot==='aux' 早返语义一致,避免 aux 实例覆盖。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'heluo'){
+			return;
+		}
+		if(this.props.slot === 'aux'){
+			return;
+		}
+		let text = '';
+		try{
+			const m = this.getModel();
+			text = m ? `${buildSnapshotText(m.chart, m.jg, m.dy) || ''}`.trim() : '';
+		}catch(e){
+			text = '';
+		}
+		if(text){
+			saveModuleAISnapshot('heluo', text, { source: 'react', savedAt: Date.now() });
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = text;
 			}
 		}
 	}

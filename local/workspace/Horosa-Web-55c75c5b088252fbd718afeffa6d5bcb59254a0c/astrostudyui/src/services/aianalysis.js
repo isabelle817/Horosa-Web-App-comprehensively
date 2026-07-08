@@ -238,11 +238,6 @@ export async function requestAIAnalysisChatStream(values, handlers = {}){
 		throw new Error('chat.stream.not.supported');
 	}
 	const decoder = new TextDecoder('utf-8');
-	const parser = createSseParser((event)=>{
-		if(handlers.onEvent){
-			handlers.onEvent(event);
-		}
-	});
 	// 🔴 停止生成必须在「流式读取阶段」也立即生效(用户报"停止按钮不好使")。
 	// 根因:withTimeout 在 fetch resolve(拿到响应头)后即移除了对 externalSignal 的监听,而流式读取发生在其后,
 	// 且本读循环原先完全不检查 signal → 点「停止」时当前节仍把整段流吐完才停。
@@ -255,16 +250,29 @@ export async function requestAIAnalysisChatStream(values, handlers = {}){
 		else if(typeof sig.addEventListener === 'function'){ sig.addEventListener('abort', abortStream, { once: true }); }
 	}
 	const detachAbort = ()=>{ if(sig && typeof sig.removeEventListener === 'function'){ try{ sig.removeEventListener('abort', abortStream); }catch(_){} } };
-	// B2(#16):流「空闲看门狗」。后端每 15s 发心跳,正常推理/思考期都会持续有数据;只有真正长时间(默认 90s)
-	// 一个 token、一个心跳都没有,才判为上游卡死 → 主动结束等待并给可操作提示。慢而有进展的思考永不误杀。
+	// 流「空闲看门狗」+「硬上限」(治用户报「换语言/有时卡很久不生成」):
+	//   ⚠️ 此前看门狗在「每个 reader.read() 字节」都重置 → 后端 15s 心跳/keep-alive(无 token)会无限续命,
+	//      推理模型「只思考不出 token」时该节永远转圈、且 concurrency=1 下卡死整份报告。
+	//   修①:看门狗只在「真有内容 token(delta 事件)」时重置 —— 心跳不再续命,故「只心跳不出 token」超过 STALL_MS 即 fail-fast。
+	//   修②:另设不可重置的 MAX_STREAM_MS 绝对上限,兜「token 龟速但永不收尾」。两者皆 → 抛错 → 上层标 failed → 队列推进,绝不永久挂起。
 	const STALL_MS = Number(handlers.stallMs) > 0 ? Number(handlers.stallMs) : 90000;
+	const MAX_STREAM_MS = Number(handlers.maxStreamMs) > 0 ? Number(handlers.maxStreamMs) : 300000;
 	let stalled = false;
+	let hardTimedOut = false;
 	let watchdog = null;
 	const armWatchdog = ()=>{
 		if(watchdog){ clearTimeout(watchdog); }
 		watchdog = setTimeout(()=>{ stalled = true; try{ reader.cancel(); }catch(_){} }, STALL_MS);
 	};
 	const clearWatchdog = ()=>{ if(watchdog){ clearTimeout(watchdog); watchdog = null; } };
+	const hardTimer = setTimeout(()=>{ hardTimedOut = true; try{ reader.cancel(); }catch(_){} }, MAX_STREAM_MS);
+	const clearHard = ()=>{ try{ clearTimeout(hardTimer); }catch(_){} };
+	const parser = createSseParser((event)=>{
+		if(event && event.type === 'delta'){ armWatchdog(); } // 仅内容 token 续命空闲看门狗(心跳/usage 不算)
+		if(handlers.onEvent){
+			handlers.onEvent(event);
+		}
+	});
 	try{
 		armWatchdog();
 		while(true){
@@ -274,17 +282,20 @@ export async function requestAIAnalysisChatStream(values, handlers = {}){
 				break;
 			}
 			if(aborted || (sig && sig.aborted)){ break; }
-			armWatchdog();
-			parser.push(decoder.decode(chunk.value, { stream: true }));
+			parser.push(decoder.decode(chunk.value, { stream: true })); // 不再每字节续命;改由上面 delta 事件续命
 		}
 		clearWatchdog();
+		clearHard();
 		detachAbort();
 		if(aborted || (sig && sig.aborted)){
 			// 用户主动停止 → 不当作正常完成,抛 AbortError 让上层按「已取消」处理(不重试、不标成功)。
 			const err = new Error('已停止生成'); err.name = 'AbortError'; throw err;
 		}
 		if(stalled){
-			throw new Error('AI 响应长时间无数据(疑似上游卡住),已停止等待。可点「重新生成」重试。');
+			throw new Error('AI 响应长时间无新内容(疑似上游卡住或只发心跳),已停止等待。可点「重新生成」重试。');
+		}
+		if(hardTimedOut){
+			throw new Error('AI 单次生成超时(可能上游卡住),已停止等待。可点「重新生成」重试。');
 		}
 		parser.end();
 		if(handlers.onDone){

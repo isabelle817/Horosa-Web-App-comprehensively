@@ -1,7 +1,7 @@
 import { Component, createRef } from 'react';
 import { message, Spin } from 'antd';
 import { XQButton as Button, XQSelect as Select, XQTabs as Tabs } from '../xq-ui';
-import { saveModuleAISnapshotLazy } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshotLazy, saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
 import { fetchPreciseNongli } from '../../utils/preciseCalcBridge';
 import GeoCoordModal from '../amap/GeoCoordModal';
 import PlusMinusTime from '../astro/PlusMinusTime';
@@ -85,6 +85,7 @@ class TaiYiMain extends Component {
 		this.clickSaveCase = this.clickSaveCase.bind(this);
 		this.setRightPanelTab = this.setRightPanelTab.bind(this);
 		this.navigateFeature = this.navigateFeature.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if (this.props.hook) {
 			this.props.hook.fun = (fields) => {
@@ -117,6 +118,7 @@ class TaiYiMain extends Component {
 				}
 			};
 			window.addEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 		// 顶部遮挡兜底(双保险):无论哪层容器样式失配,svg 元素都不大于「实测可视盒 ∩ 视口」,
 		// meet 模式下视觉等价但顶部(农历行)永不被裁。canvas 在首帧可能尚未渲染(pan 未回来),
@@ -210,6 +212,30 @@ class TaiYiMain extends Component {
 		}
 		if(typeof window !== 'undefined' && this._lateZiHourListener){
 			window.removeEventListener('horosa:late-zi-hour-mode-changed', this._lateZiHourListener);
+		}
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前盘即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(rehydrate/未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」,Win 用户实测)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'taiyi'){
+			return;
+		}
+		const pan = this.state ? this.state.pan : null;
+		if(!pan){
+			return;
+		}
+		const snapshotText = `${buildTaiyiSnapshotText(pan) || ''}`.trim();
+		if(snapshotText){
+			saveModuleAISnapshot('taiyi', snapshotText);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = snapshotText;
+			}
 		}
 	}
 

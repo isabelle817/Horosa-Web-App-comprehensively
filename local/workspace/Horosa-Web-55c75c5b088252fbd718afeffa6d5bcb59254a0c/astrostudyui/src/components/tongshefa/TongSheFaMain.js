@@ -890,6 +890,7 @@ class TongSheFaMain extends Component{
 		this.parseCasePayload = this.parseCasePayload.bind(this);
 		this.restoreFromCurrentCase = this.restoreFromCurrentCase.bind(this);
 		this.saveSnapshot = this.saveSnapshot.bind(this);
+		this.handleSnapshotRefreshRequest = this.handleSnapshotRefreshRequest.bind(this);
 
 		if(this.props.hook){
 			this.props.hook.fun = ()=>{
@@ -904,6 +905,9 @@ class TongSheFaMain extends Component{
 	componentDidMount(){
 		this.restoreFromCurrentCase(true);
 		this.saveSnapshot();
+		if(typeof window !== 'undefined'){
+			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
 	}
 
 	componentDidUpdate(prevProps, prevState){
@@ -914,6 +918,35 @@ class TongSheFaMain extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(typeof window !== 'undefined'){
+			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
+		}
+	}
+
+	// AI 导出/挂载实时取数:导出侧派发 refresh 事件,这里用当前 state 即时构建快照并回填,
+	// 保证「显示什么就导出什么」——不依赖懒存缓存是否已物化(reload/未重排时缓存可能为空,
+	// 此前缺此监听 → 显示有盘却报「当前页面没有可导出文本」)。
+	handleSnapshotRefreshRequest(evt){
+		const moduleName = evt && evt.detail ? evt.detail.module : '';
+		if(moduleName !== 'tongshefa'){
+			return;
+		}
+		const selected = this.state ? this.state.selected : null;
+		if(!selected){
+			return;
+		}
+		let snapshotText = '';
+		try{
+			snapshotText = `${buildTongSheFaSnapshot(buildTongSheFaModel(selected)) || ''}`.trim();
+		}catch(e){
+			snapshotText = '';
+		}
+		if(snapshotText){
+			saveModuleAISnapshot('tongshefa', snapshotText);
+			if(evt && evt.detail && typeof evt.detail === 'object'){
+				evt.detail.snapshotText = snapshotText;
+			}
+		}
 	}
 
 	parseCasePayload(raw){
