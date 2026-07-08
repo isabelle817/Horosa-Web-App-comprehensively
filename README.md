@@ -9,13 +9,13 @@
 **把所有玄学放进一个原生 Windows 软件里**<br />
 *Every kind of metaphysics, in one native Windows app*
 
-[![Version](https://img.shields.io/badge/version-3.1.0-2ea043?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.1.0)
+[![Version](https://img.shields.io/badge/version-3.2.0-2ea043?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.2.0)
 [![License](https://img.shields.io/badge/license-AGPL--3.0-dc2626?style=flat-square)](LICENSE)
-[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.1.0)
-[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.1.0)
+[![Windows](https://img.shields.io/badge/Windows%2010%2F11-x64-111111?style=flat-square&logo=windows&logoColor=white)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.2.0)
+[![Installer](https://img.shields.io/badge/NSIS-bundled%20runtime-1f6feb?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v3.2.0)
 [![Stars](https://img.shields.io/github/stars/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows?style=flat-square)](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/stargazers)
 
-[下载安装包](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/download/v3.1.0/Horosa-Setup-3.1.0.exe) ·
+[下载安装包](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/download/v3.2.0/Horosa-Setup-3.2.0.exe) ·
 [中文详版](README_ZH.md) ·
 [English Guide](README_EN.md) ·
 [所有版本](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
@@ -41,9 +41,9 @@
 
 目标是：**不再在十几个单一用途的网页排盘器之间来回切换，也不用手工拼装底层的 Python / Java / 星历运行时**。下载一个离线的安装包，打开就是成品。
 
-本仓承担 Windows 这一侧的交付：应用源码、共享运行时、Windows 适配层，以及面向最终用户的 NSIS 离线安装包（`Horosa-Setup-3.1.0.exe`）发布。
+本仓承担 Windows 这一侧的交付：应用源码、共享运行时、Windows 适配层，以及面向最终用户的 NSIS 离线安装包（`Horosa-Setup-3.2.0.exe`）发布。
 
-- **当前版本**：3.1.0（运行时 `3.1.0-runtime1`）
+- **当前版本**：3.2.0（运行时 `3.2.0-runtime1`）
 - **平台**：Windows 10 / 11（`x64`）
 - **许可**：AGPL-3.0-only
 
@@ -132,7 +132,7 @@
 #### 辅盘
 - **量化盘 / 汉堡学派**：四派 = classic / pure / uranian 美国对称 / cosmo 宇宙生物学；90°（或 45°）拨盘、中点树、中点相位、六宫框、图形星历、超海王星虚星（TNP）、校时、宇宙图。
 - **希腊星术**：十三分盘（13 次谐波，界限 / 阿拉伯点）。
-- **十二分盘、占星地图 / 重置盘、谐波盘（N 次）、龙盘（Draconic）、卜卦盘、择日盘、世俗盘**。
+- **十二分盘、占星地图 / 重置盘、谐波盘（N 次）、龙盘（Draconic）、卜卦盘（五流派）、择日盘、世俗盘**。
 
 #### 合盘
 - 关系盘：比较盘（双向相位 / 中点 / 映点）/ 组合盘（中点生成第三盘）/ 影响盘（Synastry，内外双层）/ 时空中点盘 / 马克斯盘 + 关系量化评分。
@@ -196,6 +196,10 @@
 
 #### 黄历
 - 农历日期 / 24 节气 / 择日 / 宜忌。
+
+#### 数据库
+- 内置高可信名人星盘目录（数万条 A/AA 级名人出生数据），全程离线、秒级检索：关键词 / 星座 / 性别 / 出生年 / 评级 / 分类多维筛选与排序。
+- 详情含黄道星盘轮（逆时针、经度递增）、生平事件与分类标签；**一键加入命盘管理**——任选名人导入本地命盘库，在占星 / 八字 / 紫微等任意技法页直接排盘。
 
 #### 玄学史（中国玄学史）
 - 以二十四史、太平广记等公有古籍为底，汇编历代玄学人物 · 故事 · 术数源流与天象记录（数千条玄学事件 + 上万条星象记录）。
