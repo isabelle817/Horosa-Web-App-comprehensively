@@ -126,6 +126,24 @@ Yes. The v2.2.0 Beta installer offers an assisted flow with directory selection,
 **Will updates remove my data?**
 No. App replacement and runtime switching update the program and shared runtime; they are not designed to erase your saved charts and cases.
 
+**Windows says "Windows protected your PC" (SmartScreen). Is the download unsafe?**
+The installer is not Authenticode-signed, so SmartScreen shows an "Unknown publisher" notice on fresh downloads. Verify your download against `SHA256SUMS.txt` from the release page, then click **More info → Run anyway**. In-app updates are additionally protected by an Ed25519 signature check that refuses any tampered package.
+
+**My antivirus quarantined part of the app, or it says a local service failed to start.**
+Some antivirus products occasionally flag the bundled Python/Java runtime. Add the install folder and `%LOCALAPPDATA%\HorosaDesktop` to your antivirus allowlist, restore anything quarantined, and relaunch — or simply reinstall. When the app can tell, its error screen names the blocked directory so you know exactly what to allow.
+
+**How much disk space do I need, and does the install path matter?**
+Have at least 6 GB free when installing (~2 GB program, ~1.4 GB runtime extracted on first launch, plus caches). Keep the install path under 100 characters and avoid drive roots or system folders — the installer enforces both and suggests a dedicated folder such as `C:\Horosa`.
+
+**Does Horosa work fully offline?**
+Yes. Every computation runs locally; no internet is needed to install or use it. The network is only touched to check GitHub for updates — if that is unreachable, the app simply keeps working, and you can update manually by downloading a newer installer. (Advanced: the `HOROSA_UPDATE_FEED_URL` environment variable points the updater at a custom feed.)
+
+**Does it run on ARM laptops (Snapdragon)?**
+Windows 11 on ARM runs Horosa through the system's built-in x64 emulation — fully functional, slightly slower than native x64. Windows 10 on ARM has no x64 emulation and is not supported; the installer detects this and says so instead of leaving a broken install.
+
+**Does my Windows display language or region affect anything?**
+No. Install and use are locale-independent by design: any system language, Turkish/Thai/Arabic regional settings, legacy GBK/Shift-JIS code pages, the "Beta: UTF-8 worldwide" option, and non-ASCII Windows user names all work. Blocking installer errors are shown in Chinese plus a short English line.
+
 ## For Maintainers
 
 Start from the entry point that matches your goal:

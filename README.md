@@ -241,3 +241,4 @@
 - 社区文档：[CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [SUPPORT.md](SUPPORT.md) · [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - 法律与隐私：[docs/legal](docs/legal/)（服务条款 · 隐私政策 · 安全 · 网络 · 开源声明）
 - 语言详版：[README_ZH.md](README_ZH.md) · [README_EN.md](README_EN.md)
+- 安装疑难解答（SmartScreen 提示 / 杀毒软件误报 / 磁盘与路径要求 / 离线使用与手动更新 / ARM 设备支持 / 系统语言无关）：见 [README_ZH.md「常见问题」](README_ZH.md#常见问题) 或 [README_EN.md “FAQ”](README_EN.md#faq)
