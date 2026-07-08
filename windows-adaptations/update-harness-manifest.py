@@ -54,6 +54,12 @@ FILES = {
     "CLAUDE.md": "repo-root session baseline (paths, red lines, verification entry points; local-only)",
     "desktop_installer_bundle/scripts/run_pytest_embedded.ps1": "one-command astropy pytest on the EMBEDDED interpreter (gotcha #29 recipe as code)",
     "desktop_installer_bundle/scripts/verify_release_live.ps1": "post-release LIVE verification: server digests==local + prerelease/latest + feed probe (SKILL 铁律 12 as code)",
+    # R3 (2026-07-05): the Windows-native one-click web/local launcher pair — previously ZERO
+    # institutional coverage (not in this manifest, no selfcheck gate). Now inventoried here and
+    # pinned by release_selfcheck check_local_launchers (dual-engine parse, encoding invariant,
+    # port constants, sentinels).
+    "local/Horosa_Local_Windows.ps1": "Windows-native one-click web/local launcher core (runtime resolve, safe-kill ownership checks, port layout, loopback proxy bypass, warmup, browser mgmt)",
+    "local/Horosa_Local_Windows.bat": "thin wrapper: workspace/pointer resolution, pwsh-preferred engine pick, failure UX (HOROSA_RUN_ISSUES.md pointer)",
 }
 
 

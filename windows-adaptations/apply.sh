@@ -227,4 +227,14 @@ apply_patch warmGermanyMidpoint            astrostudyui/src/components/germany/A
 apply_patch prefetchJieqiYearNeighbors     astrostudyui/src/utils/preciseCalcBridge.js   src__utils__preciseCalcBridge.neighborPrefetch.js.patch
 apply_patch prefetchJieqiYearNeighbors     astrostudyui/src/components/jieqi/JieQiChartsMain.js src__components__jieqi__JieQiChartsMain.neighborPrefetch.js.patch
 
+echo "== 24. Web 版启停三件套加固(毒化 env 剥离 / -X utf8 / exit-3 自解释 / pyc 预编译 / 可移植 stat;跨平台,建议上游化 Mac)=="
+# start:①java spawn 前 env -u 剥离宿主 _JAVA_OPTIONS/JAVA_TOOL_OPTIONS/JDK_JAVA_OPTIONS/CLASSPATH
+#(IDE/安卓工具链机器的经典注入面;镜像桌面 sanitizeEmbeddedRuntimeEnv);②python 剥离
+# PYTHONHOME/PYTHONSTARTUP/PYTHONUSERBASE + `-X utf8` CLI 旗(宿主 PYTHONUTF8=0 也压不掉);
+# ③三处 exit 3 前给「可重试」中英自解释(手动跑脚本的用户不再面对裸退出码);④就绪后 45s
+# 空闲 pyc 预编译(HOROSA_WEB_PYC_PRECOMPILE=0 关,下次启动省 2-3s)。
+# verify:file_mtime 的 stat 补 GNU -c 回退(此前 Git Bash 下恒回 0=freshness 永远判旧)。
+apply_patch horosa_web_java_env_sanitize_v1  start_horosa_local.sh   start_horosa_local.webLauncherHardening.sh.patch
+apply_patch horosa_web_portable_stat_v1      verify_horosa_local.sh  verify_horosa_local.portableStat.sh.patch
+
 echo "== done. Verify: npm run selfcheck (windows-ahead / perf sentinels must all pass). =="
