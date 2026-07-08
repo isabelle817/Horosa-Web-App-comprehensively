@@ -184,6 +184,37 @@
 - **运行时 Runtime** — 内置 Python 采用固定版本的 python-build-standalone（可复现、自包含），随包附带 VC++ 运行时、离线 wheels 与后端 jar；构建期有原生依赖与发布前自检闸门。
 - **发布 Distribution** — 面向 Windows 10/11（`x64`）的离线 NSIS 安装包，支持选择安装目录与升级；附 `latest.yml` / `.blockmap` / `SHA256SUMS.txt` 更新与校验资产。
 
+## 从源码本地部署 · Deploy from Source
+
+> 普通用户用上面的安装包即可——运行时随包自带，无需任何手动配置。本节面向想**自行构建或自托管网页端**的开发者：完整产品源码（前端 / Java 后端 / Python 排盘 / 术数引擎 / 星历表）现已随仓库发布，克隆即可在本地拉起整套网页服务。
+>
+> Regular users should just use the installer above — the runtime is bundled, no setup needed. This section is for developers who want to **build or self-host the web stack**: the full product source (frontend / Java backend / Python charting / metaphysics engines / ephemeris) now ships in the repo, so a clone is all you need to run it locally.
+
+**源码位置 · Source** — [`local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/)
+前端 `astrostudyui/` · Java 后端 `astrostudysrv/` · Python 排盘 `astropy/` · 传统术数引擎 `vendor/` · flatlib 星历 `flatlib-ctrad2/`。
+
+**前置依赖 · Prerequisites**
+- Windows 下用 **Git Bash** 或 **WSL** 运行下列 `*.sh` 脚本（脚本为 bash）。
+- 工具链 · toolchain：Java 17、Maven、Node 18+、Python 3.11。
+- Python 排盘依赖 · chart deps：`cherrypy jsonpickle pyswisseph cn2an sxtwl cnlunar`。
+- 可选 · optional：Redis / MongoDB（账号与存档的完整功能；缺失时自动降级）。
+
+**步骤 · Steps**
+1. **构建后端 jar**：用 Maven 构建 `astrostudysrv/`，产出 `astrostudysrv/astrostudyboot/target/astrostudyboot.jar`（启动脚本据此定位后端；仓库不含预编译 jar）。
+   *Build the backend with Maven so that `astrostudysrv/astrostudyboot/target/astrostudyboot.jar` exists — the repo ships source, not a prebuilt jar.*
+2. **启动**（前端由脚本自动构建，随后拉起 Python `8899` / Java `9999` 服务并打开页面）：
+   ```bash
+   cd local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c
+   bash start_horosa_local.sh      # 构建前端 + 启动服务 + 打开页面
+   bash verify_horosa_local.sh     # 验收：服务可用 + 排盘/主限法链路结果正确
+   bash stop_horosa_local.sh       # 停止本工作区拉起的服务
+   ```
+
+**端口 · Ports** — 前端 `8000` · Java 后端 `9999` · Python 图表 `8899`（被占用时自动顺延到空闲端口）。
+
+> 完整的环境变量、慢机首启调参与常见问题排查，以源码目录内的 [`README.md`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/README.md) 为准（该文档为本工作流的部署权威说明）。
+> Full env-vars, slow-machine tuning, and troubleshooting are authoritative in the [in-source README](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/README.md).
+
 ## 文档 · Documentation
 
 - [README_ZH.md](README_ZH.md) — 中文完整说明
