@@ -1,5 +1,22 @@
-import { Component, createRef } from 'react';
+import { Component, createRef, memo } from 'react';
 import DateTime from '../comp/DateTime';
+import DateTimeSelector from '../comp/DateTimeSelector';
+
+// 时间编辑器隔离壳:天文馆每秒上百次 metrics/FPS 重渲,会带着 DateTimeSelector 一起重渲;
+// 而 DateTimeSelector 内部 Option 用 randomStr 每渲生成新 key → Select 下拉项被不断 remount → 下拉无法停留。
+// memo + 自定义比较:只在 time(钟面值)真正变化时才重渲,彻底隔离高频重渲 → 下拉可正常展开停留。
+const PlanetariumTimeEditor = memo(function PlanetariumTimeEditor({ time, onChange }){
+	return (
+		<DateTimeSelector showTime={true} showAdjust={true} value={time} onChange={onChange} />
+	);
+}, (prev, next)=>{
+	// onChange 引用稳定(构造器 bind);只比 time 的钟面值(同值即跳过重渲)。
+	const a = prev.time, b = next.time;
+	if(a === b){ return true; }
+	if(!a || !b){ return a === b; }
+	return a.ad === b.ad && a.year === b.year && a.month === b.month && a.date === b.date
+		&& a.hour === b.hour && a.minute === b.minute && a.second === b.second && a.zone === b.zone;
+});
 import { fetchPlanetariumState } from '../../services/planetarium';
 import GeoCoordModal from '../amap/GeoCoordModal';
 import { convertLatToStr, convertLonToStr } from '../astro/AstroHelper';
@@ -4327,6 +4344,11 @@ class PlanetariumBabylon extends Component{
 		this.changeViewMode = this.changeViewMode.bind(this);
 		this.changeObserverGeo = this.changeObserverGeo.bind(this);
 		this.clearObserverOverride = this.clearObserverOverride.bind(this);
+		this.changeObserverTime = this.changeObserverTime.bind(this);
+		this.toggleTimeEditor = this.toggleTimeEditor.bind(this);
+		this._onTimeEditorDocMouseDown = this._onTimeEditorDocMouseDown.bind(this);
+		this._timeEditorRef = createRef();
+		this._timeDisplayRef = createRef();
 	}
 
 	componentDidMount(){
@@ -4412,6 +4434,8 @@ class PlanetariumBabylon extends Component{
 
 	componentWillUnmount(){
 		this._isUnmounted = true;
+		document.removeEventListener('mousedown', this._onTimeEditorDocMouseDown, true);
+		try{ document.body.classList.remove('planetarium-time-editing'); }catch(e){ /* no-op */ }
 		if(this._onFullscreenChange){
 			document.removeEventListener('fullscreenchange', this._onFullscreenChange);
 			this._onFullscreenChange = null;
@@ -4699,6 +4723,75 @@ class PlanetariumBabylon extends Component{
 			selected: null,
 			speed: 0,
 		}, ()=>this.applyFastSceneChange('observer-reset'));
+	}
+
+	// 🆕 手动改时间(点开 DateTimeSelector 弹框 → 确定后跳到该时刻重算天象)。
+	// 先 speed:0 暂停(走 setupPlayback 既有暂停路径,避免改时间后跳变)+ selected:null,
+	// 再 applyFastSceneChange('time') 离散重算整盘+右栏(与 changeObserverGeo 同路径)。
+	changeObserverTime(res){
+		const dt = (res && res.value && res.value.clone) ? res.value.clone() : (res && res.value) || null;
+		if(!dt){ return; }
+		if(typeof dt.calcJdn === 'function'){ try{ dt.calcJdn(); }catch(e){ /* 保留现值 */ } }
+		// 🔴 改时间=「离散大跳」(可达上千年)。两件事都必须做,否则星体被外推到乱位(太阳脱离黄道):
+		//  ① 重置外推基线:`updateProjectedTime` 永远按 `_baseLon + speed×(jd − _calibJd)` 外推;_calibJd 仍停在
+		//     旧时刻 → 大跳后 dtJd 达数十万天 → 即便重取真实 _baseLon 也被巨 dtJd 乘乱。置 _calibJd=null(下次
+		//     渲染重设为新 jd → dtJd=0=零外推)+ 清各 body _baseLon/_baseLat(重锚到新真实位置)。
+		//  ② requestState 全量重取后端真实位置(buildRequestParams 用 this.state.time=dt),而非 applyFastSceneChange 外推。
+		if(this.renderer){
+			this.renderer._calibJd = null;
+			const meshes = this.renderer.projectableMeshes || [];
+			meshes.forEach((item)=>{ if(item && item.source){ item.source._baseLon = undefined; item.source._baseLat = undefined; } });
+		}
+		// speed:0 暂停 + selected:null;面板只在「确定」时关。requestState 内置 in-flight 合并,连改字段也安全。
+		if(res && res.confirmed){
+			try{ document.body.classList.remove('planetarium-time-editing'); }catch(e){ /* no-op */ }
+			document.removeEventListener('mousedown', this._onTimeEditorDocMouseDown, true);
+		}
+		this.setState({
+			time: dt,
+			selected: null,
+			speed: 0,
+			...(res && res.confirmed ? { timeEditorOpen: false } : {}),
+		}, ()=>this.requestState({ requestKind: 'full', reason: 'time-edit', syncLabel: '重算此时天空...' }));
+	}
+
+	// 时间编辑面板:自控开合(不用 antd Popover,避免其受控 click-outside 与嵌套 Select 下拉互相抢闭)。
+	toggleTimeEditor(){
+		const next = !this.state.timeEditorOpen;
+		// 面板用 position:fixed(逃出左栏 overflow:auto 的裁切),坐标按时间显示元素实时算。
+		let pos = this.state.timeEditorPos || null;
+		if(next && this._timeDisplayRef.current){
+			const r = this._timeDisplayRef.current.getBoundingClientRect();
+			const W = 360;
+			let left = r.left;
+			if(left + W > window.innerWidth - 8){ left = Math.max(8, window.innerWidth - 8 - W); }
+			pos = { top: Math.round(r.bottom + 6), left: Math.round(left) };
+		}
+		this.setState({ timeEditorOpen: next, timeEditorPos: pos });
+		try{ document.body.classList.toggle('planetarium-time-editing', next); }catch(e){ /* no-op */ }
+		if(next){
+			// 用 capture + setTimeout 错开本次点击,避免立即触发自己的 outside 判定。
+			setTimeout(()=>{ document.addEventListener('mousedown', this._onTimeEditorDocMouseDown, true); }, 0);
+		}else{
+			document.removeEventListener('mousedown', this._onTimeEditorDocMouseDown, true);
+		}
+	}
+
+	_closeTimeEditor(){
+		this.setState({ timeEditorOpen: false });
+		try{ document.body.classList.remove('planetarium-time-editing'); }catch(e){ /* no-op */ }
+		document.removeEventListener('mousedown', this._onTimeEditorDocMouseDown, true);
+	}
+
+	_onTimeEditorDocMouseDown(e){
+		const t = e.target;
+		if(!t){ return; }
+		const inEditor = this._timeEditorRef.current && this._timeEditorRef.current.contains(t);
+		const onDisplay = this._timeDisplayRef.current && this._timeDisplayRef.current.contains(t);
+		// 点在 antd 下拉(Select/DatePicker 弹层,渲染到 body 的门户)上 → 视为编辑器内交互,不关。
+		const inAntdPopup = t.closest && t.closest('.ant-select-dropdown, .xq-select-popup, .ant-picker-dropdown, .rc-virtual-list');
+		if(inEditor || onDisplay || inAntdPopup){ return; }
+		this._closeTimeEditor();
 	}
 
 	setupPlayback(){
@@ -5336,8 +5429,13 @@ class PlanetariumBabylon extends Component{
 							<XQIcon name="prev" />
 						</button>
 					</div>
-					<div className="planetarium-time">
-						<div>{this.state.time.format('YYYY-MM-DD HH:mm:ss')}</div>
+					<div className="planetarium-time" style={{ position: 'relative' }}>
+						<div ref={this._timeDisplayRef} className={`planetarium-time-display${this.state.timeEditorOpen ? ' is-editing' : ''}`} role="button" title="点击修改时间" onClick={this.toggleTimeEditor}>{this.state.time.format('YYYY-MM-DD HH:mm:ss')}</div>
+						{this.state.timeEditorOpen ? (
+							<div ref={this._timeEditorRef} className="planetarium-time-editor" style={this.state.timeEditorPos ? { top: this.state.timeEditorPos.top, left: this.state.timeEditorPos.left } : undefined}>
+								<PlanetariumTimeEditor time={this.state.time} onChange={this.changeObserverTime} />
+							</div>
+						) : null}
 						<small>{this.state.time.zone} · {observerName}</small>
 						<div className="planetarium-observer-line">
 							<span>{observerLon} · {observerLat}</span>

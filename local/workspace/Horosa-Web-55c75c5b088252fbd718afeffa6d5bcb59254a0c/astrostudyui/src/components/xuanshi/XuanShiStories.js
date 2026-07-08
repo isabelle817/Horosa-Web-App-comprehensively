@@ -2,6 +2,7 @@ import React from 'react';
 import { Spin, Empty, Select, Input } from 'antd';
 import { marked } from 'marked';
 import { fetchStories, fetchStory } from '../../services/xuanshi';
+import XuanShiStar from './XuanShiStar';
 
 // 故事专题 —— 编辑层 story(已发布 30 篇):专题故事卡(封面字符+标题+摘要+朝代/难度/时长)
 // + 详情(body_html 走 prose 成熟 markdown 渲染 + 右栏「专题档案」:频道/朝代/时期/难度/阅读/出处/标签)。
@@ -19,7 +20,7 @@ export default class XuanShiStories extends React.Component {
 		};
 	}
 
-	componentDidMount() { this.load(); }
+	componentDidMount() { this.load(); if (this.props.openStorySlug) { this.openDetail(this.props.openStorySlug); } }
 
 	persist() { if (this.props.onPersist) { this.props.onPersist('stories', { dynasty: this.state.dynasty, q: this.state.q, page: 1 }); } }
 
@@ -64,8 +65,11 @@ export default class XuanShiStories extends React.Component {
 				<span className="xuanshi-link" onClick={() => this.setState({ selected: null })}>← 返回专题</span>
 				<div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, margin: '14px 0 6px' }}>
 					<span className="xuanshi-seal is-lg" style={d.accent_color ? { background: d.accent_color } : undefined}>{d.cover_icon || (d.title || '·')[0]}</span>
-					<div>
-						<h2 className="xuanshi-display is-h2" style={{ marginTop: 2 }}>{d.title}</h2>
+					<div style={{ flex: 1, minWidth: 0 }}>
+						<div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
+							<h2 className="xuanshi-display is-h2" style={{ marginTop: 2 }}>{d.title}</h2>
+							<XuanShiStar item={{ kind: 'story', ref: d.slug, title: d.title, subtitle: d.dynasty || d.period_label || '' }} />
+						</div>
 						{d.subtitle ? <div style={{ fontSize: 13, color: 'var(--ink-muted)', marginTop: 4 }}>{d.subtitle}</div> : null}
 					</div>
 				</div>

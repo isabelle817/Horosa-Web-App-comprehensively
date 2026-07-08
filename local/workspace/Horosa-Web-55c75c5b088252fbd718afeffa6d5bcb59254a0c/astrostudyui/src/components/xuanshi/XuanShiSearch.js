@@ -1,21 +1,38 @@
 import React from 'react';
 import { Spin, Empty, Input } from 'antd';
-import { fetchSearch, fetchCelestial, fetchFigures, fetchStories, fetchTechniques, fetchDynasties, fetchCelestialTerms } from '../../services/xuanshi';
+import { fetchEvents, fetchSearch, fetchCelestial, fetchFigures, fetchStories, fetchTechniques, fetchDynasties, fetchCelestialTerms } from '../../services/xuanshi';
 
-// 统一搜索 —— 全库覆盖:并行多端点(玄学事件服务端搜 + 天象 + 人物真名) + 客户端过滤参考词条(术数/朝代/天象/故事)。
-// 保证「库里任何内容都搜得到」:7类来源合并分组展示。/search 仅覆盖 xuanxue_event,故前端补齐其余表。
+// 统一搜索 / 多维检索结果 —— 承接首页「检索」faceted 面板(ui.search 带 传统/朝代/术数/史书/证据 + q)。
+// 玄学事件走 faceted fetchEvents(后端 filter_events 多维),其余来源(天象/人物/故事/术数·朝代·天象词条)按关键词补齐。
+// 顶部展示「已选」可移除 facet 标签 + 关键词框,保证库里任何内容都搜得到、且与首页勾选一致。
 const arr = (r) => (Array.isArray(r) ? r : ((r && r.items) || []));
+const EMPTY_SEL = () => ({ dynasty: [], technique: [], history: [], evidence: '' });
 
 export default class XuanShiSearch extends React.Component {
 	constructor(props) {
 		super(props);
 		const f = (props.ui && props.ui.search) || {};
-		this.state = { q: f.q || '', groups: null, loading: false, err: '', refs: null };
+		this.state = {
+			q: f.q || '',
+			tradition: f.tradition || '',
+			sel: {
+				dynasty: Array.isArray(f.dynasty) ? f.dynasty.slice() : [],
+				technique: Array.isArray(f.technique) ? f.technique.slice() : [],
+				history: Array.isArray(f.history) ? f.history.slice() : [],
+				evidence: f.evidence || '',
+			},
+			groups: null, eventsTotal: 0, loading: false, err: '', refs: null,
+		};
 	}
 
 	async componentDidMount() {
 		await this.loadRefs();
-		if (this.state.q) { this.run(this.state.q); }
+		if (this.isActive()) { this.run(); }
+	}
+
+	isActive() {
+		const { q, tradition, sel } = this.state;
+		return !!((q && q.trim()) || tradition || sel.dynasty.length || sel.technique.length || sel.history.length || sel.evidence);
 	}
 
 	async loadRefs() {
@@ -28,22 +45,38 @@ export default class XuanShiSearch extends React.Component {
 		} catch (e) { this.setState({ refs: { techniques: [], dynasties: [], terms: [], stories: [] } }); }
 	}
 
-	persist() { if (this.props.onPersist) { this.props.onPersist('search', { q: this.state.q }); } }
+	persist() {
+		if (this.props.onPersist) {
+			const { q, tradition, sel } = this.state;
+			this.props.onPersist('search', { q, tradition, dynasty: sel.dynasty, technique: sel.technique, history: sel.history, evidence: sel.evidence });
+		}
+	}
 
-	async run(q) {
-		if (!q || !q.trim()) { this.setState({ groups: null, q: '' }); return; }
-		this.setState({ loading: true, err: '', q });
+	async run() {
+		if (!this.isActive()) { this.setState({ groups: null }); this.persist(); return; }
+		this.setState({ loading: true, err: '' });
+		const { q, tradition, sel } = this.state;
+		const ql = (q || '').trim();
 		try {
-			const [ev, cel, fig] = await Promise.all([
-				fetchSearch({ q }).catch(() => []),
-				fetchCelestial({ q, page_size: 20 }).catch(() => ({})),
-				fetchFigures({ status: 'all', q, limit: 24 }).catch(() => ({})),
+			const [evRes, cel, fig] = await Promise.all([
+				fetchEvents({
+					tradition: tradition || undefined,
+					dynasties: sel.dynasty.length ? sel.dynasty : undefined,
+					techniques: sel.technique.length ? sel.technique : undefined,
+					histories: sel.history.length ? sel.history : undefined,
+					evidence: sel.evidence || undefined,
+					q: ql || undefined,
+					page: 1, page_size: 40,
+				}).catch(() => ({})),
+				ql ? fetchCelestial({ q: ql, page_size: 20 }).catch(() => ({})) : Promise.resolve({}),
+				ql ? fetchFigures({ status: 'all', q: ql, limit: 24 }).catch(() => ({})) : Promise.resolve({}),
 			]);
 			const refs = this.state.refs || { techniques: [], dynasties: [], terms: [], stories: [] };
-			const ql = q.toLowerCase();
-			const filt = (a) => (a || []).filter((x) => `${x.name || ''}${x.one_liner || ''}${x.alt_names || ''}${x.title || ''}`.toLowerCase().includes(ql));
+			const qll = ql.toLowerCase();
+			const filt = (a) => (!qll ? [] : (a || []).filter((x) => `${x.name || ''}${x.one_liner || ''}${x.alt_names || ''}${x.title || ''}`.toLowerCase().includes(qll)));
+			const evItems = arr(evRes);
 			const groups = [
-				{ key: 'events', label: '玄学事件', items: arr(ev).map((x) => ({ title: x.title, sub: `${x.dynasty || ''}${x.history ? ' · 《' + x.history + '》' : ''}`, snip: x.original_text || x.modern_text })) },
+				{ key: 'events', label: '玄学事件', total: (evRes && evRes.total) || evItems.length, items: evItems.map((x) => ({ id: x.event_id, title: x.title, sub: `${x.tradition || ''}${x.dynasty ? ' · ' + x.dynasty : ''}${x.history ? ' · 《' + x.history + '》' : ''}`, snip: x.modern_text || x.original_text, chips: [x.techniques ? `${x.techniques}`.split(/[;,、，]/)[0] : '', x.evidence === '高' ? '高证据' : ''].filter(Boolean) })) },
 				{ key: 'celestial', label: '天象', items: ((cel && cel.events) || []).map((x) => ({ title: `${x.omen || '天象'} · ${x.dynasty || ''}`, sub: x.modern_date_disp || '', snip: x.original })) },
 				{ key: 'figures', label: '人物列传', items: ((fig && fig.items) || []).map((x) => ({ title: x.name, sub: x.dynasty || '', snip: x.one_liner })) },
 				{ key: 'stories', label: '故事专题', items: filt(refs.stories).map((x) => ({ title: x.title || x.name, sub: '', snip: x.one_liner || x.summary })) },
@@ -56,40 +89,85 @@ export default class XuanShiSearch extends React.Component {
 		} catch (e) { this.setState({ loading: false, err: `${e && e.message ? e.message : e}` }); }
 	}
 
+	setKeyword(v) { this.setState({ q: v }, () => this.run()); }
+
+	removeFacet(dim, val) {
+		if (dim === 'tradition') { this.setState({ tradition: '' }, () => this.run()); return; }
+		if (dim === 'evidence') { this.setState({ sel: { ...this.state.sel, evidence: '' } }, () => this.run()); return; }
+		const arrv = this.state.sel[dim].filter((x) => x !== val);
+		this.setState({ sel: { ...this.state.sel, [dim]: arrv } }, () => this.run());
+	}
+
+	clearAll() { this.setState({ q: '', tradition: '', sel: EMPTY_SEL(), groups: null }, () => this.persist()); }
+
+	// 已选 facet 标签(可移除)
+	renderPills() {
+		const { tradition, sel } = this.state;
+		const pills = [];
+		if (tradition) { pills.push({ dim: 'tradition', val: tradition, label: `传统 · ${tradition}` }); }
+		sel.dynasty.forEach((v) => pills.push({ dim: 'dynasty', val: v, label: `朝代 · ${v}` }));
+		sel.technique.forEach((v) => pills.push({ dim: 'technique', val: v, label: `术数 · ${v}` }));
+		sel.history.forEach((v) => pills.push({ dim: 'history', val: v, label: `典籍 · 《${v}》` }));
+		if (sel.evidence) { pills.push({ dim: 'evidence', val: sel.evidence, label: `证据 · ${sel.evidence}` }); }
+		if (!pills.length) { return null; }
+		return (
+			<div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'center', margin: '10px 0 4px' }}>
+				<span className="xuanshi-stat-sub" style={{ marginRight: 2 }}>已选</span>
+				{pills.map((p) => (
+					<span key={p.dim + p.val} className="xuanshi-chip is-vermilion" style={{ cursor: 'pointer' }} onClick={() => this.removeFacet(p.dim, p.val)} title="移除">
+						{p.label} <span style={{ opacity: 0.7, marginLeft: 2 }}>×</span>
+					</span>
+				))}
+				<span className="xuanshi-link" style={{ fontSize: 12 }} onClick={() => this.clearAll()}>清空所有</span>
+			</div>
+		);
+	}
+
 	render() {
 		const { q, groups, loading, err } = this.state;
+		const evGroup = groups && groups.find((g) => g.key === 'events');
 		const total = groups ? groups.reduce((n, g) => n + g.items.length, 0) : 0;
 		return (
 			<div>
-				<div className="xuanshi-eyebrow">统一搜索</div>
-				<h2 className="xuanshi-display is-h2" style={{ marginTop: 6 }}>全库检索 · 事件 / 天象 / 人物 / 词条</h2>
-				<div style={{ margin: '16px 0' }}>
-					<Input.Search placeholder="搜全库:人名 / 朝代 / 术法 / 天象 / 关键词" allowClear enterButton size="large" style={{ maxWidth: 560 }} defaultValue={q} onSearch={(v) => this.run(v)} />
+				<div className="xuanshi-crumbs">
+					<span className="xuanshi-crumb" onClick={() => this.props.onHome && this.props.onHome()}>首页</span>
+					<span className="xuanshi-crumb-sep">/</span>
+					<span>检索结果</span>
 				</div>
-				{loading ? <div className="xuanshi-center"><Spin tip="全库检索…" /></div> : err ? (
+				<div className="xuanshi-eyebrow">统一检索</div>
+				<h2 className="xuanshi-display is-h2" style={{ marginTop: 6 }}>事件 / 天象 / 人物 / 词条 全库检索</h2>
+				<div style={{ margin: '14px 0' }}>
+					<Input.Search placeholder="再叠加关键词:人名 / 朝代 / 术法 / 天象 / 原文" allowClear enterButton size="large" style={{ maxWidth: 560 }} defaultValue={q} onSearch={(v) => this.setKeyword(v)} />
+				</div>
+				{this.renderPills()}
+				{loading ? <div className="xuanshi-center"><Spin tip="检索中…" /></div> : err ? (
 					<div className="xuanshi-center"><Empty description={`检索失败:${err}`} /></div>
 				) : !groups ? (
-					<div className="xuanshi-hint">输入关键词,跨「玄学事件 / 天象 / 人物列传 / 故事 / 术数·朝代·天象词条」全库检索 —— 库里任何内容都搜得到。</div>
+					<div className="xuanshi-hint">从首页「检索」勾选 传统 / 朝代 / 术数 / 史书 / 证据，或在此输入关键词 —— 跨「玄学事件 / 天象 / 人物列传 / 故事 / 词条」全库检索。</div>
 				) : !total ? (
-					<div className="xuanshi-center"><Empty description={`「${q}」无匹配`} /></div>
+					<div className="xuanshi-center"><Empty description="无匹配,试试放宽条件或换关键词" /></div>
 				) : (
 					<div>
-						<div className="xuanshi-section-sub">共 {total} 条匹配,跨 {groups.length} 类来源</div>
+						<div className="xuanshi-section-sub" style={{ marginTop: 6 }}>
+							共 {evGroup ? (evGroup.total || evGroup.items.length).toLocaleString() : 0} 条玄学事件
+							{groups.filter((g) => g.key !== 'events').map((g) => ` · ${g.items.length} ${g.label}`).join('')}
+						</div>
 						{groups.map((g) => (
 							<div key={g.key} style={{ marginBottom: 24 }}>
-								<div className="xuanshi-stat-label" style={{ textAlign: 'left', marginBottom: 8 }}>{g.label}({g.items.length})</div>
+								<div className="xuanshi-stat-label" style={{ textAlign: 'left', marginBottom: 8 }}>{g.label}（{g.key === 'events' ? (g.total || g.items.length) : g.items.length}）</div>
 								<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
-									{g.items.slice(0, 12).map((it, i) => (
-										<div className="xuanshi-card" key={i}>
+									{g.items.slice(0, g.key === 'events' ? 24 : 12).map((it, i) => (
+										<div className={`xuanshi-card${it.id ? ' is-link' : ''}`} key={it.id || i} onClick={() => { if (it.id && this.props.onOpenEvent) { this.props.onOpenEvent(it.id); } }}>
 											<div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5, flexWrap: 'wrap' }}>
 												<span className="xuanshi-display is-h2" style={{ fontSize: 15 }}>{it.title}</span>
 												{it.sub ? <span className="xuanshi-chip is-ink">{it.sub}</span> : null}
+												{(it.chips || []).map((c) => <span key={c} className="xuanshi-chip is-jade">{c}</span>)}
 											</div>
 											{it.snip ? <div className="xuanshi-stat-sub" style={{ fontSize: 12, lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{it.snip}</div> : null}
 										</div>
 									))}
 								</div>
-								{g.items.length > 12 ? <div className="xuanshi-stat-sub" style={{ marginTop: 6 }}>…另 {g.items.length - 12} 条</div> : null}
+								{g.key === 'events' && (g.total || 0) > 24 ? <div className="xuanshi-stat-sub" style={{ marginTop: 6 }}>…共 {g.total.toLocaleString()} 条,显示前 24</div> : null}
 							</div>
 						))}
 					</div>

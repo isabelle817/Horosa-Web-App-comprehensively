@@ -120,6 +120,89 @@
 	font-weight: 600;
 }
 
+// 可点击编辑的时间显示(block + fit-content:让下方时区·地点行另起一行,不被时间挤在同行)
+.planetarium-time-display {
+	font-size: 15px;
+	font-weight: 600;
+	cursor: pointer;
+	display: block;
+	width: fit-content;
+	max-width: 100%;
+	padding: 1px 6px;
+	margin: -1px -6px 1px;
+	border-radius: 6px;
+	border-bottom: 1px dashed rgba(150, 180, 230, 0.4);
+	transition: background 0.15s, border-color 0.15s;
+}
+.planetarium-time-display:hover {
+	background: rgba(120, 160, 220, 0.16);
+	border-bottom-color: rgba(170, 200, 245, 0.8);
+}
+
+// ===== 时间编辑面板(内联自控,非 antd Popover)— 适配天文馆暗色 =====
+.planetarium-time-editor {
+	position: fixed;       // 逃出左栏 overflow:auto 裁切;坐标由 JS 按时间显示元素实时算
+	z-index: 1200;
+	width: 360px;
+	max-width: 94vw;
+	padding: 12px 14px;
+	background: rgba(14, 21, 38, 0.98);
+	border: 1px solid rgba(145, 170, 210, 0.28);
+	border-radius: 10px;
+	box-shadow: 0 16px 48px -10px rgba(0, 0, 0, 0.78);
+}
+.planetarium-time-display.is-editing {
+	background: rgba(120, 160, 220, 0.16);
+	border-bottom-color: rgba(170, 200, 245, 0.85);
+}
+// Select 选择盒 + InputNumber(年份)
+.planetarium-time-editor .ant-select:not(.ant-select-disabled) .ant-select-selector,
+.planetarium-time-editor .ant-input-number,
+.planetarium-time-editor .ant-input-number-input {
+	background: rgba(10, 16, 30, 0.92) !important;
+	border-color: rgba(145, 170, 210, 0.28) !important;
+	color: #edf4ff !important;
+}
+.planetarium-time-editor .ant-select-selection-item,
+.planetarium-time-editor .ant-select-selection-search-input,
+.planetarium-time-editor .ant-input-number-input { color: #edf4ff !important; }
+.planetarium-time-editor .ant-select-arrow,
+.planetarium-time-editor .ant-input-number-handler-wrap .anticon { color: #9fb0ca; }
+.planetarium-time-editor .ant-input-number-handler-wrap {
+	background: rgba(18, 27, 47, 0.92);
+	border-left-color: rgba(145, 170, 210, 0.22);
+}
+.planetarium-time-editor .ant-select-focused .ant-select-selector,
+.planetarium-time-editor .ant-input-number-focused {
+	border-color: rgba(113, 198, 255, 0.85) !important;
+	box-shadow: 0 0 0 2px rgba(113, 198, 255, 0.15) !important;
+}
+// 按钮(±/此刻/确定)
+.planetarium-time-editor .ant-btn,
+.planetarium-time-editor button {
+	background: rgba(18, 27, 47, 0.9) !important;
+	border-color: rgba(145, 170, 210, 0.28) !important;
+	color: #dce8ff !important;
+}
+.planetarium-time-editor .ant-btn:hover,
+.planetarium-time-editor button:hover {
+	border-color: rgba(113, 198, 255, 0.85) !important;
+	background: rgba(25, 73, 116, 0.78) !important;
+	color: #fff !important;
+}
+// Select 下拉菜单渲染到 body(.xq-select-popup);仅天文馆时间编辑开启时暗色(body 标记类作用域)。
+body.planetarium-time-editing .xq-select-popup,
+body.planetarium-time-editing .xq-select-popup .rc-virtual-list-holder {
+	background: rgba(14, 21, 38, 0.99) !important;
+	border: 1px solid rgba(145, 170, 210, 0.28);
+}
+body.planetarium-time-editing .xq-select-popup .ant-select-item { color: #cfdcf2; }
+body.planetarium-time-editing .xq-select-popup .ant-select-item-option-active:not(.ant-select-item-option-disabled) { background: rgba(25, 73, 116, 0.6); }
+body.planetarium-time-editing .xq-select-popup .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+	background: rgba(25, 73, 116, 0.85);
+	color: #fff;
+}
+
 .planetarium-observer-line {
 	margin-top: 8px;
 	padding-top: 8px;

@@ -5,6 +5,7 @@ export const XUANSHI_SUBPAGES = [
 	{ key: 'overview', label: '总览' },
 	{ key: 'events', label: '玄学事件' },
 	{ key: 'celestial', label: '星象大典' },
+	{ key: 'micro', label: '天象微年表' },
 	{ key: 'figures', label: '人物列传' },
 	{ key: 'map', label: '玄学地图' },
 	{ key: 'persons', label: '人物关系' },
@@ -12,6 +13,7 @@ export const XUANSHI_SUBPAGES = [
 	{ key: 'timeline', label: '朝代时间轴' },
 	{ key: 'encyclopedia', label: '词条百科' },
 	{ key: 'search', label: '统一搜索' },
+	{ key: 'desk', label: '案头' },
 ];
 
 function makeDefaults() {

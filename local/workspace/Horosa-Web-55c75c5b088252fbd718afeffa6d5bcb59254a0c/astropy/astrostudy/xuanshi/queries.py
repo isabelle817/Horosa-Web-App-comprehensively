@@ -219,16 +219,19 @@ def list_events(
     dynasty: Optional[str] = None,
     technique: Optional[str] = None,
     history: Optional[str] = None,
+    dynasties: Optional[list[str]] = None,
+    techniques: Optional[list[str]] = None,
+    histories: Optional[list[str]] = None,
     evidence: Optional[str] = None,
     page: int = 1,
     page_size: int = 30,
 ) -> dict[str, Any]:
-    """事件分页列表（单值 facet）。"""
+    """事件分页列表（facet 单值或多值；给了多值列表则优先，否则回落单值）。"""
     hits = filter_events(
         q=q, tradition=tradition,
-        dynasties=[dynasty] if dynasty else None,
-        techniques=[technique] if technique else None,
-        histories=[history] if history else None,
+        dynasties=dynasties or ([dynasty] if dynasty else None),
+        techniques=techniques or ([technique] if technique else None),
+        histories=histories or ([history] if history else None),
         evidence=evidence,
     )
     total = len(hits)
@@ -275,6 +278,26 @@ def get_event(event_id: str) -> Optional[dict[str, Any]]:
                 related.append(_event_card(r))
                 seen.add(r["event_id"])
     card["related"] = related
+    # 同朝代 / 同史书（对齐标准版事件详情底部，各 ≤6 条、排除自身与上面已列的关联）。
+    # 同朝代限定在同一传统内（正史朝代大类 / 野载语料分类不混）。
+    same_dyn: list[dict[str, Any]] = []
+    same_hist: list[dict[str, Any]] = []
+    ev_dyn = e.get("dynasty")
+    ev_trad = e.get("tradition") or TRADITION_ZHENGSHI
+    ev_hist = e.get("history")
+    for r in events:
+        rid = r["event_id"]
+        if rid == event_id:
+            continue
+        if len(same_dyn) < 6 and ev_dyn and r.get("dynasty") == ev_dyn \
+                and (r.get("tradition") or TRADITION_ZHENGSHI) == ev_trad:
+            same_dyn.append(_event_card(r))
+        if len(same_hist) < 6 and ev_hist and r.get("history") == ev_hist:
+            same_hist.append(_event_card(r))
+        if len(same_dyn) >= 6 and len(same_hist) >= 6:
+            break
+    card["same_dyn"] = same_dyn
+    card["same_hist"] = same_hist
     return card
 
 
@@ -304,6 +327,151 @@ def event_facets(tradition: Optional[str] = None) -> dict[str, Any]:
         "histories": by_history.most_common(),
         "techniques": by_tech.most_common(40),
         "traditions": by_tradition.most_common(),
+    }
+
+
+def facets(
+    *,
+    tradition: Optional[str] = None,
+    q: Optional[str] = None,
+    dynasties: Optional[list[str]] = None,
+    techniques: Optional[list[str]] = None,
+    histories: Optional[list[str]] = None,
+    evidence: Optional[str] = None,
+) -> dict[str, Any]:
+    """统一 facet 端点：所选传统内的稳定选项列表 + 在「当前其余维选择」下重算的计数
+    + 实时命中总数。一次调用同时承担首载选项与勾选后实时计数。
+
+    切换约定（与多维 facet 检索惯例一致）：某维某值的计数 = 在其余维选择保持不变、
+    本维只取该单值时的命中数 —— 这样即便已选「唐」，也能看到「宋/明…」各自命中数
+    以便切换。朝代（正史）/ 语料（野载）按规范史序，术数取前 24、史书按命中降序。
+    """
+    trad = tradition if tradition in (TRADITION_ZHENGSHI, TRADITION_YEZAI) else TRADITION_ZHENGSHI
+    events = load_events()
+    scoped = [e for e in events if (e.get("tradition") or TRADITION_ZHENGSHI) == trad]
+
+    # —— 稳定选项宇宙（该传统内全部出现值）——
+    order = [g[0] for g in (DYNASTY_GROUPS if trad == TRADITION_ZHENGSHI else CORPUS_GROUPS)]
+    present_dyn = {(e.get("dynasty") or "").strip() for e in scoped if (e.get("dynasty") or "").strip()}
+    dyn_names = [d for d in order if d in present_dyn]
+    # 规范序之外的朝代值（兜底，按命中降序补在后）
+    extra = sorted(
+        present_dyn - set(dyn_names),
+        key=lambda n: -sum(1 for e in scoped if (e.get("dynasty") or "").strip() == n),
+    )
+    dyn_names += extra
+
+    tech_counter: Counter = Counter()
+    hist_counter: Counter = Counter()
+    for e in scoped:
+        if e.get("history"):
+            hist_counter[e["history"]] += 1
+        for t in (e.get("techniques") or "").split(";"):
+            t = t.strip()
+            if t:
+                tech_counter[t] += 1
+    tech_names = [n for n, _ in tech_counter.most_common(24)]
+    hist_names = [n for n, _ in hist_counter.most_common()]
+    ev_names = ["高", "中", "低"]
+
+    def count_with(dim: str, value: str) -> int:
+        d = list(dynasties or [])
+        t = list(techniques or [])
+        h = list(histories or [])
+        ev = evidence
+        if dim == "dynasty":
+            d = [value]
+        elif dim == "technique":
+            t = [value]
+        elif dim == "history":
+            h = [value]
+        elif dim == "evidence":
+            ev = value
+        return len(filter_events(
+            q=q, tradition=trad,
+            dynasties=d or None, techniques=t or None, histories=h or None, evidence=ev,
+        ))
+
+    total = len(filter_events(
+        q=q, tradition=trad,
+        dynasties=dynasties or None, techniques=techniques or None,
+        histories=histories or None, evidence=evidence,
+    ))
+
+    trad_counter: Counter = Counter()
+    for e in events:
+        trad_counter[(e.get("tradition") or TRADITION_ZHENGSHI)] += 1
+
+    return {
+        "tradition": trad,
+        "traditions": [
+            {"key": TRADITION_ZHENGSHI, "label": "正史玄学", "count": trad_counter.get(TRADITION_ZHENGSHI, 0)},
+            {"key": TRADITION_YEZAI, "label": "野载玄学", "count": trad_counter.get(TRADITION_YEZAI, 0)},
+        ],
+        "options": {
+            "dynasty": [{"name": n, "count": count_with("dynasty", n)} for n in dyn_names],
+            "technique": [{"name": n, "count": count_with("technique", n)} for n in tech_names],
+            "history": [{"name": n, "count": count_with("history", n)} for n in hist_names],
+            "evidence": [{"name": n, "count": count_with("evidence", n)} for n in ev_names],
+        },
+        "totals": {"xuanxue_events": total, "corpus_paragraphs": 0},
+    }
+
+
+def events_page_meta(tradition: Optional[str] = None) -> dict[str, Any]:
+    """玄学万象列表页头部元数据：统计 + 朝代游历（含图标 + 该朝代史书细分）+ 传统切换。
+
+    对齐标准版 参考玄学万象页 的 stats / all_dynasties / tradition_tabs。
+    正史轴=朝代大类（DYNASTY_GROUPS 图标），野载轴=语料分类（CORPUS_GROUPS 图标）；
+    每个朝代/分类下挂其史书/典籍细分（按命中降序）。
+    """
+    trad = tradition if tradition in (TRADITION_ZHENGSHI, TRADITION_YEZAI) else TRADITION_ZHENGSHI
+    events = load_events()
+    scoped = [e for e in events if (e.get("tradition") or TRADITION_ZHENGSHI) == trad]
+    total = len(scoped)
+    translated = sum(1 for e in scoped if (e.get("modern_text") or "").strip())
+
+    groups_def = DYNASTY_GROUPS if trad == TRADITION_ZHENGSHI else CORPUS_GROUPS
+    icon_map = {g[0]: g[2] for g in groups_def}
+    order = [g[0] for g in groups_def]
+
+    by_dyn: dict[str, list] = defaultdict(list)
+    for e in scoped:
+        d = (e.get("dynasty") or "").strip()
+        if d:
+            by_dyn[d].append(e)
+    present = set(by_dyn)
+    dyn_order = [d for d in order if d in present] + sorted(present - set(order))
+
+    all_dynasties = []
+    for d in dyn_order:
+        evs = by_dyn[d]
+        hc: Counter = Counter()
+        for e in evs:
+            if e.get("history"):
+                hc[e["history"]] += 1
+        all_dynasties.append({
+            "name": d,
+            "icon": icon_map.get(d, ""),
+            "count": len(evs),
+            "histories": [{"name": n, "count": c} for n, c in hc.most_common()],
+        })
+
+    histories_n = len({e.get("history") for e in scoped if e.get("history")})
+    trad_counter: Counter = Counter((e.get("tradition") or TRADITION_ZHENGSHI) for e in events)
+    return {
+        "tradition": trad,
+        "stats": {
+            "total": total,
+            "translated": translated,
+            "dynasties": len(all_dynasties),
+            "histories": histories_n,
+        },
+        "all_dynasties": all_dynasties,
+        "tradition_tabs": [
+            {"key": TRADITION_ZHENGSHI, "label": "正史玄学", "count": trad_counter.get(TRADITION_ZHENGSHI, 0)},
+            {"key": TRADITION_YEZAI, "label": "野载玄学", "count": trad_counter.get(TRADITION_YEZAI, 0)},
+        ],
     }
 
 

@@ -5,9 +5,10 @@ import {
 	loadXuanShiState,
 	saveXuanShiState,
 } from '../../utils/xuanshiState';
-import { fetchSummary, fetchEvents, fetchDaily } from '../../services/xuanshi';
+import { fetchSummary, fetchEvents, fetchDaily, fetchFigures } from '../../services/xuanshi';
 import XuanShiEvents from './XuanShiEvents';
 import XuanShiCelestial from './XuanShiCelestial';
+import XuanShiMicro from './XuanShiMicro';
 import XuanShiStories from './XuanShiStories';
 import { resolveChartDate } from './xuanshiDate';
 import XuanShiFigures from './XuanShiFigures';
@@ -16,24 +17,13 @@ import XuanShiPersons from './XuanShiPersons';
 import XuanShiTimeline from './XuanShiTimeline';
 import XuanShiEncyclopedia from './XuanShiEncyclopedia';
 import XuanShiSearch from './XuanShiSearch';
+import XuanShiFacetSearch from './XuanShiFacetSearch';
+import XuanShiDesk, { pushSearchHistory } from './XuanShiDesk';
 import DateTime from '../comp/DateTime';
 
 // 玄学史(中国玄学史)主页 —— 忠实移植源 app 的「宣纸×墨×朱砂」古籍美学。
 // 设计系统类在 xuanshiTheme.less(经 app.less @import 全局加载);三栏:左 子页导航 / 中 主区。
 // 子页内容按阶段填充;本版:总览(/summary 真数据,hero + 统计 + 入口卡)+ 10 子页路由占位。
-
-// 各子页入口卡(印章字 + 描述 + chip);desc 注入真实计数
-const ENTRY_DEFS = [
-	{ key: 'celestial', seal: '象', title: '星象大典', chip: '核心', chipCls: 'is-vermilion', desc: (c) => `${(c.celestial_events || 0).toLocaleString()} 条天象，按朝代 × 类型 × 史书三维聚合，热力矩阵与十年时序。` },
-	{ key: 'events', seal: '玄', title: '玄学万象', chip: '检索', chipCls: 'is-ink', desc: (c) => `${(c.xuanxue_events || 0).toLocaleString()} 条正史与野载里的玄学事件，按朝代 / 史书 / 术法检索。` },
-	{ key: 'figures', seal: '传', title: '人物列传', chip: '名家', chipCls: 'is-jade', desc: (c, e) => `${(e.figures_total || 0).toLocaleString()} 位术数名家列传与关联事件。` },
-	{ key: 'map', seal: '舆', title: '玄学地图', chip: '空间', chipCls: 'is-ink', desc: (c) => `${c.map_points || 0} 处古都钉点，按朝代切片看活动中心迁移。` },
-	{ key: 'persons', seal: '系', title: '人物关系', chip: '图谱', chipCls: 'is-gold', desc: (c) => `${(c.person_nodes || 0).toLocaleString()} 人共现网络，力导关系图谱。` },
-	{ key: 'timeline', seal: '史', title: '朝代时间轴', chip: '时间', chipCls: 'is-ink', desc: () => '从先秦到明清，材料按朝代堆叠，可下钻到具体证据。' },
-	{ key: 'encyclopedia', seal: '典', title: '词条百科', chip: '释义', chipCls: 'is-jade', desc: (c, e) => `术数 ${e.techniques_published || 0} · 天象 ${e.celestial_terms || 0} 词条与朝代释义，典源体例。` },
-	{ key: 'stories', seal: '话', title: '故事专题', chip: '专题', chipCls: 'is-gold', desc: (c, e) => `${(e.stories_published || 0)} 篇玄学史话专题 —— 人物 × 术法 × 朝代串讲,可读可考。` },
-	{ key: 'search', seal: '搜', title: '统一搜索', chip: '全库', chipCls: 'is-vermilion', desc: () => '跨事件 / 天象 / 人物 / 故事 / 词条全库检索 —— 库里任何内容都搜得到。' },
-];
 
 // 朝代 → 都城 [lng, lat, 名](联动排盘用;无朝代则按年代推断)
 const CAPITALS = {
@@ -61,9 +51,6 @@ function degToDM(d, posSym, negSym) {
 	return `${deg}${d >= 0 ? posSym : negSym}${mn < 10 ? '0' + mn : mn}`;
 }
 
-// 今日推送 pick_kind → 中文徽标(对齐参考 repo daily_pick)
-const DAILY_KIND = { figure: '人物', story: '故事', technique: '术数', celestial_term: '天象', celestial_event: '星象', dynasty_term: '朝代' };
-
 export default class XuanShiMain extends React.Component {
 	constructor(props) {
 		super(props);
@@ -76,6 +63,12 @@ export default class XuanShiMain extends React.Component {
 			summaryErr: '',
 			daily: null,
 			featured: null,
+			figuresTop: null,
+			openEventId: null,
+			openFigureSlug: null,
+			openStorySlug: null,
+			openEncEntry: null,
+			openCelestialEvent: null,
 		};
 	}
 
@@ -88,8 +81,38 @@ export default class XuanShiMain extends React.Component {
 	}
 
 	setSubpage = (key) => {
-		this.setState({ subpage: key });
+		this.setState({ subpage: key, openEventId: null, openFigureSlug: null, openStorySlug: null, openEncEntry: null, openCelestialEvent: null });
 		this.persist({ subpage: key });
+	};
+
+	// 首页「检索」faceted 面板 → 去检索:存选择到 ui.search,切到统一搜索子页(读 ui.search 出结果)
+	goFacetSearch = (sel) => {
+		const ui = { ...this.state.ui, search: { ...sel }, subpage: 'search' };
+		this.setState({ ui, subpage: 'search', openEventId: null });
+		saveXuanShiState(ui);
+		if (sel && sel.q) { pushSearchHistory(sel.q); } // 近探(案头)历史
+	};
+
+	// 检索结果点某事件 → 切到玄学万象子页并自动打开该事件详情
+	goEvent = (id) => {
+		this.setState({ openEventId: id, subpage: 'events', openFigureSlug: null });
+		this.persist({ subpage: 'events' });
+	};
+
+	// 案头·私藏点开 → 按 kind 路由到对应子页 **并自动打开该条详情**(非仅跳列表页)
+	goBookmark = (kind, ref) => {
+		const RESET = { openEventId: null, openFigureSlug: null, openStorySlug: null, openEncEntry: null, openCelestialEvent: null };
+		if (kind === 'event') { this.goEvent(ref); return; }
+		if (kind === 'figure') { this.setState({ ...RESET, openFigureSlug: ref, subpage: 'figures' }); this.persist({ subpage: 'figures' }); return; }
+		if (kind === 'story') { this.setState({ ...RESET, openStorySlug: ref, subpage: 'stories' }); this.persist({ subpage: 'stories' }); return; }
+		if (kind === 'celestial') { this.setState({ ...RESET, openCelestialEvent: ref, subpage: 'celestial' }); this.persist({ subpage: 'celestial' }); return; }
+		if (kind === 'technique' || kind === 'dynasty' || kind === 'celestial_term') {
+			const cat = { technique: 'techniques', dynasty: 'dynasties', celestial_term: 'terms' }[kind];
+			this.setState({ ...RESET, openEncEntry: { cat, slug: ref }, subpage: 'encyclopedia' });
+			this.persist({ subpage: 'encyclopedia' });
+			return;
+		}
+		this.setSubpage('overview');
 	};
 
 	// 联动:用某历史天象的公历日 + 朝代都城经纬,切到占星/七政并排该日之盘
@@ -143,13 +166,14 @@ export default class XuanShiMain extends React.Component {
 		} catch (e) {
 			this.setState({ summaryLoading: false, summaryErr: `${e && e.message ? e.message : e}` });
 		}
-		// 首页 taster(对齐参考 repo 首页):今日观象 + 玄典甄选;失败静默,不挡总览主体
+		// 首页 taster(对齐标准版首页):玄典甄选 + 玄学名家;失败静默,不挡总览主体
 		fetchDaily().then((d) => { if (d && !d.err && (d.title || d.blurb)) { this.setState({ daily: d }); } }).catch(() => {});
 		fetchEvents({ page: 1, page_size: 6 }).then((r) => { this.setState({ featured: (r && r.items) || [] }); }).catch(() => {});
+		fetchFigures({ status: 'all', limit: 6 }).then((r) => { this.setState({ figuresTop: (r && (r.items || r.figures)) || [] }); }).catch(() => {});
 	}
 
 	renderOverview() {
-		const { summary, summaryLoading, summaryErr, daily, featured } = this.state;
+		const { summary, summaryLoading, summaryErr, featured } = this.state;
 		if (summaryLoading) { return <div className="xuanshi-center"><Spin tip="载入玄学史…" /></div>; }
 		if (summaryErr) {
 			return (
@@ -163,102 +187,105 @@ export default class XuanShiMain extends React.Component {
 		const c = summary.counts || {};
 		const trad = summary.events_by_tradition || {};
 		const ed = summary.editorial || {};
-		const cs = summary.celestial_summary || {};
-		const stats = [
-			{ num: c.xuanxue_events, label: '玄学事件', sub: `正史 ${trad['正史'] || 0} · 野载 ${trad['野载'] || 0}` },
-			{ num: c.celestial_events, label: '星象事件', sub: `带公历 ${(cs.with_year || 0).toLocaleString()}` },
-			{ num: ed.figures_total, label: '人物列传', sub: `已成 ${ed.figures_published || 0} · 共现 ${c.person_nodes || 0}` },
-			{ num: ed.stories_published, label: '故事专题', sub: `术数词条 ${ed.techniques_published || 0}` },
-			{ num: c.map_points, label: '地理钉点', sub: '玄学地图' },
-			{ num: ed.translations_published, label: '白话译文', sub: `天象词条 ${ed.celestial_terms || 0} · 频道 ${ed.channels || 0}` },
+		const histCount = ((summary.event_facets || {}).histories || []).length; // 索引古籍 = 正史+野载 全部典籍
+		const figs = this.state.figuresTop || [];
+		const toolCards = [
+			{ key: 'celestial', name: '星象大典', sub: '27K 天象事件', accent: 'var(--vermilion)' },
+			{ key: 'timeline', name: '朝代时间轴', sub: '三千年事件分布', accent: 'var(--gold)' },
+			{ key: 'micro', name: '天象微年表', sub: '逐年逐旬观象', accent: 'var(--gold)' },
+			{ key: 'map', name: '地理地图', sub: '分野与地脉', accent: 'var(--jade)' },
+			{ key: 'persons', name: '人物关系图', sub: '师承共现网络', accent: 'var(--jade)' },
+		];
+		const collection = [
+			{ num: trad['正史'] || 0, label: '正史玄学', accent: 'var(--vermilion)' },
+			{ num: trad['野载'] || 0, label: '野载玄学', accent: 'var(--vermilion)' },
+			{ num: histCount, label: '索引古籍' },
+			{ num: ed.figures_total || 0, label: '名家列传' },
+			{ num: c.celestial_events || 0, label: '天象记录' },
 		];
 		return (
 			<div>
-				{/* hero */}
-				<div className="xuanshi-eyebrow">中国玄学史 · 千年术数与玄虚之学</div>
-				<h1 className="xuanshi-display is-hero" style={{ marginTop: 10 }}>
-					二十四史里的玄虚与术数
-				</h1>
-				<div className="xuanshi-section-sub" style={{ maxWidth: 640, marginTop: 12 }}>
-					正史与野载交叉的玄学事件、星象大典、人物列传，与玄学地图、关系图谱、朝代时间轴 ——
-					一处可看、可学、可浏览的玄学史。星象事件可联动占星 / 七政四余排该历史日之盘。
+				{/* Hero(对齐标准版首页)*/}
+				<h1 className="xuanshi-display is-hero" style={{ fontSize: 'clamp(34px,5vw,52px)', fontWeight: 300 }}>中国玄学史</h1>
+				<div className="xuanshi-hero-rule" />
+				<div className="xuanshi-display" style={{ fontSize: 17, color: 'var(--ink)', marginTop: 14, letterSpacing: '.04em' }}>卜筮 · 占梦 · 相术 · 道术 · 风水 · 天象</div>
+				<div className="xuanshi-stat-sub" style={{ fontSize: 13, marginTop: 6 }}>三千载玄虚之学 · 正史野载兼收</div>
+				<div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 26 }}>
+					<span className="xuanshi-btn is-primary" onClick={() => this.setSubpage('events')}>玄学万象 →</span>
+					<span className="xuanshi-btn" onClick={() => this.setSubpage('celestial')}>星象大典</span>
+					<span className="xuanshi-btn" onClick={() => this.setSubpage('figures')}>名家列传</span>
 				</div>
 
-				{/* 统计卡 */}
-				<div className="xuanshi-card" style={{ marginTop: 22 }}>
-					<div className="xuanshi-stat-grid">
-						{stats.map((s) => (
-							<div className="xuanshi-stat" key={s.label}>
-								<div className="xuanshi-stat-num">{s.num != null ? s.num.toLocaleString() : '—'}</div>
-								<div className="xuanshi-stat-label">{s.label}</div>
-								{s.sub ? <div className="xuanshi-stat-sub">{s.sub}</div> : null}
-							</div>
-						))}
-					</div>
-				</div>
+				{/* 检索 */}
+				<div className="xuanshi-deco-line" style={{ margin: '34px 0 22px' }} />
+				<XuanShiFacetSearch onSearch={this.goFacetSearch} tradition={(this.state.ui.search && this.state.ui.search.tradition) || '正史'} />
 
-				{/* 今日观象(对齐参考首页 daily_pick）*/}
-				{daily && (daily.title || daily.blurb) ? (
-					<div style={{ marginTop: 24 }}>
-						<h2 className="xuanshi-display is-h2">今日观象</h2>
-						<div className="xuanshi-card">
-							<div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-								<span className="xuanshi-chip is-vermilion">{DAILY_KIND[daily.pick_kind] || '推送'}</span>
-								<span className="xuanshi-display is-h2" style={{ fontSize: 18 }}>{daily.title}</span>
-							</div>
-							{daily.blurb ? <div className="xuanshi-prose" style={{ marginTop: 8, fontSize: 14 }}>{daily.blurb}</div> : null}
-						</div>
-					</div>
-				) : null}
-
-				{/* 玄典甄选(对齐参考首页 featured taster)*/}
-				{featured && featured.length ? (
-					<div style={{ marginTop: 24 }}>
-						<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+				{/* 玄典甄选 + 玄学名家 */}
+				<div className="xuanshi-home-taster">
+					<div>
+						<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
 							<h2 className="xuanshi-display is-h2" style={{ margin: 0 }}>玄典甄选</h2>
 							<span className="xuanshi-link" onClick={() => this.setSubpage('events')}>看更多 →</span>
 						</div>
-						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(248px, 1fr))', gap: 14, marginTop: 12 }}>
-							{featured.map((e) => (
-								<div className="xuanshi-card is-link" key={e.event_id} onClick={() => this.setSubpage('events')}>
-									<div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 7 }}>
-										<span className={`xuanshi-chip ${e.tradition === '正史' ? 'is-gold' : 'is-ink'}`}>{e.tradition}</span>
+						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+							{(featured || []).map((e) => (
+								<div className="xuanshi-card is-link" key={e.event_id} onClick={() => this.goEvent(e.event_id)}>
+									<div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
 										{e.dynasty ? <span className="xuanshi-chip is-ink">{e.dynasty}</span> : null}
+										{e.techniques ? <span className="xuanshi-chip is-jade">{`${e.techniques}`.split(/[;,、，]/)[0]}</span> : null}
+										{e.history ? <span className="xuanshi-stat-sub" style={{ marginLeft: 'auto', fontSize: 10 }}>《{e.history}》{e.volume_no ? `卷${e.volume_no}` : ''}</span> : null}
 									</div>
 									<div className="xuanshi-display is-h2" style={{ fontSize: 15, lineHeight: 1.4 }}>{e.title}</div>
-									<div className="xuanshi-stat-sub" style={{ marginTop: 6, fontSize: 12, lineHeight: 1.6, opacity: 0.85, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+									<div className="xuanshi-stat-sub" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
 										{e.outcome || e.procedure || e.trigger || ''}
 									</div>
 								</div>
 							))}
 						</div>
 					</div>
-				) : null}
-
-				<div className="xuanshi-deco-line" />
-
-				<h2 className="xuanshi-display is-h2">分析视图</h2>
-				<div className="xuanshi-section-sub">沿时间 / 空间 / 人物 / 术类四个轴看玄学史 —— 点卡进入。</div>
-				<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(248px, 1fr))', gap: 16 }}>
-					{ENTRY_DEFS.map((d) => (
-						<div className="xuanshi-card is-link" key={d.key} onClick={() => this.setSubpage(d.key)}>
-							<div style={{ display: 'flex', alignItems: 'flex-start', gap: 13 }}>
-								<span className="xuanshi-seal">{d.seal}</span>
-								<div style={{ flex: 1, minWidth: 0 }}>
-									<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-										<span className="xuanshi-display is-h2" style={{ fontSize: 18 }}>{d.title}</span>
-										<span className={`xuanshi-chip ${d.chipCls}`}>{d.chip}</span>
+					<aside>
+						<div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+							<h2 className="xuanshi-display is-h2" style={{ margin: 0 }}>玄学名家</h2>
+							<span className="xuanshi-link" onClick={() => this.setSubpage('figures')}>全部 →</span>
+						</div>
+						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
+							{figs.slice(0, 6).map((f) => (
+								<div className="xuanshi-card is-link" key={f.slug} style={{ padding: 14 }} onClick={() => this.setSubpage('figures')}>
+									<div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+										<span className="xuanshi-fig-seal" style={{ width: 40, height: 40, flex: '0 0 40px', fontSize: (f.name || '').length >= 3 ? 12 : 15 }}>{f.name}</span>
+										<div style={{ minWidth: 0 }}>
+											<div className="xuanshi-display" style={{ fontSize: 14, color: 'var(--ink)' }}>{f.name}</div>
+											{f.dynasty ? <div className="xuanshi-stat-sub" style={{ fontSize: 10, marginTop: 1 }}>{f.dynasty}</div> : null}
+										</div>
 									</div>
-									<div className="xuanshi-stat-sub" style={{ marginTop: 7, fontSize: 12.5, lineHeight: 1.7, opacity: 0.85 }}>
-										{d.desc(c, ed)}
-									</div>
+									{f.one_liner ? <div className="xuanshi-stat-sub" style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{f.one_liner}</div> : null}
 								</div>
-							</div>
+							))}
+						</div>
+					</aside>
+				</div>
+
+				{/* 图谱工具 */}
+				<h2 className="xuanshi-display is-h2" style={{ marginTop: 36 }}>图谱工具</h2>
+				<div className="xuanshi-tool-grid">
+					{toolCards.map((t) => (
+						<div className="xuanshi-tool-card" key={t.key} style={{ '--accent': t.accent }} onClick={() => this.setSubpage(t.key)}>
+							<div className="xuanshi-tool-name">{t.name}</div>
+							<div className="xuanshi-tool-sub">{t.sub}</div>
 						</div>
 					))}
 				</div>
 
-				<div className="xuanshi-hint">原文与引文保留典籍出处标记,原样展示。全部数据(玄学事件 / 星象 / 人物列传 / 地理 / 关系 / 编辑层)随模块内置于本仓,离线可用、无外部依赖。</div>
+				{/* 馆藏 */}
+				<h2 className="xuanshi-display is-h2" style={{ marginTop: 36 }}>馆藏</h2>
+				<div className="xuanshi-collection">
+					{collection.map((s) => (
+						<div className="xuanshi-coll-cell" key={s.label}>
+							<div className="xuanshi-coll-num" style={s.accent ? { color: s.accent } : undefined}>{(s.num || 0).toLocaleString()}</div>
+							<div className="xuanshi-coll-label">{s.label}</div>
+						</div>
+					))}
+				</div>
 			</div>
 		);
 	}
@@ -267,31 +294,37 @@ export default class XuanShiMain extends React.Component {
 		const { subpage } = this.state;
 		if (subpage === 'overview') { return this.renderOverview(); }
 		if (subpage === 'events') {
-			return <XuanShiEvents ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onChartLink={this.chartLink} />;
+			return <XuanShiEvents ui={this.state.ui} openEventId={this.state.openEventId} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onChartLink={this.chartLink} onHome={() => this.setSubpage('overview')} />;
 		}
 		if (subpage === 'celestial') {
-			return <XuanShiCelestial ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onChartLink={this.chartLink} />;
+			return <XuanShiCelestial ui={this.state.ui} openCelestialEvent={this.state.openCelestialEvent} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onChartLink={this.chartLink} onHome={() => this.setSubpage('overview')} />;
 		}
 		if (subpage === 'figures') {
-			return <XuanShiFigures ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiFigures ui={this.state.ui} openFigureSlug={this.state.openFigureSlug} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onHome={() => this.setSubpage('overview')} onNav={(k) => this.setSubpage(k)} />;
 		}
 		if (subpage === 'map') {
-			return <XuanShiMap ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiMap ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onHome={() => this.setSubpage('overview')} />;
 		}
 		if (subpage === 'persons') {
-			return <XuanShiPersons ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiPersons ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onHome={() => this.setSubpage('overview')} onOpenPerson={(name) => { const ui = { ...this.state.ui, figures: { ...(this.state.ui.figures || {}), q: name, dynasty: '', page: 1 }, subpage: 'figures' }; this.setState({ ui, subpage: 'figures', openEventId: null }); saveXuanShiState(ui); }} />;
 		}
 		if (subpage === 'stories') {
-			return <XuanShiStories ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiStories ui={this.state.ui} openStorySlug={this.state.openStorySlug} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
 		}
 		if (subpage === 'timeline') {
-			return <XuanShiTimeline ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiTimeline ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onHome={() => this.setSubpage('overview')} onOpenEvent={this.goEvent} />;
 		}
 		if (subpage === 'encyclopedia') {
-			return <XuanShiEncyclopedia ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiEncyclopedia ui={this.state.ui} openEncEntry={this.state.openEncEntry} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
 		}
 		if (subpage === 'search') {
-			return <XuanShiSearch ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} />;
+			return <XuanShiSearch ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onHome={() => this.setSubpage('overview')} onOpenEvent={this.goEvent} />;
+		}
+		if (subpage === 'desk') {
+			return <XuanShiDesk onHome={() => this.setSubpage('overview')} onNav={(k) => this.setSubpage(k)} onOpen={this.goBookmark} onSearchHistory={(q) => this.goFacetSearch({ tradition: '正史', q, dynasty: [], technique: [], history: [], evidence: '' })} />;
+		}
+		if (subpage === 'micro') {
+			return <XuanShiMicro ui={this.state.ui} onPersist={(k, p) => this.persist({ [k]: { ...(this.state.ui[k] || {}), ...p } })} onHome={() => this.setSubpage('overview')} />;
 		}
 		const label = (XUANSHI_SUBPAGES.find((s) => s.key === subpage) || {}).label || subpage;
 		return <div className="xuanshi-center"><Empty description={`「${label}」建设中`} /></div>;

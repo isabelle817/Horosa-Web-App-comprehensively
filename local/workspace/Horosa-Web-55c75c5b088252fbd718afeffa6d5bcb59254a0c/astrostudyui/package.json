@@ -38,6 +38,7 @@
 		"docx": "^9.5.1",
 		"dompurify": "^2.5.9",
 		"drag-modal": "^1.0.6",
+		"echarts": "^6.1.0",
 		"fastclick": "^1.0.6",
 		"flv.js": "^1.6.2",
 		"highlight.js": "^11.9.0",
