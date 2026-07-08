@@ -8,7 +8,7 @@ additionally reconstructible from session records. See windows-adaptations/READM
 
 | file | sha256 | bytes | git | purpose |
 |---|---|---|---|---|
-| `.claude/skills/horosa-dev/SKILL.md` | `b2be64fec93dce9dddd4bc4b25750059335b4fc9b035d9888e54a306de4051f2` | 173175 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
+| `.claude/skills/horosa-dev/SKILL.md` | `44690d02a31a2bfea8968f934cfa1951e9ea7c83b834702f11c896ad44e61299` | 177268 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
 | `desktop_installer_bundle/assets/installer.nsh` | `ada65772c603799a9a280807aa31ad4ce9f076ebbb3f8beba4fbf8df082975f6` | 57741 | gitignored | NSIS hooks: disk-space gate, uninstall cleanup, OS gate, details-visible install log + phase banners |
 | `desktop_installer_bundle/electron/build-uber-jar.py` | `350016fb4d41b2f60644737e37cf7e3e7a698849efd1d4824cdfefe177e7f9cc` | 19280 | gitignored | fat-jar -> single uber jar merge (classpath.idx first-wins + SPI union + dir entries) enabling fast static CDS |
 | `desktop_installer_bundle/electron/defender-exclusion.js` | `c9630a39c99e1abde7f5c5a847bfe7c2af8a9cfa5fb27dc979ba48048197c651` | 7369 | gitignored | consented Windows Defender exclusion of the app runtime (~500x on-access I/O tax fix) |
