@@ -5740,6 +5740,12 @@
         padding: 2px 0 8px;
     }
 
+    // 信息 tab 速览：卡片各自贴合内容高度（基本信息/主星紧凑、格局速览随技法行数长高），
+    // 不被 grid 默认 align-content:stretch 撑出下半空位；总高超面板时由容器滚动，卡片不裁剪。
+    .horosa-workspace-shell .horosa-astro-info-scroll.horosa-astro-content-scroll {
+        align-content: start;
+    }
+
     .horosa-workspace-shell .horosa-info-card {
         padding: 12px;
         border: 1px solid rgba(215, 173, 105, 0.16);

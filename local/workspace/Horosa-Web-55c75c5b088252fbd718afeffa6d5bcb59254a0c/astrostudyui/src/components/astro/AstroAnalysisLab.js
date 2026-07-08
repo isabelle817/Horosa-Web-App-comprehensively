@@ -3,6 +3,8 @@ import { Spin } from 'antd';
 import request from '../../utils/request';
 import * as Constants from '../../utils/constants';
 import { unwrapResult, astroSymbol, astroSymbolList, fmtDegree, fmtNum, chartParams, chartRequestKey, cardStyle, gridStyle, SmallTable } from './AstroExtraCommon';
+import { buildPatternOverview } from '../../utils/astroPatternOverview';
+import { SIGNS } from '../../divination/data/signs';
 
 // 阿拉伯点中文名(中性词;英文名同列小字便于对照)。
 const LOT_CN = {
@@ -395,6 +397,91 @@ class AstroAnalysisLab extends Component{
 		);
 	}
 
+	// 格局补全卡片(本盘派生,非 /astroextra):大势格局·龙脉(龙截龙拥+孤月独明) / 皇室伴寝·东升西没 / 吉凶格局 / 心性智识·月水。
+	// 完整呈现(非速览):复用 buildPatternOverview 单一真值。主宰循环/接纳互容/三围已在古典 tab,此处不重复。
+	renderPatternOverview(){
+		const chartObj = this.props.value;
+		if(!chartObj || !chartObj.chart){ return null; }
+		let data;
+		try{ data = buildPatternOverview(chartObj.chart, chartObj); }catch(e){ return null; }
+		if(!data || data.empty){ return null; }
+		const g = (id) => <span style={{display: 'inline-block', minWidth: '1.3em', textAlign: 'center'}}>{astroSymbol(id)}</span>;
+		const muted = (txt) => (txt ? <span style={{opacity: 0.7, marginLeft: 4}}>{txt}</span> : null);
+		const sc = (s) => { const k = s ? String(s).toLowerCase() : null; return (SIGNS[k] && SIGNS[k].cn) || s || '?'; };
+		const glyphCn = (id) => ({ Sun: '日', Moon: '月', Mercury: '水', Venus: '金', Mars: '火', Jupiter: '木', Saturn: '土' }[id] || id);
+		const title = (t) => <div className="horosa-info-card-title">{t}</div>;
+		const body = { fontSize: 12.5, lineHeight: 2 };
+		const cards = [];
+
+		// 1) 大势格局 · 龙脉(龙截龙拥 + 孤月独明 + 先验权力)
+		const d = data.dragon; const lm = data.loneMoon; const ap = data.apriori || {};
+		cards.push(
+			<div style={cardStyle} key="pat-dashi">
+				{title('大势格局 · 龙脉')}
+				<div style={body}>
+					<div>龙脉：{d && d.has ? (
+						d.kind === '龙拥' ? <span>龙拥{muted(d.note || '七星聚一侧')}</span>
+						: d.pair ? <span>龙截 {d.pair.map((x, i)=> <span key={i}>{g(x)}</span>)}{muted('两星联结')}</span>
+						: <span>龙截 {g(d.lone)}{muted(`${sc(d.loneSign)}${d.loneHouse ? `·${d.loneHouse}宫` : ''}${(d.loneRules && d.loneRules.length) ? `·主${d.loneRules.join('/')}宫` : ''}`)}</span>
+					) : <span style={{opacity: 0.6}}>无龙截/龙拥{d && d.reason ? muted(d.reason) : null}</span>}</div>
+					<div>孤月独明：{lm && lm.has ? <span>{g('Moon')}{muted('夜生·唯月在地平上')}</span> : <span style={{opacity: 0.6}}>否{lm && lm.reason ? muted(lm.reason) : (lm ? muted(`地平上${lm.aboveCount}星`) : null)}</span>}</div>
+					<div>先验权力：{ap.has ? <span>{ap.links.map((lk, i)=> <span key={i} style={{marginRight: 10}}>{g(lk.a)}<span style={{opacity: 0.7, margin: '0 2px'}}>{lk.kind}</span>{g(lk.b)}{muted(`${lk.which}联结`)}</span>)}{ap.eightKill ? <span style={{color: 'var(--horosa-gold, #b8860b)'}}>夜生·八杀朝天大贵</span> : muted('昼生·非八杀朝天')}</span> : <span style={{opacity: 0.6}}>无{muted('8·12 或 8·1 之联结')}</span>}</div>
+				</div>
+			</div>
+		);
+
+		// 2) 皇室伴寝 · 东升西没(日月各列全部东升/西没,首西没标注)
+		const v = data.vocation || {};
+		const compLine = (label, comp) => comp ? (
+			<div>
+				<span style={{opacity: 0.8}}>{label}</span>
+				<span style={{marginLeft: 6}}>东升 {comp.oriental.length ? comp.oriental.map((x, i)=> <span key={i}>{g(x)}</span>) : <span style={{opacity: 0.6}}>无</span>}</span>
+				<span style={{marginLeft: 10}}>西没 {comp.occidental.length ? comp.occidental.map((x, i)=> <span key={i} style={{fontWeight: x === comp.firstOccidental ? 700 : 400}}>{g(x)}</span>) : <span style={{opacity: 0.6}}>无</span>}</span>
+			</div>
+		) : null;
+		cards.push(
+			<div style={cardStyle} key="pat-banqin">
+				{title('皇室伴寝 · 东升西没')}
+				<div style={body}>
+					{compLine('月(后)', v.moon)}
+					{compLine('日(皇)', v.sun)}
+					{v.career ? <div>职业(月第一西没)：{g(v.career.id)}{muted(`${sc(v.career.sign)}${v.career.house ? `·${v.career.house}宫` : ''}${v.career.flags && v.career.flags.length ? `·${v.career.flags.join('')}` : ''}`)}</div> : null}
+					{v.style ? <div>行事(日第一西没)：{g(v.style.id)}{muted(`${sc(v.style.sign)}${v.style.house ? `·${v.style.house}宫` : ''}`)}</div> : null}
+				</div>
+			</div>
+		);
+
+		// 3) 吉凶格局(强吉木·照耀 + 后天凶星 + 先验吉凶)
+		const j = data.jupiter; const af = data.afflictedRulers || [];
+		cards.push(
+			<div style={cardStyle} key="pat-jixiong">
+				{title('吉凶格局')}
+				<div style={body}>
+					{j && j.present ? <div>强吉木星：{g('Jupiter')}{muted(`${j.strong ? '强吉' : '非强吉'}·${sc(j.sign)}${j.dign ? `·${j.dign}` : ''}${(j.ruleHouses && j.ruleHouses.length) ? `·主${j.ruleHouses.join('/')}宫` : ''}`)} 照耀{j.litCount}星 {j.lit.map((x, i)=> <span key={i}>{g(x)}</span>)}</div> : null}
+					<div>后天凶星：{af.length ? af.map((x, i)=> <span key={i}>{g(x)}</span>) : <span style={{opacity: 0.6}}>无</span>}{muted('主6/8/12宫者')}</div>
+					<div style={{opacity: 0.7}}>先验：凶 {g('Mars')}{g('Saturn')}　吉 {g('Venus')}{g('Jupiter')}</div>
+				</div>
+			</div>
+		);
+
+		// 4) 心性智识 · 月水(文档573:座·模式·主宰星·资质·受损)
+		const mm = data.moonMercury || {};
+		const mmLine = (label, o) => o ? (
+			<div><span style={{opacity: 0.8}}>{label}</span> {g(o.id)}{muted(`${sc(o.sign)}${o.modality ? `·${o.modality}` : ''}${o.ruler ? `·主${glyphCn(o.ruler)}${o.rulerDign || ''}` : ''}${o.flags && o.flags.length ? `·${o.flags.join('')}` : ''}`)}</div>
+		) : null;
+		cards.push(
+			<div style={cardStyle} key="pat-xinzhi">
+				{title('心性智识 · 月水')}
+				<div style={body}>
+					{mmLine('生性(月)', mm.moon)}
+					{mmLine('智识(水)', mm.mercury)}
+				</div>
+			</div>
+		);
+
+		return cards;
+	}
+
 	render(){
 		this.ensureLoaded();
 		const result = this.state.result || {};
@@ -403,6 +490,7 @@ class AstroAnalysisLab extends Component{
 				<div style={{height: this.props.height || 560, overflow: 'auto', paddingRight: 8, paddingBottom: 28}}>
 					{this.renderPatterns(result.patterns)}
 					{this.renderClassicalPatterns(result.classicalPatterns)}
+					{this.renderPatternOverview()}
 					{this.renderAspectDynamics(result.aspectDynamics)}
 					{this.renderAccidentalDignity(result.accidentalDignity)}
 					{/* 吉化/凶化 Bonification 暂去除(鸡肋);renderBonification 方法保留以便日后恢复。 */}

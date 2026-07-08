@@ -8,6 +8,8 @@ import * as Constants from './constants';
 import buildFacts from '../divination/engine/chartFacts';
 import { runLifespan } from '../divination/lifespan/lifespanEngine';
 import { bodyPartsOf, degreePosition } from '../divination/data/bodyParts';
+import { buildPatternOverview } from './astroPatternOverview';
+import { SIGNS } from '../divination/data/signs';
 
 export const ASTRO_AI_SNAPSHOT_KEY = 'horosa.ai.snapshot.astro.v1';
 let ASTRO_AI_SNAPSHOT_MEMORY = null;
@@ -1149,7 +1151,37 @@ function buildEncircleLines(chartObj){
 	return lines;
 }
 
-// 逐曜古典状态:出界/偕日相/喜乐/宗派/野逸/度数性质·阳阴/月站/远地点·数·光/单度·九分·Darijan + 围攻详断 + 围绕。
+function patSignCn(s){ const k = s ? String(s).toLowerCase() : null; return (SIGNS[k] && SIGNS[k].cn) || s || ''; }
+// 古典格局(龙脉/孤月独明/月水心性智识/职业·皇室伴寝/强吉木·照耀/后天凶星) —— 复用 buildPatternOverview 单一真值，
+// 经 buildClassicalSection→[古典]段，贯通 AI 导出/挂载/储存。绝不抛(失败回空)。
+function buildPatternOverviewLines(chartObj){
+	let data;
+	try{ data = buildPatternOverview(chartObj.chart, chartObj); }catch(_){ return []; }
+	if(!data || data.empty){ return []; }
+	const lines = [];
+	const d = data.dragon;
+	if(d && d.has){
+		if(d.kind === '龙拥'){ lines.push(`龙脉：龙拥（${d.note || '七星聚一侧'}）`); }
+		else if(d.pair){ lines.push(`龙脉：龙截 ${d.pair.map((x)=> msg(x)).join('')}（两星联结）`); }
+		else { lines.push(`龙脉：龙截 ${msg(d.lone)}（${patSignCn(d.loneSign)}${d.loneHouse ? `·${d.loneHouse}宫` : ''}${(d.loneRules && d.loneRules.length) ? `·主${d.loneRules.join('/')}宫` : ''}）`); }
+	}
+	if(data.loneMoon && data.loneMoon.has){ lines.push('孤月独明：是（夜生·唯月在地平上）'); }
+	const ap = data.apriori || {};
+	if(ap.has){ lines.push(`先验权力：${ap.links.map((lk)=> `${msg(lk.a)}${lk.kind}${msg(lk.b)}(${lk.which})`).join('、')}${ap.eightKill ? '·夜生·八杀朝天大贵' : '·昼生·非八杀朝天'}`); }
+	const mm = data.moonMercury || {};
+	const oneMM = (o)=> o ? `${patSignCn(o.sign)}${o.modality ? `·${o.modality}` : ''}${o.ruler ? `·主${msg(o.ruler)}${o.rulerDign || ''}` : ''}${o.flags && o.flags.length ? `·${o.flags.join('')}` : ''}` : '';
+	if(mm.moon){ lines.push(`心性(月)：${oneMM(mm.moon)}`); }
+	if(mm.mercury){ lines.push(`智识(水)：${oneMM(mm.mercury)}`); }
+	const v = data.vocation || {};
+	if(v.career){ lines.push(`职业(月第一西没)：${msg(v.career.id)} ${patSignCn(v.career.sign)}${v.career.house ? `·${v.career.house}宫` : ''}`); }
+	if(v.style){ lines.push(`行事(日第一西没)：${msg(v.style.id)} ${patSignCn(v.style.sign)}${v.style.house ? `·${v.style.house}宫` : ''}`); }
+	const j = data.jupiter;
+	if(j && j.present){ lines.push(`木星：${j.strong ? '强吉' : '非强吉'}·${patSignCn(j.sign)}${j.dign ? `·${j.dign}` : ''}·照耀${j.litCount}星${j.lit && j.lit.length ? `（${j.lit.map((x)=> msg(x)).join('、')}）` : ''}`); }
+	if((data.afflictedRulers || []).length){ lines.push(`后天凶星：${data.afflictedRulers.map((x)=> msg(x)).join('、')}`); }
+	return lines;
+}
+
+// 逐曜古典状态:出界/偕日相/喜乐/宗派/野逸/度数性质·阳阴/月站/远地点·数·光/单度·九分·Darijan + 围攻详断 + 围绕 + 古典格局。
 function buildClassicalSection(chartObj){
 	const lines = [];
 	const objectMap = getObjectsMap(chartObj);
@@ -1212,6 +1244,11 @@ function buildClassicalSection(chartObj){
 	if(enc.length){
 		lines.push('围绕');
 		lines.push(...enc);
+	}
+	const pat = buildPatternOverviewLines(chartObj);
+	if(pat.length){
+		lines.push('古典格局');
+		lines.push(...pat);
 	}
 	// FIX-11 全身部位 Melothesia(每星所落星座主管部位 + 度数上中下,对齐 AstroInfo.genMelothesiaDom)。
 	const melo = [];

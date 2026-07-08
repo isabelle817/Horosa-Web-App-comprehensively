@@ -8,6 +8,8 @@ import { bodyPartsOf, degreePosition, } from '../../divination/data/bodyParts';
 import AstroLifespan from './AstroLifespan';
 import AstroDodeca from './AstroDodeca';
 import AstroDispositor from './AstroDispositor';
+import { astroSymbol } from './AstroExtraCommon';
+import { buildPatternOverview, toOverviewRows, connectionPurityById } from '../../utils/astroPatternOverview';
 import { buildMeaningTipByCategory, } from './AstroMeaningData';
 import { isMeaningEnabled, wrapWithMeaning, } from './AstroMeaningPopover';
 import * as Constants from '../../utils/constants';
@@ -340,6 +342,15 @@ class AstroInfo extends Component{
 		return dom;
 	}
 
+	// 联结纯粹度标(有情/无情·互换)：据双方「主宰宫∪落宫」是否同属世俗/反世俗({8,12})界。
+	purityTag(idA, idB){
+		const objs = (this.props.value && this.props.value.chart && this.props.value.chart.objects) || [];
+		const p = connectionPurityById(idA, idB, objs);
+		if(!p){ return null; }
+		const col = p.pure ? 'var(--horosa-jade, #3a9a6a)' : 'var(--horosa-muted, #999)';
+		return <span style={{ fontFamily: AstroConst.NormalFont, color: col }}>&nbsp;{p.label}{p.swap ? '·互换' : ''}</span>;
+	}
+
 	genReceptionsDom(receptions){
 		if(receptions === undefined || receptions === null){
 			return null;
@@ -367,7 +378,7 @@ class AstroInfo extends Component{
 				<div key={idx} style={{fontFamily: AstroConst.AstroFont}}>
 					<span>{this.planetLabel(item.beneficiary, this.props.value)}</span>&nbsp;被&nbsp;
 					<span>{this.planetLabel(item.supplier, this.props.value)}</span>&nbsp;接纳&nbsp;
-					<span style={{fontFamily: AstroConst.NormalFont}}>({ruleship})</span>
+					<span style={{fontFamily: AstroConst.NormalFont}}>({ruleship})</span>{this.purityTag(item.beneficiary, item.supplier)}
 					{
 						refuse && (<span>&nbsp;拒绝</span>)
 					}
@@ -395,7 +406,7 @@ class AstroInfo extends Component{
 					<span>{this.planetLabel(item.beneficiary, this.props.value)}</span>&nbsp;
 					<span style={{fontFamily: AstroConst.NormalFont}}>({diginty})</span>&nbsp;被&nbsp;
 					<span>{this.planetLabel(item.supplier, this.props.value)}</span>&nbsp;接纳&nbsp;
-					<span style={{fontFamily: AstroConst.NormalFont}}>({ruleship})</span>
+					<span style={{fontFamily: AstroConst.NormalFont}}>({ruleship})</span>{this.purityTag(item.beneficiary, item.supplier)}
 					{
 						refuse && (<span>&nbsp;拒绝</span>)
 					}				
@@ -439,7 +450,7 @@ class AstroInfo extends Component{
 			let dom = (
 				<div key={idx} style={{fontFamily: AstroConst.AstroFont}}>
 					<span>{this.planetLabel(objA.id, this.props.value)}</span>&nbsp;<span style={{fontFamily: AstroConst.NormalFont}}>({rsA})</span>&nbsp;与&nbsp;
-					<span>{this.planetLabel(objB.id, this.props.value)}</span>&nbsp;<span style={{fontFamily: AstroConst.NormalFont}}>({rsB})</span>&nbsp;互容
+					<span>{this.planetLabel(objB.id, this.props.value)}</span>&nbsp;<span style={{fontFamily: AstroConst.NormalFont}}>({rsB})</span>&nbsp;互容{this.purityTag(objA.id, objB.id)}
 				</div>
 			);
 			return dom;
@@ -456,7 +467,7 @@ class AstroInfo extends Component{
 			let dom = (
 				<div key={idx} style={{fontFamily: AstroConst.AstroFont}}>
 					<span>{this.planetLabel(objA.id, this.props.value)}</span>&nbsp;<span style={{fontFamily: AstroConst.NormalFont}}>({rsA})</span>&nbsp;与&nbsp;
-					<span>{this.planetLabel(objB.id, this.props.value)}</span>&nbsp;<span style={{fontFamily: AstroConst.NormalFont}}>({rsB})</span>&nbsp;互容
+					<span>{this.planetLabel(objB.id, this.props.value)}</span>&nbsp;<span style={{fontFamily: AstroConst.NormalFont}}>({rsB})</span>&nbsp;互容{this.purityTag(objA.id, objB.id)}
 				</div>
 			);
 			return dom;
@@ -515,7 +526,7 @@ class AstroInfo extends Component{
 					</div>
 					{b.defense && b.defense.length ? (
 						<div style={{ fontSize: 12, color: MUTED }}>协防：{b.defense.map((y, k)=>(
-							<span key={`d-${i}-${k}`} style={{ marginRight: 10, color: y.strong ? JADE : MUTED }}>{this.planetLabel(y.id, this.props.value)} {y.byBody ? '以身作盾' : '遥光'}·护{y.against ? this.planetLabel(y.against, this.props.value) : y.side}侧{y.strong ? '·强' : '·弱'}</span>
+							<span key={`d-${i}-${k}`} style={{ marginRight: 10, color: y.strong ? JADE : MUTED }}>{this.planetLabel(y.id, this.props.value)} {y.byBody ? '以身作盾' : '遥光'}·护{y.against ? this.planetLabel(y.against, this.props.value) : y.side}侧{y.strong ? '·强' : '·弱'}{y.selfTrap ? '·自陷' : ''}</span>
 						))}</div>
 					) : null}
 					{mean ? <div style={{ fontSize: 11, color: MUTED, fontStyle: 'italic' }}>{mean}</div> : null}
@@ -1043,12 +1054,19 @@ class AstroInfo extends Component{
 			const ruler1Obj = ruler1 ? objs.find((o)=> o && o.id === ruler1) : null;
 			const cn = (id)=> (id ? (AstroText.AstroMsgCN[id] || id) : '--');
 			const besg = (chart.surround && chart.surround.besiegement) ? chart.surround.besiegement : [];
-			// 互容/接纳 均为 {normal:[],abnormal:[]};互容项 {planetA:{id},planetB:{id}},接纳项 {beneficiary,supplier}。
-			const mutsObj = chart.mutuals || {};
-			const mutList = [...(mutsObj.normal || []), ...(mutsObj.abnormal || [])];
-			const recsObj = chart.receptions || {};
-			const recCount = (recsObj.normal || []).length + (recsObj.abnormal || []).length;
 			const KIND_COL = { '围攻': 'var(--horosa-danger, #cf1322)', '围荣': 'var(--horosa-gold, #b8860b)', '围耀': 'var(--horosa-accent, #6c5ce7)' };
+			// 互容/接纳/先验权力/龙脉/孤月/心性智识/职业/强吉木/主宰循环/后天凶星 —— 均出自 buildPatternOverview(单字符雕文)。
+			const ovRows = toOverviewRows(buildPatternOverview(perchart, chart));
+			const TONE_COL = { good: 'var(--horosa-jade, #3a9a6a)', bad: 'var(--horosa-danger, #cf1322)' };
+			// 每条目=不折行整体单元;flex-wrap 容器按列间距对齐(消「长接纳串乱折」)。note 按吉凶染色。
+			const ovValStyle = { display: 'flex', flexWrap: 'wrap', gap: '3px 13px', fontWeight: 'normal', alignItems: 'baseline' };
+			const renderOvItem = (it, i)=> (
+				<span key={`ovi-${i}`} style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'baseline' }}>
+					{(it.parts || []).map((p, j)=> p.g ? <span key={j}>{astroSymbol(p.g)}</span> : <span key={j} style={{ fontFamily: AstroConst.NormalFont, margin: '0 1px' }}>{p.t}</span>)}
+					{it.note ? <span style={{ fontFamily: AstroConst.NormalFont, color: TONE_COL[it.tone] || 'var(--horosa-muted, #999)', marginLeft: 3, fontSize: 11 }}>{it.note}</span> : null}
+				</span>
+			);
+			const ovEmpty = (txt)=> <span style={{ fontFamily: AstroConst.NormalFont, opacity: 0.5 }}>{txt}</span>;
 			return (
 				<div className={`horosa-astro-info-scroll horosa-astro-content-scroll ${styles.scrollbar}`} style={astyle}>
 					<div className="horosa-info-card">
@@ -1075,22 +1093,20 @@ class AstroInfo extends Component{
 						<div className="horosa-info-card-title">格局速览</div>
 						<div className="horosa-info-row">
 							<span>命主星 1R</span>
-							<strong>{ruler1Obj ? `${cn(ruler1)} · 落${ruler1Obj.house ? (AstroText.AstroMsg[ruler1Obj.house] || ruler1Obj.house) : '?'} · ${cn(ruler1Obj.sign)}座` : (ruler1 ? cn(ruler1) : '--')}</strong>
+							<strong>{ruler1Obj ? <span>{astroSymbol(ruler1)}<span style={{ fontFamily: AstroConst.NormalFont }}> · 落{ruler1Obj.house ? (AstroText.AstroMsg[ruler1Obj.house] || ruler1Obj.house) : '?'} · {cn(ruler1Obj.sign)}座</span></span> : (ruler1 ? astroSymbol(ruler1) : '--')}</strong>
 						</div>
 						<div className="horosa-info-row">
 							<span>三围</span>
-							<strong>{besg.length ? besg.map((b, i)=>(
-								<span key={`sg-${i}`} style={{ color: KIND_COL[b.kind] || 'inherit', marginLeft: i ? 8 : 0 }}>{b.kind}{cn(b.target)}{b.kind === '围攻' && b.severe ? '·凶剧' : ''}</span>
-							)) : '无围攻 / 围荣 / 围耀'}</strong>
+							<div style={ovValStyle}>{besg.length ? besg.map((b, i)=>(
+								<span key={`sg-${i}`} style={{ whiteSpace: 'nowrap', color: KIND_COL[b.kind] || 'inherit', fontWeight: 600 }}>{b.kind}{astroSymbol(b.target)}{b.kind === '围攻' && b.severe ? '·凶剧' : ''}</span>
+							)) : ovEmpty('无围攻 / 围荣 / 围耀')}</div>
 						</div>
-						<div className="horosa-info-row">
-							<span>互容</span>
-							<strong>{mutList.length ? mutList.map((it, i)=>{ const a = it.planetA ? it.planetA.id : null; const b = it.planetB ? it.planetB.id : null; return <span key={`mu-${i}`} style={{ marginLeft: i ? 8 : 0 }}>{cn(a)}{cn(b)}</span>; }) : '无'}</strong>
-						</div>
-						<div className="horosa-info-row">
-							<span>接纳</span>
-							<strong>{recCount ? `${recCount} 组` : '无'}</strong>
-						</div>
+						{ovRows.map((row)=>(
+							<div className="horosa-info-row" key={`ov-${row.key}`}>
+								<span>{row.label}</span>
+								<div style={ovValStyle}>{(row.items && row.items.length) ? row.items.map(renderOvItem) : ovEmpty(row.empty || '无')}</div>
+							</div>
+						))}
 					</div>
 				</div>
 			);

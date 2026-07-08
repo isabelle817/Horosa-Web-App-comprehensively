@@ -2,7 +2,7 @@ cff-version: 1.2.0
 title: Horosa Web App Comprehensively Improved Windows
 message: If you use this repository in academic or technical work, please cite it.
 type: software
-version: 2.6.8
+version: 2.6.9
 date-released: 2026-06-14
 authors:
   - given-names: Horace
@@ -12,7 +12,7 @@ repository-code: https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensivel
 url: https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows
 license: AGPL-3.0-only
 abstract: >-
-  Horosa for Windows v2.6.8 beta is a local-first metaphysics workstation that aligns the
+  Horosa for Windows v2.6.9 beta is a local-first metaphysics workstation that aligns the
   latest Mac-side work. Mac-side: a classical/Hellenistic astrology augmentation — the natal
   chart gains a full set of classical parameters (Out of Bounds, phasis with heliacal
   rising/setting, houses of joy, day/night sect, feral, degree quality and special degrees,
