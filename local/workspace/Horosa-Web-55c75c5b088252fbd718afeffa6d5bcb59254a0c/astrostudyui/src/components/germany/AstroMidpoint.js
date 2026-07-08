@@ -216,6 +216,26 @@ export function buildHamburgLines(disp, dialPoints, result, snapOrb){
 	return out;
 }
 
+// PERF-R8 P2(数据层空闲预热):按当前盘 fields 预热 /germany/midpoint —— 与量化盘
+// (germanytech,辅盘默认子页)首点的 requestChart 同一构造:fieldsToParams(fields) +
+// 存储流派派生(school/orb/personalOrb,**不含** declination 键——那是 AI 无头版的口径,
+// body 不同不可混用)→ url+body 逐字节一致 → requestDedupe L1/L2 命中。silent 丢结果,
+// 绝不 setState/dispatch。失败静默。
+export async function warmGermanyMidpoint(fields){
+	try{
+		if(!fields || !fields.date || !fields.date.value || !fields.date.value.format){ return null; }
+		const params = fieldsToParams(fields);
+		const disp = getStoredUranianDisplay();
+		const schoolParams = { ...schoolToBackendParams(disp.school), orb: disp.orb, personalOrb: disp.orbPersonal };
+		return await request(`${Constants.ServerRoot}/germany/midpoint`, {
+			body: JSON.stringify({ ...params, ...schoolParams }),
+			silent: true,
+		});
+	}catch(e){
+		return null; // 预热失败静默:首点回到冷即付的现状
+	}
+}
+
 // 供 AI 分析无头复算：取本命西洋盘 + 中点盘，生成量化盘快照（不依赖组件挂载）。
 export async function buildGermanySnapshotForFields(fields){
 	if(!fields){

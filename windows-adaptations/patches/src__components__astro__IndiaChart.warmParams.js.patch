@@ -1,0 +1,20 @@
+diff --git a/astrostudyui/src/components/astro/IndiaChart.js b/astrostudyui/src/components/astro/IndiaChart.js
+index 2f60f36..8be90fe 100644
+--- a/astrostudyui/src/components/astro/IndiaChart.js
++++ b/astrostudyui/src/components/astro/IndiaChart.js
+@@ -91,6 +91,15 @@ export function fieldsToParams(fields, overrides = {}){
+ 	return params;
+ }
+ 
++// PERF-R8 P2(数据层空闲预热):预热参数的权威入口 —— 复刻「组件默认态首点」的参数构造。
++// 与纯 fieldsToParams(fields) 的唯一差异是 dashaSystem:IndiaChartMain.withIndiaOptionFields
++// 首点恒带默认大运体系(state.dashaSystem || 'vimshottari'),而 dva 默认 fields 不含该键 →
++// 不带则 cache key 差一项、预热必 miss。其余默认(seed=moon/sthira=lagna/nodeType=mean)两
++// 路径同为「不下发」,tajakaYear 同函数取当前年,天然一致。预热与首点 key/body 逐字节相同。
++export function buildIndiaWarmParams(fields){
++	return fieldsToParams(fields, { dashaSystem: AstroConst.INDIA_DASHA_SYSTEM_DEFAULT });
++}
++
+ function resolveIndiaFractal(chartnum, hook){
+ 	let fractal = parseInt(chartnum, 10);
+ 	if(Number.isNaN(fractal) || fractal <= 0){

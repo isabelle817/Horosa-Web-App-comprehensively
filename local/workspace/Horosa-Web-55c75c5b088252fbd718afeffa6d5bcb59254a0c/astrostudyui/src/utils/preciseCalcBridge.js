@@ -10,6 +10,7 @@ import {
 } from './localCalcCache';
 import { buildLocalBaziResult } from './baziLunarLocal';
 import { buildLocalJieqiYearSeed } from './localNongliAdapter';
+import { neighborPrefetchEnabled } from './perfFlags';
 
 const NONG_LI_KEYS = ['date', 'time', 'zone', 'lon', 'lat', 'gpsLat', 'gpsLon', 'ad', 'gender', 'after23NewDay', 'lateZiHourUseNextDay', 'timeAlg'];
 const JIE_QI_SEED_KEYS = ['year', 'ad', 'zone', 'lon', 'lat', 'gpsLat', 'gpsLon', 'timeAlg', 'jieqis', 'seedOnly'];
@@ -457,6 +458,29 @@ export async function fetchPreciseJieqiYear(params){
 		jieqiYearInflight.set(key, req);
 	}
 	return req;
+}
+
+// PERF-R8 P3(邻位预取):分至图年份步进的 year±1 静默预取 —— 只在「当前年已取到」之后
+// 由调用方(JieQiChartsMain)显式触发(用户已进入分至页=已表达意图;重端点 /jieqi/year
+// 因此不进排盘后的默认预热组)。同参仅换 year,经 fetchPreciseJieqiYear 自身的
+// L1/localStorage/inflight 三层幂等;顺序发(+1 先,步进多为前进)→ 任意时刻在途邻位 ≤1。
+// generation 门控:连点步进时旧邻位任务自动失格,绝无预取风暴。
+// 闸 horosa.perf.neighborPrefetch(默认开);失败静默,绝不影响业务。
+let jieqiNeighborGeneration = 0;
+export function prefetchJieqiYearNeighbors(params){
+	try{
+		if(!neighborPrefetchEnabled()){ return; }
+		const base = normalizeJieqiParams(params);
+		const year = parseInt(base.year, 10);
+		if(!Number.isFinite(year)){ return; }
+		const gen = ++jieqiNeighborGeneration;
+		const fire = (y)=>{
+			if(gen !== jieqiNeighborGeneration){ return Promise.resolve(null); }
+			return fetchPreciseJieqiYear({ ...base, year: `${y}` }).catch(()=>null);
+		};
+		// 250ms 让当前年的渲染先行;随后顺序预取 +1、-1。
+		setTimeout(()=>{ fire(year + 1).then(()=>fire(year - 1)); }, 250);
+	}catch(e){ /* 预取失败静默 */ }
 }
 
 export async function fetchPreciseJieqiSeed(params){

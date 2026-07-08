@@ -1,5 +1,5 @@
 diff --git a/astrostudyui/src/models/astro.js b/astrostudyui/src/models/astro.js
-index 64278a5..4aa3131 100644
+index 7aede5b..e78468a 100644
 --- a/astrostudyui/src/models/astro.js
 +++ b/astrostudyui/src/models/astro.js
 @@ -7,7 +7,7 @@ import {randomStr,} from '../utils/helper';
@@ -11,7 +11,32 @@ index 64278a5..4aa3131 100644
  import { loadLocalFateEvents, saveLocalFateEvents, } from '../utils/localdeeplearn';
  import * as AstroConst from '../constants/AstroConst';
  import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../utils/dayBoundary';
-@@ -1078,6 +1078,38 @@ export default {
+@@ -16,6 +16,24 @@ import { applyRecordToFields } from '../utils/recordFieldsRestore';
+ let dtm = new DateTime();
+ const DefaultHouseSystem = 1;
+ 
++// PERF-R8 P0(纯观测):排盘 saga 成功提交 chartObj 后打 refresh-end mark,并与
++// pages/index.js 的 horosa:tab:*:refresh-start 配 measure —— DevTools Performance
++// 面板可把「点击→显示」分解为 后端+网络(start→end)与 前端渲染(end→render-complete)。
++// 失败静默,零行为影响。
++function markChartRefreshEnd(){
++	try{
++		if(typeof performance !== 'undefined' && performance.mark){
++			performance.mark('horosa:chart:refresh-end');
++			if(performance.getEntriesByType && performance.measure){
++				const starts = performance.getEntriesByType('mark').filter((m)=>m.name.indexOf(':refresh-start') >= 0);
++				if(starts.length){
++					performance.measure('horosa:chart:refresh', starts[starts.length - 1].name, 'horosa:chart:refresh-end');
++				}
++			}
++		}
++	}catch(e){ /* observation only */ }
++}
++
+ function newEmptyFields(){
+ 	const fields = {
+ 		cid: {
+@@ -1079,6 +1097,38 @@ export default {
  		},
  
  
@@ -50,3 +75,48 @@ index 64278a5..4aa3131 100644
  		*fetch({ payload: values }, { call, put, select }){
  			const param = {
  				...values,
+@@ -1110,11 +1160,12 @@ export default {
+ 
+             yield put({
+                 type: 'save',
+-                payload: {  
++                payload: {
+ 					chartObj: Result,
+ 					drawerVisible: drawer,
+                 },
+             });
++			markChartRefreshEnd();
+ 
+ 			if(values.nohook){
+ 				return;
+@@ -1201,7 +1252,7 @@ export default {
+ 			}
+ 			yield put({
+                 type: 'save',
+-                payload: {  
++                payload: {
+ 					chartObj: Result,
+ 					fields: fields,
+ 					byChartData: true,
+@@ -1209,6 +1260,7 @@ export default {
+ 					memoType: type,
+                 },
+             });
++			markChartRefreshEnd();
+ 
+ 			if(values.nohook){
+ 				return;
+@@ -1267,11 +1319,12 @@ export default {
+ 			}
+             yield put({
+                 type: 'save',
+-                payload: {  
++                payload: {
+ 					chartObj: Result,
+ 					fields: fld,
+                 },
+             });
++			markChartRefreshEnd();
+ 
+ 			if(values.nohook){
+ 				return;

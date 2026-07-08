@@ -172,7 +172,7 @@ const navigationPages = [
     { label: '辅盘', key: 'auxchart', icon: 'aux', group: '命', keywords: '卜卦盘 择日盘 世俗盘 十三分盘 十二分盘 调波盘 谐波盘 龙盘 中点盘 量化盘 汉堡盘 占星地图 星体地图 astrocartography ACG 重置盘 骰子 卜卦 择日' },
     { label: '合盘', key: 'relativechart', icon: 'composite', group: '命', keywords: '合盘 关系盘 比较盘 组合盘 影响盘 时空中点盘 马克斯盘 关系量化 中点合成 synastry composite davison marks' },
     { label: '数算', key: 'shusuan', icon: 'quickPrimary', group: '命', keywords: '邵子神数 铁板神数 河洛理数 参评数 北极神数 南极神数 蠢子数' },
-    { label: '其他', key: 'mingother', icon: 'other', group: '命', keywords: '演禽 仙禽 策天 策天飞星' },
+    { label: '其他', key: 'mingother', icon: 'other', group: '命', keywords: '演禽 仙禽 策天 策天飞星 一掌经 掌经 十二星 六道 yizhangjing' },
     { label: '三式', key: 'sanshiunited', icon: 'sanshi', group: '卜', keywords: '三式合一 六壬 奇门 太乙' },
     { label: '六壬', key: 'liureng', icon: 'liureng', group: '卜', keywords: '大六壬 六壬 三传 四课 神煞 七政' },
     { label: '遁甲', key: 'dunjia', icon: 'qimen', group: '卜', keywords: '奇门遁甲 奇门 法奇门' },
@@ -340,7 +340,50 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
         caseTotal,
     } = user;
  	const { height, fields, chartObj, drawerVisible, predictHook, memo, memoType, currentTab, currentSubTab, deeplearn} = astro;
-    const { ziwei, } = rules; 
+    const { ziwei, } = rules;
+    // PERF-R8 P0(纯观测):chartObj 提交后 double-rAF 打 render-complete —— 两帧后浏览器
+    // 必已完成本次提交的布局与绘制,与 refresh-end 配对量化前端渲染份额。失败静默。
+    React.useEffect(()=>{
+        if(!(chartObj && chartObj.chartId)){ return; }
+        try{
+            if(typeof performance !== 'undefined' && performance.mark && typeof requestAnimationFrame === 'function'){
+                requestAnimationFrame(()=>{ requestAnimationFrame(()=>{
+                    try{
+                        performance.mark('horosa:chart:render-complete');
+                        if(performance.measure){
+                            performance.measure('horosa:chart:render', 'horosa:chart:refresh-end', 'horosa:chart:render-complete');
+                        }
+                    }catch(e){ /* observation only */ }
+                }); });
+            }
+        }catch(e){ /* observation only */ }
+    }, [chartObj && chartObj.chartId]);
+    // PERF-R8 P2:排盘成功后的数据层空闲预热 —— 把「用户首点某技法才付的取数成本」挪进
+    // 空闲时段:走各技法**自己导出的 builder + 缓存入口**(key/body 与真实首点逐字节一致,
+    // 结果自然落各自 L1;首点=命中即时)。组以 chartId 为代(新盘作废旧组);任务内动态
+    // import(不拖 chunk 进主包,顺带引擎预热);全部 silent、只进确定性端点、交互即让路。
+    // 双闸:horosa.perf.idleWarmQueue(总)/ horosa.perf.dataWarmTasks(细)。失败静默。
+    React.useEffect(()=>{
+        if(!(chartObj && chartObj.chartId) || !fields || !(fields.date && fields.date.value)){ return; }
+        const warmFields = fields;
+        const warmChartObj = chartObj;
+        import('../utils/idleWarmQueue').then((queue)=>{
+            if(!queue || typeof queue.scheduleDataWarmGroup !== 'function'){ return; }
+            // 顺序=首点概率序:星运(direction 默认子页 primarydirect 的 /predict/pd)→ 印占 →
+            // 七政本命 → 量化盘(辅盘默认子页 germanytech)。全部轻端点白名单;重端点
+            // (如 /jieqi/year)不入默认组,只在用户已进入该页后由邻位预取接手。
+            queue.scheduleDataWarmGroup(chartObj.chartId, [
+                { name: 'direction:pd', task: ()=>import('../components/direction/AstroDirectMain')
+                    .then((m)=>m.warmPrimaryDirection(warmChartObj, warmFields)) },
+                { name: 'india:birth', task: ()=>import('../components/astro/IndiaChart')
+                    .then((m)=>m.requestIndiaChartData(m.buildIndiaWarmParams(warmFields))) },
+                { name: 'guolao:natal', task: ()=>import('../components/guolao/GuoLaoChartMain')
+                    .then((m)=>m.warmGuolaoNatal(warmFields)) },
+                { name: 'germany:midpoint', task: ()=>import('../components/germany/AstroMidpoint')
+                    .then((m)=>m.warmGermanyMidpoint(warmFields)) },
+            ]);
+        }).catch(()=>{ /* 预热不可用=回到现状 */ });
+    }, [chartObj && chartObj.chartId]);
 
     
     function closeDrawer(){

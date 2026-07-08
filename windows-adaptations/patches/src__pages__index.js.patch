@@ -1,8 +1,60 @@
 diff --git a/astrostudyui/src/pages/index.js b/astrostudyui/src/pages/index.js
-index 8d63b57..f18b957 100644
+index 034ccd8..090faed 100644
 --- a/astrostudyui/src/pages/index.js
 +++ b/astrostudyui/src/pages/index.js
-@@ -391,6 +391,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+@@ -340,7 +340,50 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+         caseTotal,
+     } = user;
+  	const { height, fields, chartObj, drawerVisible, predictHook, memo, memoType, currentTab, currentSubTab, deeplearn} = astro;
+-    const { ziwei, } = rules; 
++    const { ziwei, } = rules;
++    // PERF-R8 P0(纯观测):chartObj 提交后 double-rAF 打 render-complete —— 两帧后浏览器
++    // 必已完成本次提交的布局与绘制,与 refresh-end 配对量化前端渲染份额。失败静默。
++    React.useEffect(()=>{
++        if(!(chartObj && chartObj.chartId)){ return; }
++        try{
++            if(typeof performance !== 'undefined' && performance.mark && typeof requestAnimationFrame === 'function'){
++                requestAnimationFrame(()=>{ requestAnimationFrame(()=>{
++                    try{
++                        performance.mark('horosa:chart:render-complete');
++                        if(performance.measure){
++                            performance.measure('horosa:chart:render', 'horosa:chart:refresh-end', 'horosa:chart:render-complete');
++                        }
++                    }catch(e){ /* observation only */ }
++                }); });
++            }
++        }catch(e){ /* observation only */ }
++    }, [chartObj && chartObj.chartId]);
++    // PERF-R8 P2:排盘成功后的数据层空闲预热 —— 把「用户首点某技法才付的取数成本」挪进
++    // 空闲时段:走各技法**自己导出的 builder + 缓存入口**(key/body 与真实首点逐字节一致,
++    // 结果自然落各自 L1;首点=命中即时)。组以 chartId 为代(新盘作废旧组);任务内动态
++    // import(不拖 chunk 进主包,顺带引擎预热);全部 silent、只进确定性端点、交互即让路。
++    // 双闸:horosa.perf.idleWarmQueue(总)/ horosa.perf.dataWarmTasks(细)。失败静默。
++    React.useEffect(()=>{
++        if(!(chartObj && chartObj.chartId) || !fields || !(fields.date && fields.date.value)){ return; }
++        const warmFields = fields;
++        const warmChartObj = chartObj;
++        import('../utils/idleWarmQueue').then((queue)=>{
++            if(!queue || typeof queue.scheduleDataWarmGroup !== 'function'){ return; }
++            // 顺序=首点概率序:星运(direction 默认子页 primarydirect 的 /predict/pd)→ 印占 →
++            // 七政本命 → 量化盘(辅盘默认子页 germanytech)。全部轻端点白名单;重端点
++            // (如 /jieqi/year)不入默认组,只在用户已进入该页后由邻位预取接手。
++            queue.scheduleDataWarmGroup(chartObj.chartId, [
++                { name: 'direction:pd', task: ()=>import('../components/direction/AstroDirectMain')
++                    .then((m)=>m.warmPrimaryDirection(warmChartObj, warmFields)) },
++                { name: 'india:birth', task: ()=>import('../components/astro/IndiaChart')
++                    .then((m)=>m.requestIndiaChartData(m.buildIndiaWarmParams(warmFields))) },
++                { name: 'guolao:natal', task: ()=>import('../components/guolao/GuoLaoChartMain')
++                    .then((m)=>m.warmGuolaoNatal(warmFields)) },
++                { name: 'germany:midpoint', task: ()=>import('../components/germany/AstroMidpoint')
++                    .then((m)=>m.warmGermanyMidpoint(warmFields)) },
++            ]);
++        }).catch(()=>{ /* 预热不可用=回到现状 */ });
++    }, [chartObj && chartObj.chartId]);
+ 
+     
+     function closeDrawer(){
+@@ -391,6 +434,9 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
          // 盘变了才刷新目标技法,且延迟到切换 paint 之后(切换瞬间、刷新随后带 spinner);盘没变=跳过=纯瞬间。
          if(needRefresh){
              tabRefreshSigRef.current[key] = currentSig;
@@ -12,7 +64,7 @@ index 8d63b57..f18b957 100644
              setTimeout(()=>{
                  if(!(predictHook[key] && predictHook[key].fun)){ return; }
                  if(key === 'indiachart' || key === 'cntradition' || key === 'jieqichart'
-@@ -463,10 +466,18 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+@@ -463,10 +509,18 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
          if(values.southchart !== undefined && values.southchart !== null){
              flds.southchart.value = values.southchart;
          }
@@ -34,4 +86,3 @@ index 8d63b57..f18b957 100644
              }
          }
  
-

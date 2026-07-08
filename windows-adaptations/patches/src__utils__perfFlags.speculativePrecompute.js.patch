@@ -1,8 +1,8 @@
 diff --git a/astrostudyui/src/utils/perfFlags.js b/astrostudyui/src/utils/perfFlags.js
-index a344fe4..b16ec72 100644
+index a344fe4..72b0f13 100644
 --- a/astrostudyui/src/utils/perfFlags.js
 +++ b/astrostudyui/src/utils/perfFlags.js
-@@ -59,3 +59,49 @@ export function techniqueCacheEnabled(){
+@@ -59,3 +59,61 @@ export function techniqueCacheEnabled(){
  export function idleWarmQueueEnabled(){
  	return flagEnabled('horosa.perf.idleWarmQueue');
  }
@@ -51,4 +51,16 @@ index a344fe4..b16ec72 100644
 +// (沿用 _requestCache.js 判据)。关掉(horosa.perf.speculativePrecompute=0)即回到「点提交才计算」。
 +export function speculativePrecomputeEnabled(){
 +	return flagEnabled('horosa.perf.speculativePrecompute');
++}
++
++// PERF-R8 P2:排盘后数据层空闲预热(scheduleDataWarmGroup)的细闸——在总闸 idleWarmQueue
++// 之内再单独可关。预热只经各技法自己的缓存入口取数(结果与用户首点逐字节一致,只是提前付),
++// 关掉即回到「首点付冷成本」的现状。
++export function dataWarmTasksEnabled(){
++	return flagEnabled('horosa.perf.dataWarmTasks');
++}
++
++// PERF-R8 P3:分至图年份邻位预取(year±1)的独立闸。
++export function neighborPrefetchEnabled(){
++	return flagEnabled('horosa.perf.neighborPrefetch');
 +}

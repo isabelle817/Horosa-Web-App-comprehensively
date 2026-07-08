@@ -40,11 +40,23 @@ function buildChartKey(values){
 	}
 }
 
+// PERF-R8 P0(纯观测):chartMem 命中时打 cache-hit mark —— 与 refresh-start/refresh-end/
+// render-complete 配对,DevTools Performance 面板可直接分辨「命中即时」与「真算」两类路径。
+// 失败静默,零行为影响。
+function markChartCacheHit(){
+	try{
+		if(typeof performance !== 'undefined' && performance.mark){
+			performance.mark('horosa:chart:cache-hit');
+		}
+	}catch(e){ /* observation only */ }
+}
+
 export function fetchChart(values, requestOptions){
 	const opts = requestOptions || {};
 	const disableCache = opts.cache === false;
 	const key = disableCache ? '' : buildChartKey(values);
 	if(key && chartMem.has(key)){
+		markChartCacheHit();
 		return Promise.resolve(clonePlain(chartMem.get(key)));
 	}
 	if(key && chartInflight.has(key)){
