@@ -42,6 +42,7 @@ FILES = {
     "desktop_installer_bundle/scripts/build-renderer.cjs": "frontend build wrapper",
     "desktop_installer_bundle/scripts/sign-update.cjs": "Ed25519 signing of release assets",
     "desktop_installer_bundle/scripts/write-app-update-yml.cjs": "app-update.yml generator (updater feed)",
+    "desktop_installer_bundle/scripts/delta-report.py": "DELTA-V2: blockmap differential estimator + payload-manifest diff (powers the differential-efficiency release gate)",
     "desktop_installer_bundle/assets/installer.nsh": "NSIS hooks: disk-space gate, uninstall cleanup, OS gate",
     ".claude/skills/horosa-dev/SKILL.md": "the dev/sync/release runbook (sync playbook, jar rebuild, gotchas)",
 }

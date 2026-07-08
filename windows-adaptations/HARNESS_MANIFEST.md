@@ -8,24 +8,25 @@ additionally reconstructible from session records. See windows-adaptations/READM
 
 | file | sha256 | bytes | git | purpose |
 |---|---|---|---|---|
-| `.claude/skills/horosa-dev/SKILL.md` | `d87d5e24772e222b3e4c7da249f3c5e9a7fee9b43b05303caf82838741dd1bd5` | 140317 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
+| `.claude/skills/horosa-dev/SKILL.md` | `65b29deab414cb6a801785900b5f8c218c66d885ae5af48ca832bd0624c19c40` | 144533 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
 | `desktop_installer_bundle/assets/installer.nsh` | `656c16de2283e0211c23f099f0f85064fc9335d1fc48eab58ebfa813e94e1762` | 52226 | gitignored | NSIS hooks: disk-space gate, uninstall cleanup, OS gate |
-| `desktop_installer_bundle/electron/build-uber-jar.py` | `206b5711f456e5984bb851f752a1a9d924d5092e0898bc0a3d03456085a41446` | 9922 | gitignored | fat-jar -> single uber jar merge (classpath.idx first-wins + SPI union + dir entries) enabling fast static CDS |
+| `desktop_installer_bundle/electron/build-uber-jar.py` | `350016fb4d41b2f60644737e37cf7e3e7a698849efd1d4824cdfefe177e7f9cc` | 19280 | gitignored | fat-jar -> single uber jar merge (classpath.idx first-wins + SPI union + dir entries) enabling fast static CDS |
 | `desktop_installer_bundle/electron/defender-exclusion.js` | `c9630a39c99e1abde7f5c5a847bfe7c2af8a9cfa5fb27dc979ba48048197c651` | 7369 | gitignored | consented Windows Defender exclusion of the app runtime (~500x on-access I/O tax fix) |
 | `desktop_installer_bundle/electron/job-object.js` | `049c81988ff548081012f06099593d3e98ff7b4169bad8f491a389d57b1d60b0` | 6883 | gitignored | Windows Job Object KILL_ON_JOB_CLOSE so children die with the shell |
 | `desktop_installer_bundle/electron/logger.js` | `4d4863ef4451d498d9593ab650ec6ab6cfd77df1e1a4e7acd1356805fd5e46a8` | 3627 | gitignored | shell logger + rotation |
-| `desktop_installer_bundle/electron/main.js` | `601b080ece43eb4a4286527baf9e87951123dfa227efbbdc23f633d66bf87e5c` | 88388 | gitignored | Electron main process (bootstrap, updater, windows, Defender-exclusion hook) |
+| `desktop_installer_bundle/electron/main.js` | `28cd35bf985266dd08ca419aee3971a39c3fe616d8243ee5d430b2240fa0b661` | 89681 | gitignored | Electron main process (bootstrap, updater, windows, Defender-exclusion hook) |
 | `desktop_installer_bundle/electron/preload.js` | `3e509d2fb94771909d73d48855f25d031e50abc262aa408a666a5f5bf6cb7bde` | 3391 | gitignored | renderer bridge (window.horosaDesktop) |
-| `desktop_installer_bundle/electron/service-manager.js` | `fc155d38e380bcec05c3656e830e1530fa3ba77f3498ff8a2e6971c98fabae6c` | 123710 | gitignored | runtime manager: python/java spawn, readiness gate, uber-jar build, static+dynamic layered CDS, port retry |
-| `desktop_installer_bundle/electron/service-manager.test.js` | `7aeb4ce3ae9ec49cdd2d00afda75f9d458ff29e9de69282fa87116b8d32891df` | 43233 | gitignored | node:test suite for the runtime manager |
+| `desktop_installer_bundle/electron/service-manager.js` | `13af0e301799ed15c5bf4b09dae945ecaff78c5744faba612691ecb3fae005b2` | 141478 | gitignored | runtime manager: python/java spawn, readiness gate, uber-jar build, static+dynamic layered CDS, port retry |
+| `desktop_installer_bundle/electron/service-manager.test.js` | `03caea1c95e5be6f23183bb724f2a5df6b9d105ac1fb8b4cae9c554de1cd2f79` | 50273 | gitignored | node:test suite for the runtime manager |
 | `desktop_installer_bundle/electron/update-flow.js` | `ea1164a13fdf91c4c71565813ea4f37d467f207066c7cad2718b46e59ab3f597` | 3630 | gitignored | auto-update flow (sidecar-stop-before-install, progress window) |
 | `desktop_installer_bundle/electron/update-flow.test.js` | `d4ef0ee099429329fae93b5f958817f777f55b2c1cb9d24c6a6ecec1233109d3` | 3189 | gitignored | node:test suite for the update flow |
 | `desktop_installer_bundle/electron/update-progress-preload.js` | `db406dcd3766856ef75d1f064cca51add6311f47d16a6241449aadb30e88188e` | 1370 | gitignored | download-progress window preload |
 | `desktop_installer_bundle/electron/update-signature.js` | `7105a94013497ca8a867c8ebfff8cecc35eea61c64df2ec8afb00e5a213c6164` | 4730 | gitignored | Ed25519 update-signature verify |
 | `desktop_installer_bundle/electron/update-signature.test.js` | `b1d2f7f96676a94b47c6ab5f2a0f75c6776f9deedd46ae6929725a8680408443` | 4419 | gitignored | node:test suite for signature verify |
 | `desktop_installer_bundle/scripts/build-renderer.cjs` | `6ee35212e3e56723c6f6368e26c5d798753444459603aa8b86767736dd968661` | 1765 | gitignored | frontend build wrapper |
+| `desktop_installer_bundle/scripts/delta-report.py` | `95d98a079976190b0104cb40f2ae1a6ed53283eb04a41f69c18085c5951d7a01` | 6472 | gitignored | DELTA-V2: blockmap differential estimator + payload-manifest diff (powers the differential-efficiency release gate) |
 | `desktop_installer_bundle/scripts/release_preflight.py` | `574d5b2264f57e76f4ff541efa3f8cb46b8e668707e74b51f74158aa26b26d50` | 4840 | gitignored | pre-release env checks |
-| `desktop_installer_bundle/scripts/release_selfcheck.py` | `b4846204c4de944d416e7f19d0518abd62d71994aa31e9aea1d78410ed0b73cf` | 55442 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
+| `desktop_installer_bundle/scripts/release_selfcheck.py` | `81796720eca1760a6df7c2537af84b8b0c9008bc4478bd9820df8fbd88c00fa7` | 66467 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
 | `desktop_installer_bundle/scripts/sign-update.cjs` | `4359ec4d95fc9fb801c997f793fed3fde528691de5f3dc89633fb2c5edc60317` | 5887 | gitignored | Ed25519 signing of release assets |
-| `desktop_installer_bundle/scripts/stage-runtime.cjs` | `8737c176fabb438f54a6f502726be6c747d33c0dd615e14a1963b3baf27012a7` | 14249 | gitignored | stages local/workspace/runtime -> build/app-runtime payload |
+| `desktop_installer_bundle/scripts/stage-runtime.cjs` | `17504153e3c364e0f77a3b6eb2a3994857d1237a2d6b03098bfd757638e24d41` | 26393 | gitignored | stages local/workspace/runtime -> build/app-runtime payload |
 | `desktop_installer_bundle/scripts/write-app-update-yml.cjs` | `a2793ac922c02784751e57841e1ec54fc9911555904e985eb1284dc92e72221b` | 2308 | gitignored | app-update.yml generator (updater feed) |
