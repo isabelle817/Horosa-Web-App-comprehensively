@@ -1,0 +1,4798 @@
+#Requires -Version 5.1
+# NOTE: this file intentionally stays pure-ASCII so the Windows PowerShell 5.1 fallback
+# (see Horosa_Local_Windows.bat) reads it identically with or without a BOM. Keep new
+# comments/strings ASCII, or add a UTF-8 BOM in the same change. Guarded by the release
+# selfcheck local-launchers gate (dual-engine parse + encoding invariant).
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Root = $ScriptRoot
+$HorosaLauncherChannel = 'stable'
+$HorosaLauncherDisplayName = 'Horosa Windows Stable Launcher'
+
+try {
+  if ($Host.UI -and $Host.UI.RawUI) {
+    $Host.UI.RawUI.WindowTitle = $HorosaLauncherDisplayName
+  }
+} catch {}
+
+Write-Host ("[INFO] Launcher: {0}" -f $HorosaLauncherDisplayName)
+Write-Host ("[INFO] Channel: {0}" -f $HorosaLauncherChannel)
+
+function Test-HorosaProjectDir {
+  param([string]$DirPath)
+
+  if ([string]::IsNullOrWhiteSpace($DirPath)) { return $false }
+  if (-not (Test-Path $DirPath -PathType Container)) { return $false }
+
+  $requiredDirs = @('astrostudyui', 'astrostudysrv', 'astropy')
+  foreach ($requiredDir in $requiredDirs) {
+    if (-not (Test-Path (Join-Path $DirPath $requiredDir) -PathType Container)) {
+      return $false
+    }
+  }
+  return $true
+}
+
+function Resolve-ProjectPointerTarget {
+  param(
+    [string]$PointerFile,
+    [string]$BaseDir
+  )
+
+  if ([string]::IsNullOrWhiteSpace($PointerFile)) { return $null }
+  if (-not (Test-Path $PointerFile -PathType Leaf)) { return $null }
+
+  try {
+    $raw = (Get-Content -Path $PointerFile -Raw -ErrorAction Stop)
+  } catch {
+    return $null
+  }
+
+  foreach ($line in ($raw -split "`r?`n")) {
+    $candidate = $line.Trim()
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    if ($candidate.StartsWith('#')) { continue }
+    if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+      $candidate = Join-Path $BaseDir $candidate
+    }
+    if (Test-HorosaProjectDir -DirPath $candidate) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  return $null
+}
+
+function Update-ProjectPointerFile {
+  param(
+    [string]$BaseDir,
+    [string]$ProjectDir
+  )
+
+  if ([string]::IsNullOrWhiteSpace($BaseDir) -or [string]::IsNullOrWhiteSpace($ProjectDir)) { return }
+
+  try {
+    $baseResolved = (Resolve-Path $BaseDir -ErrorAction Stop).Path
+    $projectResolved = (Resolve-Path $ProjectDir -ErrorAction Stop).Path
+    $projectParent = Split-Path -Parent $projectResolved
+    $storedValue = if ($projectParent -and ($projectParent.TrimEnd('\') -ieq $baseResolved.TrimEnd('\'))) {
+      Split-Path -Leaf $projectResolved
+    } else {
+      $projectResolved
+    }
+
+    $pointerFile = Join-Path $baseResolved 'HOROSA_PROJECT_DIR.txt'
+    @(
+      '# Horosa current project pointer'
+      '# Relative child folder name or absolute path'
+      $storedValue
+    ) | Set-Content -Path $pointerFile -Encoding UTF8
+  } catch {}
+}
+
+function Resolve-ProjectDir {
+  param([string]$BaseDir)
+
+  if (Test-HorosaProjectDir -DirPath $BaseDir) {
+    return (Resolve-Path $BaseDir).Path
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_PROJECT_DIR)) {
+    $customDir = $env:HOROSA_PROJECT_DIR.Trim()
+    if (-not [System.IO.Path]::IsPathRooted($customDir)) {
+      $customDir = Join-Path $BaseDir $customDir
+    }
+    if (Test-HorosaProjectDir -DirPath $customDir) {
+      return (Resolve-Path $customDir).Path
+    }
+    Write-Host ("[WARN] HOROSA_PROJECT_DIR is set but invalid: {0}" -f $env:HOROSA_PROJECT_DIR)
+  }
+
+  $pointerCandidates = @(
+    (Join-Path $BaseDir 'HOROSA_PROJECT_DIR.txt'),
+    (Join-Path $BaseDir '.horosa-project-dir.txt')
+  )
+  foreach ($pointerFile in $pointerCandidates) {
+    $pointedProject = Resolve-ProjectPointerTarget -PointerFile $pointerFile -BaseDir $BaseDir
+    if ($pointedProject) {
+      return $pointedProject
+    }
+  }
+
+  $preferredNames = @(
+    'Horosa-Web',
+    'Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c'
+  )
+  foreach ($name in $preferredNames) {
+    $candidate = Join-Path $BaseDir $name
+    if (Test-HorosaProjectDir -DirPath $candidate) {
+      return (Resolve-Path $candidate).Path
+    }
+  }
+
+  $matches = @(
+    Get-ChildItem -Path $BaseDir -Directory -ErrorAction SilentlyContinue |
+      Where-Object { Test-HorosaProjectDir -DirPath $_.FullName } |
+      Sort-Object Name
+  )
+  if ($matches.Count -gt 0) {
+    return $matches[0].FullName
+  }
+
+  return $null
+}
+
+function Resolve-FrontendDistDir {
+  param([string]$ProjDir)
+
+  $distFileDir = Join-Path $ProjDir 'astrostudyui/dist-file'
+  $distDir = Join-Path $ProjDir 'astrostudyui/dist'
+  $distFileIndex = Join-Path $distFileDir 'index.html'
+  $distIndex = Join-Path $distDir 'index.html'
+
+  $hasDistFile = Test-Path $distFileIndex
+  $hasDist = Test-Path $distIndex
+
+  if ($hasDistFile -and $hasDist) {
+    $distFileTime = (Get-Item $distFileIndex).LastWriteTimeUtc
+    $distTime = (Get-Item $distIndex).LastWriteTimeUtc
+    if ($distTime -gt $distFileTime) {
+      Write-Host ("[INFO] Frontend dist is newer than dist-file, using: {0}" -f $distDir)
+      return $distDir
+    }
+    return $distFileDir
+  }
+
+  if ($hasDistFile) { return $distFileDir }
+  if ($hasDist) { return $distDir }
+
+  return $distFileDir
+}
+
+function Resolve-HorosaLayout {
+  param([string]$ScriptDir)
+
+  $resolvedScript = (Resolve-Path $ScriptDir).Path
+  $parentDir = Split-Path -Parent $resolvedScript
+  $repoRoot = if ($parentDir -and (Test-Path (Join-Path $parentDir 'README.md'))) {
+    $parentDir
+  } else {
+    $resolvedScript
+  }
+
+  $workspaceCandidates = New-Object System.Collections.Generic.List[string]
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_WORKSPACE_DIR)) {
+    $customWorkspace = $env:HOROSA_WORKSPACE_DIR.Trim()
+    if (-not [System.IO.Path]::IsPathRooted($customWorkspace)) {
+      $customWorkspace = Join-Path $repoRoot $customWorkspace
+    }
+    $workspaceCandidates.Add($customWorkspace)
+  }
+  $workspaceCandidates.Add((Join-Path $resolvedScript 'workspace'))
+  $workspaceCandidates.Add((Join-Path $repoRoot 'workspace'))
+  $workspaceCandidates.Add((Join-Path $repoRoot 'local\workspace'))
+  $workspaceCandidates.Add($repoRoot)
+
+  $workspaceRoot = $repoRoot
+  foreach ($candidate in $workspaceCandidates) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    if (-not (Test-Path $candidate -PathType Container)) { continue }
+    $candidateResolved = (Resolve-Path $candidate).Path
+    if (Test-HorosaProjectDir -DirPath $candidateResolved) {
+      $workspaceRoot = $candidateResolved
+      break
+    }
+    if (Test-Path (Join-Path $candidateResolved 'runtime\windows') -PathType Container) {
+      $workspaceRoot = $candidateResolved
+      break
+    }
+  }
+
+  return [pscustomobject]@{
+    RepoRoot = $repoRoot
+    WorkspaceRoot = $workspaceRoot
+  }
+}
+
+$layout = Resolve-HorosaLayout -ScriptDir $ScriptRoot
+$RepoRoot = $layout.RepoRoot
+$Root = $layout.WorkspaceRoot
+
+$ProjectDir = Resolve-ProjectDir -BaseDir $Root
+if (-not $ProjectDir) {
+  Write-Host "Project folder not found under: $Root"
+  Write-Host 'Expected a folder that contains astrostudyui / astrostudysrv / astropy.'
+  Write-Host 'You can set HOROSA_PROJECT_DIR to override project directory detection.'
+  Read-Host 'Press Enter to exit'
+  exit 1
+}
+Update-ProjectPointerFile -BaseDir $Root -ProjectDir $ProjectDir
+
+$PyPidFile = Join-Path $ProjectDir '.horosa_win_py.pid'
+$JavaPidFile = Join-Path $ProjectDir '.horosa_win_java.pid'
+$WebPidFile = Join-Path $ProjectDir '.horosa_win_web.pid'
+$ServiceStateFile = Join-Path $ProjectDir '.horosa_win_service_state.json'
+
+$LogRoot = Join-Path $ProjectDir '.horosa-local-logs-win'
+$RunTag = Get-Date -Format 'yyyyMMdd_HHmmss'
+$LogDir = Join-Path $LogRoot $RunTag
+$PyLog = Join-Path $LogDir 'astropy.log'
+$JavaLog = Join-Path $LogDir 'astrostudyboot.log'
+$WebLog = Join-Path $LogDir 'web.log'
+$IssueSummaryFile = Join-Path $RepoRoot 'log/HOROSA_RUN_ISSUES.md'
+$BrowserProfile = Join-Path $ProjectDir '.horosa-browser-profile-win'
+$RunStatus = 'SUCCESS'
+$RunFailureMessage = $null
+
+$DistDir = Resolve-FrontendDistDir -ProjDir $ProjectDir
+$FrontendSource = 'dist-file'
+Write-Host ("[INFO] Frontend static dir: {0}" -f $DistDir)
+if ($DistDir -match '[\\/]astrostudyui[\\/]dist$') {
+  $FrontendSource = 'dist'
+}
+if ($DistDir -match '[\\/]astrostudyui[\\/]dist-file$') {
+  $FrontendSource = 'dist-file'
+}
+
+function Get-ManagedRuntimeWindowsDir {
+  param(
+    [string]$WorkspaceRoot,
+    [string]$RepoBase
+  )
+
+  $defaultRuntimeWindowsDir = Join-Path $WorkspaceRoot 'runtime/windows'
+  $portablePythonDefault = Join-Path $defaultRuntimeWindowsDir 'python\python.exe'
+  $portableJavaDefault = Join-Path $defaultRuntimeWindowsDir 'java\bin\java.exe'
+  $probePath = Join-Path $defaultRuntimeWindowsDir 'python\Lib\site-packages\sklearn\tree\tests\__pycache__\test_monotonic_constraints.cpython-311.pyc'
+  if ((Test-Path $portablePythonDefault) -and (Test-Path $portableJavaDefault)) {
+    return $defaultRuntimeWindowsDir
+  }
+  if ($probePath.Length -lt 210) {
+    return $defaultRuntimeWindowsDir
+  }
+
+  $hashSuffix = 'portable'
+  try {
+    $sha1 = [System.Security.Cryptography.SHA1]::Create()
+    try {
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($RepoBase)
+      $hashSuffix = (-join ($sha1.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') })).Substring(0, 12)
+    } finally {
+      $sha1.Dispose()
+    }
+  } catch {}
+
+  $cacheRoots = New-Object System.Collections.Generic.List[string]
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_RUNTIME_CACHE_DIR)) {
+    $cacheRoots.Add($env:HOROSA_RUNTIME_CACHE_DIR.Trim())
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:LocalAppData)) {
+    $cacheRoots.Add((Join-Path $env:LocalAppData 'Horosa\runtime-cache'))
+  }
+  if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
+    $cacheRoots.Add((Join-Path $env:TEMP 'Horosa\runtime-cache'))
+  }
+
+  foreach ($cacheRoot in $cacheRoots) {
+    if ([string]::IsNullOrWhiteSpace($cacheRoot)) { continue }
+    try {
+      New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+      return (Join-Path (Join-Path $cacheRoot $hashSuffix) 'windows')
+    } catch {}
+  }
+
+  return $defaultRuntimeWindowsDir
+}
+
+$JarPath = Join-Path $ProjectDir 'astrostudysrv/astrostudyboot/target/astrostudyboot.jar'
+$DefaultRuntimeWindowsDir = Join-Path $Root 'runtime/windows'
+$RuntimeWindowsDir = Get-ManagedRuntimeWindowsDir -WorkspaceRoot $Root -RepoBase $RepoRoot
+if ($RuntimeWindowsDir -ne $DefaultRuntimeWindowsDir) {
+  Write-Host ("[INFO] Portable runtime cache moved to short path: {0}" -f $RuntimeWindowsDir)
+}
+$PortablePythonRuntimeDir = Join-Path $RuntimeWindowsDir 'python'
+$PortablePythonExe = Join-Path $PortablePythonRuntimeDir 'python.exe'
+$PortablePythonExeAlt = Join-Path $PortablePythonRuntimeDir 'python3.exe'
+$PortableJavaRuntimeDir = Join-Path $RuntimeWindowsDir 'java'
+$PortableJavaExe = Join-Path $PortableJavaRuntimeDir 'bin/java.exe'
+$PortableJavacExe = Join-Path $PortableJavaRuntimeDir 'bin/javac.exe'
+$PortableMavenRuntimeDir = Join-Path $RuntimeWindowsDir 'maven'
+$PortableMavenCmd = Join-Path $PortableMavenRuntimeDir 'bin/mvn.cmd'
+$PortableMavenBat = Join-Path $PortableMavenRuntimeDir 'bin/mvn.bat'
+$PortableNodeRuntimeDir = Join-Path $RuntimeWindowsDir 'node'
+$PortableNodeExe = Join-Path $PortableNodeRuntimeDir 'node.exe'
+$PortableNodeNpmCmd = Join-Path $PortableNodeRuntimeDir 'npm.cmd'
+$WinBundleRoot = Join-Path $Root 'runtime/windows/bundle'
+$CommonBundleRoot = Join-Path $Root 'runtime/bundle'
+$PythonBin = $null
+$JavaBin = $null
+$NodeBin = $null
+$MavenBin = $null
+$NpmBin = $null
+$JarSource = if (Test-Path $JarPath) { 'project' } else { 'missing' }
+$FrontendRepairFailureReason = $null
+$PythonSourceLabel = $null
+$JavaSourceLabel = $null
+$NodeSourceLabel = $null
+$MavenSourceLabel = $null
+$DefaultWebPort = 8000
+$DefaultBackendPort = 9999
+$DefaultChartPort = 8899
+$WebPort = $DefaultWebPort
+$BackendPort = $DefaultBackendPort
+$ChartPort = $DefaultChartPort
+$PerfMode = $env:HOROSA_PERF_MODE -ne '0'
+$KeepServicesRunning = ($env:HOROSA_KEEP_SERVICES -ne '0')
+$CheckSourceFreshness = ($env:HOROSA_CHECK_SOURCE_FRESHNESS -eq '1')
+$AppCdsEnabled = ($env:HOROSA_APPCDS -ne '0')
+$AppCdsContext = $null
+$UserHomeDir = if (-not [string]::IsNullOrWhiteSpace($env:HOME)) {
+  $env:HOME
+} elseif (-not [string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+  $env:USERPROFILE
+} else {
+  $ProjectDir
+}
+$env:HOME = $UserHomeDir
+$HorosaLogBaseDir = Join-Path $UserHomeDir '.horosa-logs/astrostudyboot'
+
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $IssueSummaryFile) | Out-Null
+if ($env:HOROSA_RESET_BROWSER_PROFILE -eq '1') {
+  Write-Host '[INFO] Resetting browser profile because HOROSA_RESET_BROWSER_PROFILE=1.'
+  if (Test-Path $BrowserProfile) {
+    Remove-Item -Recurse -Force $BrowserProfile -ErrorAction SilentlyContinue
+  }
+}
+New-Item -ItemType Directory -Force -Path $BrowserProfile | Out-Null
+
+function Get-PreferredHorosaWebPortFromProfile {
+  param(
+    [string]$ProfileRoot,
+    [int]$FallbackPort
+  )
+
+  if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
+    return $FallbackPort
+  }
+
+  $levelDbDir = Join-Path $ProfileRoot 'Default\Local Storage\leveldb'
+  if (-not (Test-Path $levelDbDir -PathType Container)) {
+    return $FallbackPort
+  }
+
+  $latin1 = $null
+  try {
+    $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+  } catch {
+    return $FallbackPort
+  }
+
+  $portHits = @{}
+  $patterns = @(
+    @{
+      Regex = 'http://127\.0\.0\.1:(\d+)[\s\S]{0,256}horosa\.localCharts\.v1'
+      Weight = 4
+    },
+    @{
+      Regex = 'http://127\.0\.0\.1:(\d+)[\s\S]{0,256}horosa\.localCases\.v1'
+      Weight = 3
+    }
+  )
+
+  foreach ($file in @(Get-ChildItem -Path $levelDbDir -File -ErrorAction SilentlyContinue)) {
+    try {
+      $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+      if (-not $bytes -or $bytes.Length -eq 0) {
+        continue
+      }
+
+      $content = $latin1.GetString($bytes)
+      foreach ($pattern in $patterns) {
+        $matches = [System.Text.RegularExpressions.Regex]::Matches(
+          $content,
+          $pattern.Regex,
+          [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        )
+        foreach ($match in @($matches)) {
+          $port = 0
+          if (-not [int]::TryParse($match.Groups[1].Value, [ref]$port)) {
+            continue
+          }
+          if ($port -lt 1 -or $port -gt 65535) {
+            continue
+          }
+
+          $key = [string]$port
+          if (-not $portHits.ContainsKey($key)) {
+            $portHits[$key] = [pscustomobject]@{
+              Port = $port
+              Score = 0
+              LastWriteTimeUtc = [datetime]::MinValue
+            }
+          }
+
+          $portHits[$key].Score += [int]$pattern.Weight
+          if ($file.LastWriteTimeUtc -gt $portHits[$key].LastWriteTimeUtc) {
+            $portHits[$key].LastWriteTimeUtc = $file.LastWriteTimeUtc
+          }
+        }
+      }
+    } catch {}
+  }
+
+  if ($portHits.Count -eq 0) {
+    return $FallbackPort
+  }
+
+  $best = $portHits.Values |
+    Sort-Object -Property `
+      @{ Expression = 'Score'; Descending = $true }, `
+      @{ Expression = 'LastWriteTimeUtc'; Descending = $true }, `
+      @{ Expression = 'Port'; Descending = $false } |
+    Select-Object -First 1
+
+  if ($best -and $best.Port -ge 1 -and $best.Port -le 65535) {
+    return [int]$best.Port
+  }
+
+  return $FallbackPort
+}
+
+function Get-EnvPortOrDefault {
+  param(
+    [string]$EnvName,
+    [int]$DefaultPort
+  )
+
+  $raw = [System.Environment]::GetEnvironmentVariable($EnvName, 'Process')
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    return $DefaultPort
+  }
+
+  $parsed = 0
+  if ([int]::TryParse($raw, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le 65535) {
+    return $parsed
+  }
+
+  Write-Host ("[WARN] Ignore invalid {0}: {1}" -f $EnvName, $raw)
+  return $DefaultPort
+}
+
+$HasExplicitWebPort = -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable('HOROSA_WEB_PORT', 'Process'))
+$HasExplicitBackendPort = -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable('HOROSA_SERVER_PORT', 'Process'))
+$HasExplicitChartPort = -not [string]::IsNullOrWhiteSpace([System.Environment]::GetEnvironmentVariable('HOROSA_CHART_PORT', 'Process'))
+
+$DefaultWebPort = Get-EnvPortOrDefault -EnvName 'HOROSA_WEB_PORT' -DefaultPort $DefaultWebPort
+$DefaultBackendPort = Get-EnvPortOrDefault -EnvName 'HOROSA_SERVER_PORT' -DefaultPort $DefaultBackendPort
+$DefaultChartPort = Get-EnvPortOrDefault -EnvName 'HOROSA_CHART_PORT' -DefaultPort $DefaultChartPort
+$WebPort = $DefaultWebPort
+$BackendPort = $DefaultBackendPort
+$ChartPort = $DefaultChartPort
+$ExistingServiceState = $null
+$ReusingRunningServices = $false
+
+
+function Test-PortOpen {
+  param([int]$Port)
+  $client = $null
+  try {
+    $client = New-Object System.Net.Sockets.TcpClient
+    $iar = $client.BeginConnect('127.0.0.1', $Port, $null, $null)
+    $ok = $iar.AsyncWaitHandle.WaitOne(300)
+    if (-not $ok) { return $false }
+    $client.EndConnect($iar) | Out-Null
+    return $true
+  } catch {
+    return $false
+  } finally {
+    if ($client) { $client.Dispose() }
+  }
+}
+
+# horosa_local_http_heartbeat_v1: port-open != Spring truly ready (the desktop launcher's
+# white-screen lesson). One real HTTP round-trip against the backend confirms the listener
+# answers; ANY HTTP status (incl. 4xx/5xx) counts as alive, only refused/timeout keeps waiting.
+# Uses raw WebRequest with Proxy=$null: engine-agnostic (WinPS 5.1 + pwsh) and immune to
+# system-proxy configs that would tunnel a 127.0.0.1 probe (Clash/v2ray class).
+function Test-BackendHttpAlive {
+  param([int]$Port, [int]$TimeoutMs = 1500)
+  $resp = $null
+  try {
+    $req = [System.Net.WebRequest]::Create(("http://127.0.0.1:{0}/common/time" -f $Port))
+    $req.Proxy = $null
+    $req.Timeout = $TimeoutMs
+    $req.ReadWriteTimeout = $TimeoutMs
+    $resp = $req.GetResponse()
+    return $true
+  } catch [System.Net.WebException] {
+    if ($_.Exception.Response) { return $true }
+    return $false
+  } catch {
+    return $false
+  } finally {
+    if ($resp) { try { $resp.Close() } catch {} }
+  }
+}
+
+function Wait-PortFree {
+  param(
+    [int]$Port,
+    [int]$TimeoutMs = 6000
+  )
+  $elapsed = 0
+  while ($elapsed -lt $TimeoutMs) {
+    if (-not (Test-PortOpen -Port $Port)) { return $true }
+    Start-Sleep -Milliseconds 200
+    $elapsed += 200
+  }
+  return (-not (Test-PortOpen -Port $Port))
+}
+
+function Get-ListeningOwningProcesses {
+  param([int]$Port)
+
+  try {
+    return @(
+      Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    )
+  } catch {
+    return @()
+  }
+}
+
+function Get-ProcessCommandLine {
+  param([int]$ProcessId)
+
+  try {
+    $proc = Get-CimInstance Win32_Process -Filter ("ProcessId={0}" -f $ProcessId) -ErrorAction Stop
+    return [string]$proc.CommandLine
+  } catch {
+    try {
+      $proc = Get-Process -Id $ProcessId -ErrorAction Stop
+      return [string]$proc.Path
+    } catch {
+      return $null
+    }
+  }
+}
+
+function Test-ProcessOwnedByProject {
+  param([int]$ProcessId)
+
+  $cmdline = Get-ProcessCommandLine -ProcessId $ProcessId
+  if ([string]::IsNullOrWhiteSpace($cmdline)) {
+    return $false
+  }
+
+  $markers = @(
+    (Join-Path $ProjectDir 'astropy\websrv\webchartsrv.py'),
+    $JarPath,
+    $DistDir,
+    (Join-Path $ProjectDir 'astrostudyui\dist-file'),
+    (Join-Path $ProjectDir 'astrostudyui\dist')
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+  foreach ($marker in $markers) {
+    $markerVariants = @(
+      $marker,
+      ($marker -replace '\\', '\\'),
+      ($marker -replace '\\', '\\\\'),
+      ($marker -replace '\\', '/')
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique
+
+    foreach ($variant in $markerVariants) {
+      if ($cmdline.IndexOf($variant, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        return $true
+      }
+    }
+  }
+
+  return $false
+}
+
+function Test-PortOwnedByProject {
+  param([int]$Port)
+
+  foreach ($ownerPid in (Get-ListeningOwningProcesses -Port $Port)) {
+    if (-not $ownerPid) { continue }
+    if (Test-ProcessOwnedByProject -ProcessId $ownerPid) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
+function Stop-ProjectPortOwners {
+  param([string]$Name, [int]$Port)
+
+  $ownerPids = Get-ListeningOwningProcesses -Port $Port
+  foreach ($ownerPid in $ownerPids) {
+    if (-not $ownerPid) { continue }
+    if ($ownerPid -eq $PID) { continue }
+    if (-not (Test-ProcessOwnedByProject -ProcessId $ownerPid)) {
+      continue
+    }
+    try {
+      Stop-Process -Id $ownerPid -Force -ErrorAction Stop
+      Write-Host ("{0} freed port {1} by stopping project pid {2}" -f $Name, $Port, $ownerPid)
+    } catch {
+      Write-Host ("{0} could not stop project pid {1} on port {2}" -f $Name, $ownerPid, $Port)
+    }
+  }
+
+  if (-not (Wait-PortFree -Port $Port -TimeoutMs 6000)) {
+    Write-Host ("{0} port {1} is still occupied after project cleanup attempts" -f $Name, $Port)
+  }
+}
+
+function Stop-ProjectProcessesByCommandMarker {
+  param(
+    [string]$Name,
+    [string[]]$Markers
+  )
+
+  $validMarkers = @($Markers | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+  if ($validMarkers.Count -eq 0) {
+    return
+  }
+
+  try {
+    $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue
+  } catch {
+    $procs = @()
+  }
+
+  foreach ($proc in @($procs)) {
+    if ($null -eq $proc) { continue }
+    if ($proc.ProcessId -eq $PID) { continue }
+
+    $cmdline = [string]$proc.CommandLine
+    if ([string]::IsNullOrWhiteSpace($cmdline)) {
+      continue
+    }
+
+    $matched = $false
+    foreach ($marker in $validMarkers) {
+      if ($cmdline.IndexOf($marker, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        $matched = $true
+        break
+      }
+    }
+    if (-not $matched) {
+      continue
+    }
+
+    try {
+      Stop-Process -Id $proc.ProcessId -Force -ErrorAction Stop
+      Write-Host ("{0} stopped project pid {1}" -f $Name, $proc.ProcessId)
+    } catch {
+      Write-Host ("{0} could not stop project pid {1}" -f $Name, $proc.ProcessId)
+    }
+  }
+}
+
+function Resolve-PortLayout {
+  param(
+    [int]$PreferredWebPort,
+    [int]$PreferredChartPort,
+    [int]$PreferredBackendPort
+  )
+
+  $chartOffset = $PreferredChartPort - $PreferredWebPort
+  $backendOffset = $PreferredBackendPort - $PreferredWebPort
+  $candidateWeb = $PreferredWebPort
+  $fallbackWeb = if ($PreferredWebPort -lt 18000) { 18000 } else { $PreferredWebPort + 1 }
+  $maxAttempts = 4000
+
+  for ($attempt = 0; $attempt -lt $maxAttempts; $attempt++) {
+    $candidateChart = $candidateWeb + $chartOffset
+    $candidateBackend = $candidateWeb + $backendOffset
+    if ($candidateWeb -gt 65535 -or $candidateChart -gt 65535 -or $candidateBackend -gt 65535) {
+      break
+    }
+
+    $occupiedByForeign = $false
+    $candidatePorts = @($candidateWeb, $candidateChart, $candidateBackend)
+
+    foreach ($port in $candidatePorts) {
+      if (-not (Test-PortOpen -Port $port)) {
+        continue
+      }
+
+      if (Test-PortOwnedByProject -Port $port) {
+        Stop-ProjectPortOwners -Name 'cleanup' -Port $port
+        if (-not (Wait-PortFree -Port $port -TimeoutMs 6000)) {
+          $occupiedByForeign = $true
+          break
+        }
+        continue
+      }
+
+      $occupiedByForeign = $true
+      break
+    }
+
+    if (-not $occupiedByForeign) {
+      $usedAlt = (
+        $candidateWeb -ne $PreferredWebPort -or
+        $candidateChart -ne $PreferredChartPort -or
+        $candidateBackend -ne $PreferredBackendPort
+      )
+      return [pscustomobject]@{
+        WebPort = $candidateWeb
+        ChartPort = $candidateChart
+        BackendPort = $candidateBackend
+        UsedAlternatePorts = $usedAlt
+      }
+    }
+
+    if ($attempt -eq 0) {
+      $candidateWeb = $fallbackWeb
+    } else {
+      $candidateWeb++
+    }
+  }
+
+  throw "Unable to find an available port layout starting from web=$PreferredWebPort chart=$PreferredChartPort backend=$PreferredBackendPort"
+}
+
+function Get-PidFromFile {
+  param([string]$Path)
+  if (-not (Test-Path $Path)) { return $null }
+  $raw = (Get-Content -Path $Path -Raw).Trim()
+  if (-not $raw) { return $null }
+  try { return [int]$raw } catch { return $null }
+}
+
+function Convert-ToPortNumber {
+  param($Value)
+  $port = 0
+  if ([int]::TryParse("$Value", [ref]$port) -and $port -ge 1 -and $port -le 65535) {
+    return $port
+  }
+  return $null
+}
+
+function Convert-ToProcessId {
+  param($Value)
+  $pidValue = 0
+  if ([int]::TryParse("$Value", [ref]$pidValue) -and $pidValue -gt 0) {
+    return $pidValue
+  }
+  return $null
+}
+
+function Get-ServiceState {
+  if (-not (Test-Path $ServiceStateFile)) { return $null }
+
+  try {
+    $raw = (Get-Content -Path $ServiceStateFile -Raw -ErrorAction Stop).Trim()
+    if (-not $raw) { return $null }
+
+    $state = $raw | ConvertFrom-Json -ErrorAction Stop
+    $web = Convert-ToPortNumber $state.WebPort
+    $chart = Convert-ToPortNumber $state.ChartPort
+    $backend = Convert-ToPortNumber $state.BackendPort
+    if (-not $web -or -not $chart -or -not $backend) {
+      return $null
+    }
+
+    return [pscustomobject]@{
+      WebPort = $web
+      ChartPort = $chart
+      BackendPort = $backend
+      WebPid = Convert-ToProcessId $state.WebPid
+      ChartPid = Convert-ToProcessId $state.ChartPid
+      BackendPid = Convert-ToProcessId $state.BackendPid
+    }
+  } catch {
+    return $null
+  }
+}
+
+function Remove-ServiceState {
+  if (Test-Path $ServiceStateFile) {
+    Remove-Item -Force $ServiceStateFile -ErrorAction SilentlyContinue
+  }
+}
+
+function Save-ServiceState {
+  param(
+    [int]$WebPort,
+    [int]$ChartPort,
+    [int]$BackendPort
+  )
+
+  try {
+    $payload = [pscustomobject]@{
+      ProjectDir = $ProjectDir
+      WebPort = $WebPort
+      ChartPort = $ChartPort
+      BackendPort = $BackendPort
+      WebPid = Get-PidFromFile -Path $WebPidFile
+      ChartPid = Get-PidFromFile -Path $PyPidFile
+      BackendPid = Get-PidFromFile -Path $JavaPidFile
+      UpdatedAt = (Get-Date).ToString('o')
+    }
+    $payload | ConvertTo-Json -Depth 3 | Set-Content -Path $ServiceStateFile -Encoding UTF8
+  } catch {}
+}
+
+function Test-ServiceStateReusable {
+  param($State)
+  if (-not $State) { return $false }
+
+  $webPid = if ($State.PSObject.Properties['WebPid']) { Convert-ToProcessId $State.WebPid } else { $null }
+  $chartPid = if ($State.PSObject.Properties['ChartPid']) { Convert-ToProcessId $State.ChartPid } else { $null }
+  $backendPid = if ($State.PSObject.Properties['BackendPid']) { Convert-ToProcessId $State.BackendPid } else { $null }
+  $pidChecks = @(
+    @{ Name = 'web'; Pid = $webPid; Port = $State.WebPort },
+    @{ Name = 'chart'; Pid = $chartPid; Port = $State.ChartPort },
+    @{ Name = 'backend'; Pid = $backendPid; Port = $State.BackendPort }
+  )
+  $allTrackedPidsAlive = $true
+  foreach ($check in $pidChecks) {
+    if (-not $check.Pid) {
+      $allTrackedPidsAlive = $false
+      break
+    }
+    try {
+      $proc = Get-Process -Id $check.Pid -ErrorAction Stop
+      if ($null -eq $proc -or (-not (Test-ProcessOwnedByProject -ProcessId $check.Pid))) {
+        $allTrackedPidsAlive = $false
+        break
+      }
+    } catch {
+      $allTrackedPidsAlive = $false
+      break
+    }
+  }
+
+  foreach ($port in @($State.WebPort, $State.ChartPort, $State.BackendPort)) {
+    if (-not (Test-PortOpen -Port $port)) {
+      if ($allTrackedPidsAlive) {
+        Start-Sleep -Milliseconds 300
+        if (-not (Test-PortOpen -Port $port)) {
+          return $false
+        }
+      } else {
+        return $false
+      }
+    }
+    if (-not (Test-PortOwnedByProject -Port $port)) {
+      if (-not $allTrackedPidsAlive) {
+        return $false
+      }
+    }
+  }
+
+  return $true
+}
+
+function Find-ReusablePortTriple {
+  param(
+    [int]$CandidateWebPort,
+    [int]$CandidateChartPort,
+    [int]$CandidateBackendPort
+  )
+
+  if ($CandidateWebPort -lt 1 -or $CandidateChartPort -lt 1 -or $CandidateBackendPort -lt 1) {
+    return $null
+  }
+
+  $candidate = [pscustomobject]@{
+    WebPort = $CandidateWebPort
+    ChartPort = $CandidateChartPort
+    BackendPort = $CandidateBackendPort
+  }
+
+  if (Test-ServiceStateReusable -State $candidate) {
+    return $candidate
+  }
+
+  return $null
+}
+
+if ($KeepServicesRunning) {
+  $ExistingServiceState = Get-ServiceState
+  if ($ExistingServiceState -and (Test-ServiceStateReusable -State $ExistingServiceState)) {
+    $WebPort = $ExistingServiceState.WebPort
+    $ChartPort = $ExistingServiceState.ChartPort
+    $BackendPort = $ExistingServiceState.BackendPort
+    $DefaultWebPort = $WebPort
+    $DefaultChartPort = $ChartPort
+    $DefaultBackendPort = $BackendPort
+    $ReusingRunningServices = $true
+    Write-Host ("[INFO] Reusing running local services immediately: web={0} chart={1} backend={2}" -f $WebPort, $ChartPort, $BackendPort)
+  } elseif ($ExistingServiceState) {
+    Write-Host '[INFO] Found stale local service state; launcher will refresh it.'
+    Remove-ServiceState
+    $ExistingServiceState = $null
+  }
+}
+
+if ((-not $ReusingRunningServices) -and (-not $HasExplicitWebPort) -and (-not $HasExplicitBackendPort) -and (-not $HasExplicitChartPort)) {
+  $storagePreferredWebPort = Get-PreferredHorosaWebPortFromProfile -ProfileRoot $BrowserProfile -FallbackPort $DefaultWebPort
+  if ($storagePreferredWebPort -ne $DefaultWebPort) {
+    $chartOffset = $DefaultChartPort - $DefaultWebPort
+    $backendOffset = $DefaultBackendPort - $DefaultWebPort
+    $DefaultWebPort = $storagePreferredWebPort
+    $DefaultChartPort = $storagePreferredWebPort + $chartOffset
+    $DefaultBackendPort = $storagePreferredWebPort + $backendOffset
+    $WebPort = $DefaultWebPort
+    $BackendPort = $DefaultBackendPort
+    $ChartPort = $DefaultChartPort
+    Write-Host ("[INFO] Reusing local storage origin port {0} so saved charts/cases remain visible." -f $DefaultWebPort)
+  }
+}
+
+if (($KeepServicesRunning) -and (-not $ReusingRunningServices)) {
+  $implicitReusableState = Find-ReusablePortTriple -CandidateWebPort $DefaultWebPort -CandidateChartPort $DefaultChartPort -CandidateBackendPort $DefaultBackendPort
+  if ($implicitReusableState) {
+    $WebPort = $implicitReusableState.WebPort
+    $ChartPort = $implicitReusableState.ChartPort
+    $BackendPort = $implicitReusableState.BackendPort
+    $DefaultWebPort = $WebPort
+    $DefaultChartPort = $ChartPort
+    $DefaultBackendPort = $BackendPort
+    $ExistingServiceState = $implicitReusableState
+    $ReusingRunningServices = $true
+    Save-ServiceState -WebPort $WebPort -ChartPort $ChartPort -BackendPort $BackendPort
+    Write-Host ("[INFO] Reusing running local services without state file: web={0} chart={1} backend={2}" -f $WebPort, $ChartPort, $BackendPort)
+  }
+}
+
+function Stop-PidFile {
+  param([string]$Name, [string]$Path)
+  $procId = Get-PidFromFile -Path $Path
+  if ($procId) {
+    $isProjectProcess = $false
+    try {
+      $null = Get-Process -Id $procId -ErrorAction Stop
+      $isProjectProcess = Test-ProcessOwnedByProject -ProcessId $procId
+    } catch {
+      $isProjectProcess = $false
+    }
+
+    if (-not $isProjectProcess) {
+      Write-Host "$Name stale pid $procId ignored"
+      if (Test-Path $Path) { Remove-Item -Force $Path }
+      return
+    }
+
+    try {
+      if ($Name -eq 'java' -and $script:AppCdsContext -and (-not (Test-HorosaAppCdsArchiveReady -Context $script:AppCdsContext))) {
+        Invoke-HorosaAppCdsDynamicDump -ProcessId $procId -Context $script:AppCdsContext -JavaExe $script:JavaBin | Out-Null
+      }
+      Stop-Process -Id $procId -Force -ErrorAction Stop
+      Write-Host "$Name stopped pid $procId"
+    } catch {
+      Write-Host "$Name pid $procId not running"
+    }
+  }
+  if (Test-Path $Path) { Remove-Item -Force $Path }
+}
+
+# (removed) Stop-PortOwners: dead code that killed a port's owning process WITHOUT verifying
+# it belongs to this project - a foot-gun waiting to be re-wired. Every live call site uses
+# Stop-ProjectPortOwners (ownership-verified via Test-ProcessOwnedByProject); foreign owners
+# are never killed - Resolve-PortLayout switches to alternate ports instead.
+
+function Cleanup-All {
+  param(
+    [int]$WebPortToClean = $WebPort,
+    [int]$BackendPortToClean = $BackendPort,
+    [int]$ChartPortToClean = $ChartPort,
+    [switch]$KeepState
+  )
+
+  Stop-PidFile -Name 'web' -Path $WebPidFile
+  Stop-PidFile -Name 'java' -Path $JavaPidFile
+  Stop-PidFile -Name 'python' -Path $PyPidFile
+  Stop-ProjectPortOwners -Name 'web' -Port $WebPortToClean
+  Stop-ProjectPortOwners -Name 'java' -Port $BackendPortToClean
+  Stop-ProjectPortOwners -Name 'python' -Port $ChartPortToClean
+  if (-not $KeepState) {
+    Remove-ServiceState
+  }
+}
+
+function Prepare-BackendJarRefresh {
+  if ($ReusingRunningServices) {
+    $cleanupWebPort = if ($ExistingServiceState -and $ExistingServiceState.WebPort) { $ExistingServiceState.WebPort } else { $WebPort }
+    $cleanupChartPort = if ($ExistingServiceState -and $ExistingServiceState.ChartPort) { $ExistingServiceState.ChartPort } else { $ChartPort }
+    $cleanupBackendPort = if ($ExistingServiceState -and $ExistingServiceState.BackendPort) { $ExistingServiceState.BackendPort } else { $BackendPort }
+    Write-Host '[INFO] Backend refresh needed; stopping reusable local services first.'
+    Cleanup-All -WebPortToClean $cleanupWebPort -ChartPortToClean $cleanupChartPort -BackendPortToClean $cleanupBackendPort
+    $script:ReusingRunningServices = $false
+    $script:ExistingServiceState = $null
+  }
+
+  Stop-ProjectProcessesByCommandMarker -Name 'backend refresh' -Markers @(
+    $JarPath,
+    (Join-Path $ProjectDir 'astropy\websrv\webchartsrv.py'),
+    $DistDir,
+    (Join-Path $ProjectDir 'astrostudyui\dist-file'),
+    (Join-Path $ProjectDir 'astrostudyui\dist')
+  )
+}
+
+function Start-Background {
+  param(
+    [string]$FilePath,
+    [string[]]$Arguments,
+    [string]$LogPath,
+    [string]$PidFile
+  )
+
+  $ErrPath = "$LogPath.err"
+  $proc = Start-Process -FilePath $FilePath `
+                        -ArgumentList $Arguments `
+                        -PassThru `
+                        -WindowStyle Hidden `
+                        -RedirectStandardOutput $LogPath `
+                        -RedirectStandardError $ErrPath
+  Set-Content -Path $PidFile -Value $proc.Id -NoNewline
+  return $proc
+}
+
+function Quote-Arg {
+  param([string]$Value)
+  if ($null -eq $Value) { return '""' }
+  '"' + ($Value -replace '"', '\\"') + '"'
+}
+
+function Get-FileSizeSafe {
+  param([string]$Path)
+  if (-not (Test-Path $Path)) { return 0 }
+  try {
+    return (Get-Item $Path).Length
+  } catch {
+    return 0
+  }
+}
+
+function Get-IssueLinesFromLog {
+  param(
+    [string]$Path,
+    [int]$TailLines = 160,
+    [int]$MaxLines = 10
+  )
+
+  if (-not (Test-Path $Path)) { return @() }
+  $content = @(Get-Content -Path $Path -Tail $TailLines -ErrorAction SilentlyContinue)
+  if ($content.Count -eq 0) { return @() }
+
+  $hits = New-Object System.Collections.Generic.List[string]
+  foreach ($line in $content) {
+    $txt = "$line".Trim()
+    if ([string]::IsNullOrWhiteSpace($txt)) { continue }
+    if ($txt -match '(?i)RollingFileAppender') {
+      continue
+    }
+    $matched = $false
+    if ($txt -match '(?i)\b(exception|traceback|failed|fatal|timeout|timed out|refused|denied|unable|param error|no module named|startup failed)\b') {
+      $matched = $true
+    } elseif ($txt -match '\sERROR-\s') {
+      $matched = $true
+    }
+    if ($matched) {
+      $hits.Add($txt)
+      if ($hits.Count -ge $MaxLines) { break }
+    }
+  }
+
+  return ,$hits.ToArray()
+}
+
+function Append-RunIssueSummary {
+  param(
+    [string]$Status,
+    [string]$FailureMessage
+  )
+
+  try {
+    if (-not (Test-Path $IssueSummaryFile)) {
+      @(
+        '# Horosa Run Issues'
+        ''
+        'Auto-generated run diagnostics. Each launch appends frontend/backend/python issue hints.'
+        ''
+      ) | Set-Content -Path $IssueSummaryFile -Encoding UTF8
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    $lines.Add("## [$ts] $Status")
+    $lines.Add("- RunTag: $RunTag")
+    $lines.Add("- LogDir: $LogDir")
+    if ($FailureMessage) {
+      $lines.Add("- StartupFailure: $FailureMessage")
+    }
+
+    $targets = @(
+      @{ Name = 'Frontend(web)'; Out = $WebLog; Err = "$WebLog.err" },
+      @{ Name = 'Backend(Java)'; Out = $JavaLog; Err = "$JavaLog.err" },
+      @{ Name = 'ChartPy(Python)'; Out = $PyLog; Err = "$PyLog.err" }
+    )
+
+    foreach ($target in $targets) {
+      $errSize = Get-FileSizeSafe -Path $target.Err
+      $outSize = Get-FileSizeSafe -Path $target.Out
+      $issues = @()
+      $issues += Get-IssueLinesFromLog -Path $target.Err
+      foreach ($line in (Get-IssueLinesFromLog -Path $target.Out)) {
+        if ($issues -notcontains $line) {
+          $issues += $line
+        }
+      }
+
+      $lines.Add("- $($target.Name): errBytes=$errSize, outBytes=$outSize, matchedIssues=$($issues.Count)")
+      foreach ($line in ($issues | Select-Object -First 8)) {
+        $lines.Add("  - $line")
+      }
+    }
+
+    $lines.Add('')
+    Add-Content -Path $IssueSummaryFile -Value ($lines -join "`r`n") -Encoding UTF8
+    Write-Host ("Issue summary updated: {0}" -f $IssueSummaryFile)
+  } catch {
+    Write-Host ("[WARN] Failed to write issue summary file: {0}" -f $_.Exception.Message)
+  }
+}
+
+function Enable-LocalLoopbackProxyBypass {
+  $proxyKeys = @('http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY')
+  $noProxyKeys = @('no_proxy', 'NO_PROXY')
+  $allKeys = @($proxyKeys + $noProxyKeys)
+
+  $snapshot = @{}
+  foreach ($key in $allKeys) {
+    $snapshot[$key] = [System.Environment]::GetEnvironmentVariable($key, 'Process')
+  }
+
+  $detected = @()
+  foreach ($key in $proxyKeys) {
+    $val = $snapshot[$key]
+    if (-not [string]::IsNullOrWhiteSpace($val)) {
+      $detected += $key
+    }
+  }
+
+  if ($detected.Count -gt 0) {
+    Write-Host ("[INFO] Detected proxy env vars ({0}), forcing local-loopback bypass for launcher process." -f ($detected -join ', '))
+  }
+
+  foreach ($key in $proxyKeys) {
+    if (Test-Path ("Env:{0}" -f $key)) {
+      Remove-Item ("Env:{0}" -f $key) -ErrorAction SilentlyContinue
+    }
+  }
+
+  $loopbackBypass = '127.0.0.1,localhost,::1'
+  $env:no_proxy = $loopbackBypass
+  $env:NO_PROXY = $loopbackBypass
+
+  return $snapshot
+}
+
+function Restore-EnvSnapshot {
+  param([hashtable]$Snapshot)
+
+  if (-not $Snapshot) { return }
+  foreach ($entry in $Snapshot.GetEnumerator()) {
+    $key = $entry.Key
+    $value = [string]$entry.Value
+    if ($null -eq $entry.Value) {
+      if (Test-Path ("Env:{0}" -f $key)) {
+        Remove-Item ("Env:{0}" -f $key) -ErrorAction SilentlyContinue
+      }
+      continue
+    }
+    [System.Environment]::SetEnvironmentVariable($key, $value, 'Process')
+  }
+}
+
+function Invoke-DownloadWithFallback {
+  param(
+    [string[]]$Urls,
+    [string]$OutFile,
+    [int]$MaxRetriesPerSource = 3,
+    [int]$TimeoutSec = 180
+  )
+
+  if (-not $OutFile) { return $false }
+  $normalizedUrls = @(
+    $Urls |
+      ForEach-Object { "$_".Trim() } |
+      Where-Object { $_ -match '^https?://' } |
+      Select-Object -Unique
+  )
+  if ($normalizedUrls.Count -eq 0) { return $false }
+
+  $outDir = Split-Path -Parent $OutFile
+  if ($outDir) {
+    New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+  }
+
+  $curlCmd = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+  $bitsAvailable = $null -ne (Get-Command 'Start-BitsTransfer' -ErrorAction SilentlyContinue)
+
+  foreach ($url in $normalizedUrls) {
+    for ($attempt = 1; $attempt -le $MaxRetriesPerSource; $attempt++) {
+      if (Test-Path $OutFile) {
+        Remove-Item -Force $OutFile -ErrorAction SilentlyContinue
+      }
+      Write-Host ("[DL] {0} (attempt {1}/{2})" -f $url, $attempt, $MaxRetriesPerSource)
+
+      if ($bitsAvailable) {
+        try {
+          Start-BitsTransfer -Source $url -Destination $OutFile -ErrorAction Stop
+          if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
+            Write-Host '[DL] Download success via BITS.'
+            return $true
+          }
+        } catch {
+          Write-Host ("[DL][WARN] BITS failed: {0}" -f $_.Exception.Message)
+        }
+      }
+
+      try {
+        Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -TimeoutSec $TimeoutSec -ErrorAction Stop
+        if ((Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
+          Write-Host '[DL] Download success via Invoke-WebRequest.'
+          return $true
+        }
+      } catch {
+        Write-Host ("[DL][WARN] Invoke-WebRequest failed: {0}" -f $_.Exception.Message)
+      }
+
+      if ($curlCmd -and $curlCmd.Source) {
+        try {
+          $curlArgs = @(
+            '-L',
+            '--fail',
+            '--connect-timeout', '20',
+            '--max-time', "$TimeoutSec",
+            '-o', $OutFile,
+            $url
+          )
+          $curlProc = Start-Process -FilePath $curlCmd.Source -ArgumentList $curlArgs -Wait -PassThru -NoNewWindow
+          if (($curlProc.ExitCode -eq 0) -and (Test-Path $OutFile) -and ((Get-Item $OutFile).Length -gt 0)) {
+            Write-Host '[DL] Download success via curl.exe.'
+            return $true
+          }
+          Write-Host ("[DL][WARN] curl.exe exit code: {0}" -f $curlProc.ExitCode)
+        } catch {
+          Write-Host ("[DL][WARN] curl.exe failed: {0}" -f $_.Exception.Message)
+        }
+      }
+
+      Start-Sleep -Seconds 1
+    }
+  }
+
+  return $false
+}
+
+function Resolve-Browser {
+  $chromeCandidates = @(
+    "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+    "$env:ProgramFiles(x86)\Google\Chrome\Application\chrome.exe",
+    "$env:LocalAppData\Google\Chrome\Application\chrome.exe",
+    "$env:ProgramFiles\Google\Chrome Beta\Application\chrome.exe",
+    "$env:ProgramFiles(x86)\Google\Chrome Beta\Application\chrome.exe",
+    "$env:LocalAppData\Google\Chrome Beta\Application\chrome.exe"
+  )
+  foreach ($p in $chromeCandidates) {
+    if ($p -and (Test-Path $p)) { return $p }
+  }
+
+  $candidates = @(
+    "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe",
+    "$env:ProgramFiles(x86)\Microsoft\Edge\Application\msedge.exe",
+    "$env:ProgramFiles\BraveSoftware\Brave-Browser\Application\brave.exe",
+    "$env:ProgramFiles(x86)\BraveSoftware\Brave-Browser\Application\brave.exe",
+    "$env:LocalAppData\Chromium\Application\chrome.exe"
+  )
+  foreach ($p in $candidates) {
+    if ($p -and (Test-Path $p)) { return $p }
+  }
+  return $null
+}
+
+function Stop-BrowserProcessesForProfile {
+  param(
+    [string]$ProfileRoot
+  )
+
+  if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
+    return
+  }
+
+  try {
+    $escaped = [Regex]::Escape($ProfileRoot)
+    $procs = Get-CimInstance Win32_Process -Filter "name='chrome.exe' or name='msedge.exe' or name='brave.exe'" -ErrorAction SilentlyContinue
+    foreach ($proc in @($procs)) {
+      if ($null -eq $proc -or [string]::IsNullOrWhiteSpace($proc.CommandLine)) {
+        continue
+      }
+      if ($proc.CommandLine -match $escaped) {
+        try {
+          Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
+        } catch {}
+      }
+    }
+  } catch {}
+}
+
+function Get-BrowserAppWindowBounds {
+  $scale = 0.8
+
+  $bounds = [pscustomobject]@{
+    Width = 1280
+    Height = 820
+    Left = 80
+    Top = 40
+    Maximized = $true
+  }
+
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue | Out-Null
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen
+    if ($screen -and $screen.WorkingArea.Width -gt 0 -and $screen.WorkingArea.Height -gt 0) {
+      $workArea = $screen.WorkingArea
+      $targetWidth = [Math]::Round($workArea.Width * $scale)
+      $targetHeight = [Math]::Round($workArea.Height * $scale)
+      $width = [Math]::Max(1100, [Math]::Min($workArea.Width - 20, $targetWidth))
+      $height = [Math]::Max(700, [Math]::Min($workArea.Height - 20, $targetHeight))
+      $left = $workArea.Left + [Math]::Max(0, [Math]::Floor(($workArea.Width - $width) / 2))
+      $top = $workArea.Top + [Math]::Max(0, [Math]::Floor(($workArea.Height - $height) / 2))
+      $bounds = [pscustomobject]@{
+        Width = [int]$width
+        Height = [int]$height
+        Left = [int]$left
+        Top = [int]$top
+        Maximized = $true
+      }
+    }
+  } catch {}
+
+  return $bounds
+}
+
+function Ensure-NativeWindowTools {
+  if ('Horosa.NativeWindowTools' -as [type]) {
+    return
+  }
+
+  Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace Horosa {
+  public static class NativeWindowTools {
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPos(
+      IntPtr hWnd,
+      IntPtr hWndInsertAfter,
+      int X,
+      int Y,
+      int cx,
+      int cy,
+      uint uFlags
+    );
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+  }
+}
+"@ -ErrorAction SilentlyContinue | Out-Null
+}
+
+function Get-BrowserWindowProcessesForProfile {
+  param(
+    [string]$BrowserExePath,
+    [string]$ProfileRoot
+  )
+
+  $result = @()
+  if ([string]::IsNullOrWhiteSpace($BrowserExePath) -or [string]::IsNullOrWhiteSpace($ProfileRoot)) {
+    return $result
+  }
+
+  $browserName = [System.IO.Path]::GetFileNameWithoutExtension($BrowserExePath)
+  if ([string]::IsNullOrWhiteSpace($browserName)) {
+    return $result
+  }
+
+  try {
+    $escapedProfile = [Regex]::Escape($ProfileRoot)
+    $procs = Get-CimInstance Win32_Process -Filter ("name='{0}.exe'" -f $browserName) -ErrorAction SilentlyContinue
+    foreach ($proc in @($procs)) {
+      if ($null -eq $proc -or [string]::IsNullOrWhiteSpace($proc.CommandLine)) {
+        continue
+      }
+      if ($proc.CommandLine -notmatch $escapedProfile) {
+        continue
+      }
+      try {
+        $liveProc = Get-Process -Id $proc.ProcessId -ErrorAction Stop
+        $result += $liveProc
+      } catch {}
+    }
+  } catch {}
+
+  return @($result | Sort-Object Id -Unique)
+}
+
+function Set-ProcessWindowBounds {
+  param(
+    [System.Diagnostics.Process]$Process,
+    $Bounds
+  )
+
+  if ($null -eq $Process -or $null -eq $Bounds) {
+    return $false
+  }
+
+  try {
+    $Process.Refresh()
+  } catch {
+    return $false
+  }
+
+  if ($Process.HasExited) {
+    return $false
+  }
+
+  $handle = $Process.MainWindowHandle
+  if ($handle -eq 0) {
+    return $false
+  }
+
+  try {
+    Ensure-NativeWindowTools
+    [Horosa.NativeWindowTools]::ShowWindowAsync($handle, 9) | Out-Null
+    $flags = [uint32]0x0040
+    $moved = [Horosa.NativeWindowTools]::SetWindowPos(
+      $handle,
+      [IntPtr]::Zero,
+      [int]$Bounds.Left,
+      [int]$Bounds.Top,
+      [int]$Bounds.Width,
+      [int]$Bounds.Height,
+      $flags
+    )
+    if ($Bounds.PSObject.Properties.Name -contains 'Maximized' -and [bool]$Bounds.Maximized) {
+      [Horosa.NativeWindowTools]::ShowWindowAsync($handle, 3) | Out-Null
+      return $true
+    }
+    return $moved
+  } catch {
+    return $false
+  }
+}
+
+function Enforce-BrowserWindowBounds {
+  param(
+    [string]$BrowserExePath,
+    [string]$ProfileRoot,
+    $Bounds,
+    [int]$TimeoutMs = 12000
+  )
+
+  if ([string]::IsNullOrWhiteSpace($BrowserExePath) -or [string]::IsNullOrWhiteSpace($ProfileRoot) -or $null -eq $Bounds) {
+    return $false
+  }
+
+  $deadline = (Get-Date).AddMilliseconds($TimeoutMs)
+  $enforced = $false
+
+  while ((Get-Date) -lt $deadline) {
+    $procs = Get-BrowserWindowProcessesForProfile -BrowserExePath $BrowserExePath -ProfileRoot $ProfileRoot
+    foreach ($proc in @($procs)) {
+      if (Set-ProcessWindowBounds -Process $proc -Bounds $Bounds) {
+        $enforced = $true
+      }
+    }
+
+    if ($enforced) {
+      for ($i = 0; $i -lt 4; $i++) {
+        Start-Sleep -Milliseconds 250
+        $procs = Get-BrowserWindowProcessesForProfile -BrowserExePath $BrowserExePath -ProfileRoot $ProfileRoot
+        foreach ($proc in @($procs)) {
+          Set-ProcessWindowBounds -Process $proc -Bounds $Bounds | Out-Null
+        }
+      }
+      return $true
+    }
+
+    Start-Sleep -Milliseconds 250
+  }
+
+  return $false
+}
+
+function Reset-BrowserProfileWindowPlacement {
+  param([string]$ProfileRoot)
+
+  if ([string]::IsNullOrWhiteSpace($ProfileRoot)) {
+    return
+  }
+
+  $jsonFiles = @(
+    (Join-Path $ProfileRoot 'Default\Preferences'),
+    (Join-Path $ProfileRoot 'Local State')
+  )
+
+  foreach ($jsonPath in $jsonFiles) {
+    if (-not (Test-Path $jsonPath -PathType Leaf)) {
+      continue
+    }
+
+    try {
+      $raw = Get-Content -Path $jsonPath -Raw -Encoding UTF8
+      if ([string]::IsNullOrWhiteSpace($raw)) {
+        continue
+      }
+
+      $json = $raw | ConvertFrom-Json -Depth 100
+      if ($json -and $json.browser) {
+        foreach ($propName in @('app_window_placement', 'window_placement')) {
+          if ($json.browser.PSObject.Properties[$propName]) {
+            $json.browser.PSObject.Properties.Remove($propName)
+          }
+        }
+      }
+
+      $updated = $json | ConvertTo-Json -Depth 100 -Compress
+      Set-Content -Path $jsonPath -Value $updated -Encoding UTF8
+    } catch {
+      Write-Host ("[WARN] Failed to reset browser window state: {0}" -f $_.Exception.Message)
+    }
+  }
+}
+
+function Ensure-JsonObjectProperty {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Parent,
+
+    [Parameter(Mandatory = $true)]
+    [string]$PropertyName
+  )
+
+  $property = $Parent.PSObject.Properties[$PropertyName]
+  if ($property -and $property.Value -is [psobject]) {
+    return $property.Value
+  }
+
+  $child = [pscustomobject]@{}
+  if ($property) {
+    $property.Value = $child
+  } else {
+    Add-Member -InputObject $Parent -MemberType NoteProperty -Name $PropertyName -Value $child
+  }
+
+  return $child
+}
+
+function Ensure-BrowserProfileZoomPreference {
+  param(
+    [string]$ProfileRoot,
+    [string]$TargetHost = '127.0.0.1',
+    [double]$ZoomLevel = -2.3627645774179684
+  )
+
+  if ([string]::IsNullOrWhiteSpace($ProfileRoot) -or [string]::IsNullOrWhiteSpace($TargetHost)) {
+    return $false
+  }
+
+  $preferencesPath = Join-Path $ProfileRoot 'Default\Preferences'
+
+  try {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preferencesPath) | Out-Null
+
+    $json = [pscustomobject]@{}
+    if (Test-Path $preferencesPath -PathType Leaf) {
+      $raw = Get-Content -Path $preferencesPath -Raw -Encoding UTF8
+      if (-not [string]::IsNullOrWhiteSpace($raw)) {
+        $json = $raw | ConvertFrom-Json -Depth 100
+      }
+    }
+
+    if ($null -eq $json) {
+      $json = [pscustomobject]@{}
+    }
+
+    $partition = Ensure-JsonObjectProperty -Parent $json -PropertyName 'partition'
+    $perHostZoomLevels = Ensure-JsonObjectProperty -Parent $partition -PropertyName 'per_host_zoom_levels'
+    $defaultPartition = Ensure-JsonObjectProperty -Parent $perHostZoomLevels -PropertyName 'x'
+    $hostConfig = Ensure-JsonObjectProperty -Parent $defaultPartition -PropertyName $TargetHost
+
+    $lastModified = [DateTime]::UtcNow.ToFileTimeUtc().ToString()
+    foreach ($propertyName in @('last_modified', 'zoom_level')) {
+      if ($hostConfig.PSObject.Properties[$propertyName]) {
+        $hostConfig.PSObject.Properties.Remove($propertyName)
+      }
+    }
+    Add-Member -InputObject $hostConfig -MemberType NoteProperty -Name 'last_modified' -Value $lastModified
+    Add-Member -InputObject $hostConfig -MemberType NoteProperty -Name 'zoom_level' -Value $ZoomLevel
+
+    $updated = $json | ConvertTo-Json -Depth 100 -Compress
+    Set-Content -Path $preferencesPath -Value $updated -Encoding UTF8
+    return $true
+  } catch {
+    Write-Host ("[WARN] Failed to enforce browser zoom preference: {0}" -f $_.Exception.Message)
+    return $false
+  }
+}
+
+function Test-JavaAtLeast17 {
+  param([string]$JavaCmdOrPath)
+  $oldErrorAction = $ErrorActionPreference
+  $hasNativePref = Test-Path 'Variable:PSNativeCommandUseErrorActionPreference'
+  $oldNativePref = $null
+  try {
+    $ErrorActionPreference = 'Continue'
+    if ($hasNativePref) {
+      $oldNativePref = $PSNativeCommandUseErrorActionPreference
+      $PSNativeCommandUseErrorActionPreference = $false
+    }
+    $out = & $JavaCmdOrPath -version 2>&1 | Out-String
+    if (-not $out) { return $false }
+    $m = [regex]::Match($out, 'version\s+"([^"]+)"')
+    if (-not $m.Success) { return $false }
+    $v = $m.Groups[1].Value
+    if ($v.StartsWith('1.')) { return $false }
+    $majorText = ($v -split '[\.\-_]')[0]
+    $major = 0
+    if (-not [int]::TryParse($majorText, [ref]$major)) { return $false }
+    return ($major -ge 17)
+  } catch {
+    return $false
+  } finally {
+    $ErrorActionPreference = $oldErrorAction
+    if ($hasNativePref -and $null -ne $oldNativePref) {
+      $PSNativeCommandUseErrorActionPreference = $oldNativePref
+    }
+  }
+}
+
+function Test-JavaCompilerAvailable {
+  param([string]$JavaCmdOrPath)
+  try {
+    $javaExe = Get-ExePath -CmdOrPath $JavaCmdOrPath
+    if (-not $javaExe) { return $false }
+    $binDir = Split-Path -Parent $javaExe
+    if (-not $binDir) { return $false }
+    $javaHome = Split-Path -Parent $binDir
+    if (-not $javaHome) { return $false }
+    $javacExe = Join-Path $javaHome 'bin\javac.exe'
+    return (Test-Path $javacExe)
+  } catch {
+    return $false
+  }
+}
+
+function Get-PythonVersionInfo {
+  param([string]$PythonCmdOrPath)
+  try {
+    $out = & $PythonCmdOrPath -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+    if (-not $out) { return $null }
+
+    $versionText = ($out | Select-Object -First 1).ToString().Trim()
+    $parts = $versionText.Split('.')
+    if ($parts.Length -lt 2) { return $null }
+
+    $major = 0
+    $minor = 0
+    if (-not [int]::TryParse($parts[0], [ref]$major)) { return $null }
+    if (-not [int]::TryParse($parts[1], [ref]$minor)) { return $null }
+
+    return [pscustomobject]@{
+      Major = $major
+      Minor = $minor
+      Text = $versionText
+    }
+  } catch {
+    return $null
+  }
+}
+
+function Test-PythonSupported {
+  param([string]$PythonCmdOrPath)
+  $version = Get-PythonVersionInfo -PythonCmdOrPath $PythonCmdOrPath
+  if (-not $version) { return $false }
+  return ($version.Major -eq 3 -and ($version.Minor -eq 11 -or $version.Minor -eq 12))
+}
+
+function Test-Python311 {
+  param([string]$PythonCmdOrPath)
+  $version = Get-PythonVersionInfo -PythonCmdOrPath $PythonCmdOrPath
+  if (-not $version) { return $false }
+  return ($version.Major -eq 3 -and $version.Minor -eq 11)
+}
+
+function Test-PythonDepsReady {
+  param([string]$PythonCmdOrPath)
+  try {
+    $flatlibPath = Join-Path $ProjectDir 'flatlib-ctrad2'
+    $flatlibEscaped = $flatlibPath.Replace('\', '\\')
+    & $PythonCmdOrPath -c "import os,sys;p=r'$flatlibEscaped';p and os.path.isdir(os.path.join(p,'flatlib')) and sys.path.insert(0,p);import cherrypy,jsonpickle,swisseph,flatlib,ephem,streamlit,pandas,plotly,svgwrite,fpdf,pytz,opencc,zhconv,sxtwl,cn2an,cnlunar,bidict,kinliuren,drawsvg,kerykeion;import astropy.units;print('ok')" *> $null
+    return ($LASTEXITCODE -eq 0)
+  } catch {
+    return $false
+  }
+}
+
+function Test-JavaCandidateAccepted {
+  param(
+    [string]$JavaCandidate,
+    [switch]$RequireJdk
+  )
+
+  if ([string]::IsNullOrWhiteSpace($JavaCandidate)) { return $false }
+  if (-not (Test-JavaAtLeast17 -JavaCmdOrPath $JavaCandidate)) { return $false }
+  if ($RequireJdk -and -not (Test-JavaCompilerAvailable -JavaCmdOrPath $JavaCandidate)) { return $false }
+  return $true
+}
+
+function Get-PortableJavaCandidates {
+  $candidates = @()
+
+  if ($env:HOROSA_JAVA -and (Test-Path $env:HOROSA_JAVA)) {
+    $candidates += $env:HOROSA_JAVA
+  }
+
+  $candidates += @(
+    $PortableJavaExe,
+    (Join-Path $Root 'runtime/java/bin/java.exe'),
+    (Join-Path $Root 'jre/bin/java.exe'),
+    (Join-Path $ProjectDir 'runtime/windows/java/bin/java.exe'),
+    (Join-Path $ProjectDir 'runtime/java/bin/java.exe'),
+    (Join-Path $ProjectDir 'jre/bin/java.exe')
+  )
+
+  return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Get-SystemJavaCandidates {
+  $candidates = @()
+
+  if ($env:JAVA_HOME) {
+    $javaHomeBin = Join-Path $env:JAVA_HOME 'bin/java.exe'
+    if (Test-Path $javaHomeBin) {
+      $candidates += $javaHomeBin
+    }
+  }
+
+  try {
+    $javaCmd = Get-Command 'java' -ErrorAction Stop
+    if ($javaCmd -and $javaCmd.Source -and ($javaCmd.Source -notmatch 'WindowsApps')) {
+      $candidates += $javaCmd.Source
+    }
+  } catch {}
+
+  $javaRoots = @(
+    "$env:ProgramFiles\Java",
+    "$env:ProgramFiles\Eclipse Adoptium",
+    "$env:ProgramFiles\Microsoft",
+    "$env:ProgramFiles\Zulu",
+    "$env:ProgramFiles\Amazon Corretto",
+    "$env:ProgramFiles(x86)\Java",
+    "$env:ProgramFiles(x86)\Eclipse Adoptium",
+    "$env:LocalAppData\Programs\Eclipse Adoptium",
+    "$env:LocalAppData\Programs\Microsoft"
+  )
+  foreach ($base in $javaRoots) {
+    if (-not (Test-Path $base)) { continue }
+    $found = Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending |
+      Where-Object { Test-Path (Join-Path $_.FullName 'bin\java.exe') } |
+      Select-Object -First 1
+    if ($found) {
+      $candidate = Join-Path $found.FullName 'bin\java.exe'
+      if (Test-Path $candidate) {
+        $candidates += $candidate
+      }
+    }
+  }
+
+  $deepSearchRoots = @(
+    "$env:LocalAppData\Microsoft\WinGet\Packages",
+    "$env:ProgramFiles\Microsoft",
+    "$env:ProgramFiles\Eclipse Adoptium"
+  )
+  foreach ($root in $deepSearchRoots) {
+    if (-not (Test-Path $root)) { continue }
+    $matches = Get-ChildItem -Path $root -Recurse -Filter java.exe -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match 'jdk|jre|openjdk|temurin|corretto|zulu|microsoft' } |
+      Select-Object -First 20
+    foreach ($match in $matches) {
+      $candidates += $match.FullName
+    }
+  }
+
+  return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+}
+
+function Resolve-JavaFromCandidates {
+  param(
+    [string[]]$Candidates,
+    [switch]$RequireJdk
+  )
+
+  foreach ($candidate in @($Candidates)) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    if ($candidate -ne 'java' -and (-not (Test-Path $candidate))) { continue }
+    if (Test-JavaCandidateAccepted -JavaCandidate $candidate -RequireJdk:$RequireJdk) {
+      return $candidate
+    }
+  }
+
+  return $null
+}
+
+function Resolve-PortableJava {
+  param([switch]$RequireJdk)
+  return (Resolve-JavaFromCandidates -Candidates (Get-PortableJavaCandidates) -RequireJdk:$RequireJdk)
+}
+
+function Resolve-SystemJava {
+  param([switch]$RequireJdk)
+  return (Resolve-JavaFromCandidates -Candidates (Get-SystemJavaCandidates) -RequireJdk:$RequireJdk)
+}
+
+function Resolve-Java {
+  param([switch]$RequireJdk)
+
+  $portable = Resolve-PortableJava -RequireJdk:$RequireJdk
+  if ($portable) { return $portable }
+
+  return (Resolve-SystemJava -RequireJdk:$RequireJdk)
+}
+
+function Get-JavaSourceLabel {
+  param(
+    [string]$JavaExe,
+    [string]$SystemLabel = 'system'
+  )
+
+  return (Get-ExecutableSourceLabel `
+    -CmdOrPath $JavaExe `
+    -EnvOverridePath $env:HOROSA_JAVA `
+    -EnvOverrideLabel 'HOROSA_JAVA' `
+    -LocalRoots @(
+      $PortableJavaRuntimeDir,
+      (Join-Path $Root 'runtime/java'),
+      (Join-Path $ProjectDir 'runtime/windows/java'),
+      (Join-Path $ProjectDir 'runtime/java'),
+      (Join-Path $Root 'jre'),
+      (Join-Path $ProjectDir 'jre')
+    ) `
+    -SystemLabel $SystemLabel)
+}
+
+function Ensure-BackendJava {
+  param([switch]$RequireJdk)
+
+  if ($env:HOROSA_JAVA -and (Test-JavaCandidateAccepted -JavaCandidate $env:HOROSA_JAVA -RequireJdk:$RequireJdk)) {
+    $script:JavaSourceLabel = 'HOROSA_JAVA'
+    return $env:HOROSA_JAVA
+  }
+
+  $portable = Resolve-PortableJava -RequireJdk:$RequireJdk
+  if ($portable) {
+    $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $portable
+    return $portable
+  }
+
+  Write-Host '[INFO] Backend runtime prefers local portable Java 17 runtime.'
+  if (Install-Java17Portable) {
+    Start-Sleep -Seconds 2
+    $portable = Resolve-PortableJava -RequireJdk:$RequireJdk
+    if ($portable) {
+      $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $portable
+      Write-Host ("[OK] Backend portable Java 17 ready: {0}" -f $portable)
+      return $portable
+    }
+  }
+
+  $systemJava = Resolve-SystemJava -RequireJdk:$RequireJdk
+  if ($systemJava) {
+    $checkRelative = if ($RequireJdk) { 'bin\javac.exe' } else { 'bin\java.exe' }
+    Write-Host ("[WARN] Portable Java bootstrap failed, trying to sync a local runtime from system Java: {0}" -f $systemJava)
+    $javaSynced = Sync-RuntimeFromExe -ExeCmdOrPath $systemJava -TargetDir $PortableJavaRuntimeDir -UpLevels 1 -CheckRelative $checkRelative
+    if ($javaSynced) {
+      $portable = Resolve-PortableJava -RequireJdk:$RequireJdk
+      if ($portable) {
+        $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $portable
+        Write-Host ("[OK] Local Java runtime ready from system seed: {0}" -f $portable)
+        return $portable
+      }
+    }
+
+    $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $systemJava -SystemLabel 'system-fallback'
+    Write-Host ("[WARN] Portable Java bootstrap failed, using system Java fallback: {0}" -f $systemJava)
+    return $systemJava
+  }
+
+  if (Install-Java17 -RequireJdk:$RequireJdk) {
+    Start-Sleep -Seconds 2
+    $portable = Resolve-PortableJava -RequireJdk:$RequireJdk
+    if ($portable) {
+      $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $portable
+      return $portable
+    }
+
+    $systemJava = Resolve-SystemJava -RequireJdk:$RequireJdk
+    if ($systemJava) {
+      $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $systemJava -SystemLabel 'system-fallback'
+      return $systemJava
+    }
+  }
+
+  return $null
+}
+
+function Get-PythonCandidates {
+  $candidates = @()
+
+  $candidates += @(
+    $PortablePythonExe,
+    $PortablePythonExeAlt,
+    (Join-Path $Root 'runtime/python/python.exe'),
+    (Join-Path $ProjectDir 'runtime/windows/python/python.exe'),
+    (Join-Path $ProjectDir 'runtime/windows/python/python3.exe'),
+    (Join-Path $ProjectDir 'runtime/python/python.exe')
+  )
+
+  if ($env:HOROSA_PYTHON -and (Test-Path $env:HOROSA_PYTHON)) {
+    $candidates += $env:HOROSA_PYTHON
+  }
+
+  $candidates += @(
+    "$env:LocalAppData\Programs\Python\Python311\python.exe",
+    "$env:LocalAppData\Programs\Python\Python312\python.exe",
+    "$env:ProgramFiles\Python311\python.exe",
+    "$env:ProgramFiles\Python312\python.exe",
+    'C:\Python311\python.exe',
+    'C:\Python312\python.exe'
+  )
+
+  $inPath = Get-Command 'python' -ErrorAction SilentlyContinue
+  if ($inPath) {
+    $candidates += 'python'
+  }
+
+  return $candidates
+}
+
+function Resolve-Python {
+  $seen = @{}
+  $found311 = $null
+  $found312 = $null
+
+  foreach ($candidate in (Get-PythonCandidates)) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    $key = $candidate.ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+
+    if ($candidate -ne 'python' -and (-not (Test-Path $candidate))) { continue }
+
+    $version = Get-PythonVersionInfo -PythonCmdOrPath $candidate
+    if (-not $version) { continue }
+    if ($version.Major -ne 3) { continue }
+
+    if ($version.Minor -eq 11) {
+      if (-not $found311) { $found311 = $candidate }
+      continue
+    }
+    if ($version.Minor -eq 12) {
+      if (-not $found312) { $found312 = $candidate }
+    }
+  }
+
+  if ($found311) { return $found311 }
+  if ($found312) {
+    Write-Host '[WARN] Python 3.11 not found, fallback to Python 3.12.'
+    return $found312
+  }
+
+  return $null
+}
+
+function Resolve-Python311 {
+  $seen = @{}
+  foreach ($candidate in (Get-PythonCandidates)) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    $key = $candidate.ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+
+    if ($candidate -ne 'python' -and (-not (Test-Path $candidate))) { continue }
+    if (Test-Python311 -PythonCmdOrPath $candidate) { return $candidate }
+  }
+  return $null
+}
+
+function Get-PythonSourceLabel {
+  param(
+    [string]$PythonExe,
+    [string]$SystemLabel = 'system'
+  )
+
+  return (Get-ExecutableSourceLabel `
+    -CmdOrPath $PythonExe `
+    -EnvOverridePath $env:HOROSA_PYTHON `
+    -EnvOverrideLabel 'HOROSA_PYTHON' `
+    -LocalRoots @(
+      $PortablePythonRuntimeDir,
+      (Join-Path $Root 'runtime/python'),
+      (Join-Path $ProjectDir 'runtime/windows/python'),
+      (Join-Path $ProjectDir 'runtime/python')
+    ) `
+    -SystemLabel $SystemLabel)
+}
+
+function Install-WithWinget {
+  param(
+    [string]$PackageId,
+    [string]$DisplayName
+  )
+  $winget = Get-Command 'winget' -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    Write-Host "winget not found, cannot auto-install $DisplayName."
+    return $false
+  }
+
+  Write-Host "Auto installing $DisplayName via winget..."
+  $attempts = @(
+    @('install','-e','--id', $PackageId, '--scope','user','--source','winget','--accept-package-agreements','--accept-source-agreements','--silent'),
+    @('install','-e','--id', $PackageId, '--accept-package-agreements','--accept-source-agreements','--silent')
+  )
+  foreach ($args in $attempts) {
+    try {
+      $p = Start-Process -FilePath $winget.Source -ArgumentList $args -Wait -PassThru
+      if ($p.ExitCode -eq 0) { return $true }
+      Write-Host ("winget install exit code for {0}: {1}" -f $DisplayName, $p.ExitCode)
+    } catch {
+      Write-Host ("Auto install failed for {0}: {1}" -f $DisplayName, $_.Exception.Message)
+    }
+  }
+  return $false
+}
+
+function Read-HttpUrlsFromFiles {
+  param([string[]]$Files)
+
+  $result = New-Object System.Collections.Generic.List[string]
+  foreach ($file in $Files) {
+    if ([string]::IsNullOrWhiteSpace($file)) { continue }
+    if (-not (Test-Path $file)) { continue }
+    try {
+      $lines = Get-Content -Path $file -ErrorAction Stop
+      foreach ($line in $lines) {
+        $url = "$line".Trim()
+        if (-not $url) { continue }
+        if ($url.StartsWith('#')) { continue }
+        if ($url -match '^https?://') {
+          $result.Add($url)
+        }
+      }
+    } catch {
+      Write-Host ("[WARN] Failed to read URL file {0}: {1}" -f $file, $_.Exception.Message)
+    }
+  }
+  return @($result.ToArray() | Select-Object -Unique)
+}
+
+function Ensure-PythonPipAvailable {
+  param(
+    [string]$PythonExe,
+    [string]$TempDir
+  )
+
+  if (-not (Test-Path $PythonExe)) { return $false }
+  try {
+    & $PythonExe -m pip --version *> $null
+    if ($LASTEXITCODE -eq 0) { return $true }
+  } catch {}
+
+  try {
+    & $PythonExe -m ensurepip --upgrade *> $null
+    & $PythonExe -m pip --version *> $null
+    if ($LASTEXITCODE -eq 0) { return $true }
+  } catch {}
+
+  $getPipPath = Join-Path $TempDir 'get-pip.py'
+  $getPipUrls = @()
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_GET_PIP_URL)) {
+    $getPipUrls += $env:HOROSA_GET_PIP_URL.Trim()
+  }
+  $getPipUrls += @(
+    'https://bootstrap.pypa.io/get-pip.py',
+    'https://bootstrap.pypa.io/pip/3.11/get-pip.py'
+  )
+  if (-not (Invoke-DownloadWithFallback -Urls $getPipUrls -OutFile $getPipPath -TimeoutSec 180)) {
+    return $false
+  }
+
+  try {
+    & $PythonExe $getPipPath --disable-pip-version-check --no-warn-script-location
+    & $PythonExe -m pip --version *> $null
+    return ($LASTEXITCODE -eq 0)
+  } catch {
+    return $false
+  }
+}
+
+function Install-PythonPortableFromPackage {
+  param(
+    [string]$PackagePath,
+    [string]$PythonTarget,
+    [string]$TempDir
+  )
+
+  if (-not (Test-Path $PackagePath)) { return $false }
+  $ext = [System.IO.Path]::GetExtension($PackagePath).ToLowerInvariant()
+
+  if ($ext -eq '.exe') {
+    try {
+      if (Test-Path $PythonTarget) { Remove-Item -Recurse -Force $PythonTarget }
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PythonTarget) | Out-Null
+      $installerArgs = @(
+        '/InstallationType=JustMe',
+        '/RegisterPython=0',
+        '/AddToPath=0',
+        '/S',
+        ("/D={0}" -f $PythonTarget)
+      )
+      $proc = Start-Process -FilePath $PackagePath -ArgumentList $installerArgs -Wait -PassThru
+      if ($proc.ExitCode -ne 0) {
+        Write-Host ("[WARN] Python installer exit code: {0}" -f $proc.ExitCode)
+        return $false
+      }
+    } catch {
+      Write-Host ("[WARN] Python installer failed: {0}" -f $_.Exception.Message)
+      return $false
+    }
+  } elseif ($ext -eq '.zip') {
+    try {
+      $extractDir = Join-Path $TempDir 'extract'
+      if (Test-Path $extractDir) { Remove-Item -Recurse -Force $extractDir }
+      New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+      Expand-Archive -Path $PackagePath -DestinationPath $extractDir -Force
+
+      $pythonExe = Get-ChildItem -Path $extractDir -Recurse -Filter python.exe -File -ErrorAction SilentlyContinue |
+        Select-Object -First 1
+      if (-not $pythonExe) {
+        Write-Host '[WARN] Python zip extracted but python.exe is missing.'
+        return $false
+      }
+      $pythonHome = Split-Path -Parent $pythonExe.FullName
+
+      if (Test-Path $PythonTarget) { Remove-Item -Recurse -Force $PythonTarget }
+      New-Item -ItemType Directory -Force -Path $PythonTarget | Out-Null
+      robocopy $pythonHome $PythonTarget /E /NFL /NDL /NJH /NJS /NP | Out-Null
+
+      $pthFile = Join-Path $PythonTarget 'python311._pth'
+      if (Test-Path $pthFile) {
+        try {
+          $pthText = Get-Content -Path $pthFile -Raw
+          if ($pthText -match '(?m)^\s*#\s*import site\s*$') {
+            $patched = $pthText -replace '(?m)^\s*#\s*import site\s*$', 'import site'
+            Set-Content -Path $pthFile -Value $patched -Encoding ASCII
+          }
+        } catch {}
+      }
+    } catch {
+      Write-Host ("[WARN] Python zip install failed: {0}" -f $_.Exception.Message)
+      return $false
+    }
+  } else {
+    Write-Host ("[WARN] Unsupported Python portable package type: {0}" -f $PackagePath)
+    return $false
+  }
+
+  $portablePythonExe = Join-Path $PythonTarget 'python.exe'
+  if (-not (Test-Path $portablePythonExe)) { return $false }
+  if (-not (Test-Python311 -PythonCmdOrPath $portablePythonExe)) {
+    Write-Host '[WARN] Portable Python installed but is not Python 3.11.'
+    return $false
+  }
+  if (-not (Ensure-PythonPipAvailable -PythonExe $portablePythonExe -TempDir $TempDir)) {
+    Write-Host '[WARN] Portable Python ready, but pip bootstrap failed.'
+  }
+  return $true
+}
+
+function Install-PythonPortable {
+  $existingPortablePython = $PortablePythonExe
+  if (Test-Python311 -PythonCmdOrPath $existingPortablePython) {
+    Write-Host ("[OK] Portable Python 3.11 already available: {0}" -f $existingPortablePython)
+    return $true
+  }
+
+  try {
+    Write-Host 'winget install Python failed, trying portable Python 3.11 fallback...'
+    $portableRoot = $RuntimeWindowsDir
+    $pythonTarget = $PortablePythonRuntimeDir
+    $tmpDir = Join-Path $env:TEMP ('horosa_python311_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss'))
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
+
+    $localPackages = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_PYTHON_PACKAGE) -and (Test-Path $env:HOROSA_PYTHON_PACKAGE)) {
+      $localPackages += $env:HOROSA_PYTHON_PACKAGE.Trim()
+    }
+    $localPackages += @(
+      (Join-Path $Root 'runtime/windows/bundle/python311-portable.exe'),
+      (Join-Path $Root 'runtime/windows/bundle/python311.exe'),
+      (Join-Path $Root 'runtime/windows/bundle/python311-runtime.zip'),
+      (Join-Path $Root 'runtime/windows/bundle/python311.zip'),
+      (Join-Path $Root 'runtime/windows/bundle/python.zip'),
+      (Join-Path $Root 'runtime/bundle/python311-portable.exe'),
+      (Join-Path $Root 'runtime/bundle/python311.exe'),
+      (Join-Path $Root 'runtime/bundle/python311-runtime.zip'),
+      (Join-Path $Root 'runtime/bundle/python311.zip'),
+      (Join-Path $Root 'runtime/bundle/python.zip')
+    ) | Select-Object -Unique
+
+    foreach ($package in $localPackages) {
+      if ([string]::IsNullOrWhiteSpace($package)) { continue }
+      if (-not (Test-Path $package)) { continue }
+      Write-Host ("Trying bundled Python package: {0}" -f $package)
+      if (Install-PythonPortableFromPackage -PackagePath $package -PythonTarget $pythonTarget -TempDir $tmpDir) {
+        Write-Host ("[OK] Portable Python 3.11 ready from bundled package: {0}" -f $package)
+        return $true
+      }
+    }
+
+    $urlCandidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_PYTHON_URL)) {
+      $urlCandidates += $env:HOROSA_PYTHON_URL.Trim()
+    }
+    $urlCandidates += Read-HttpUrlsFromFiles -Files @(
+      (Join-Path $Root 'runtime/windows/bundle/python311.url.txt'),
+      (Join-Path $Root 'runtime/windows/bundle/python.url.txt'),
+      (Join-Path $Root 'runtime/bundle/python311.url.txt'),
+      (Join-Path $Root 'runtime/bundle/python.url.txt')
+    )
+    $urlCandidates += @(
+      'https://repo.anaconda.com/miniconda/Miniconda3-py311_24.11.1-0-Windows-x86_64.exe',
+      'https://repo.anaconda.com/miniconda/Miniconda3-py311_24.7.1-0-Windows-x86_64.exe',
+      'https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip'
+    )
+    $urlCandidates = @($urlCandidates | Where-Object { $_ -match '^https?://' } | Select-Object -Unique)
+
+    foreach ($url in $urlCandidates) {
+      $isZip = $url -match '(?i)\.zip($|[?#])'
+      $pkgPath = Join-Path $tmpDir ($(if ($isZip) { 'python311_portable.zip' } else { 'python311_portable.exe' }))
+      if (-not (Invoke-DownloadWithFallback -Urls @($url) -OutFile $pkgPath -TimeoutSec 300)) {
+        continue
+      }
+      if (Install-PythonPortableFromPackage -PackagePath $pkgPath -PythonTarget $pythonTarget -TempDir $tmpDir) {
+        Write-Host ("[OK] Portable Python 3.11 ready from download: {0}" -f $url)
+        return $true
+      }
+    }
+  } catch {
+    Write-Host ("Portable Python fallback failed: {0}" -f $_.Exception.Message)
+  }
+
+  return $false
+}
+
+function Install-Java17 {
+  param([switch]$RequireJdk)
+
+  $candidates = @(
+    @{ Id = 'EclipseAdoptium.Temurin.17.JDK'; Name = 'Java 17 (Temurin JDK)' },
+    @{ Id = 'Microsoft.OpenJDK.17'; Name = 'Java 17 (Microsoft OpenJDK)' }
+  )
+  if (-not $RequireJdk) {
+    $candidates += @{ Id = 'EclipseAdoptium.Temurin.17.JRE'; Name = 'Java 17 (Temurin JRE)' }
+  }
+
+  foreach ($c in $candidates) {
+    if (Install-WithWinget -PackageId $c.Id -DisplayName $c.Name) {
+      Start-Sleep -Seconds 2
+      $resolved = Resolve-Java -RequireJdk:$RequireJdk
+      if ($resolved) {
+        Write-Host ("[OK] Java 17 detected: {0}" -f $resolved)
+        return $true
+      }
+      Write-Host ("[WARN] {0} reported success but Java 17 was not detected. Trying next option..." -f $c.Name)
+    }
+  }
+  if (Install-Java17Portable) {
+    $resolvedPortable = Resolve-Java -RequireJdk:$RequireJdk
+    if ($resolvedPortable) {
+      Write-Host ("[OK] Portable Java 17 ready: {0}" -f $resolvedPortable)
+      return $true
+    }
+    if ($RequireJdk) {
+      $portableJava = $PortableJavaExe
+      $portableJavac = $PortableJavacExe
+      if ((Test-Path $portableJava) -and (Test-Path $portableJavac)) {
+        Write-Host ("[OK] Portable Java 17 files ready: {0}" -f $portableJava)
+        return $true
+      }
+    }
+  }
+  return $false
+}
+
+function Get-Java17DownloadUrls {
+  $urls = @()
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_JDK17_URL)) {
+    $envUrl = $env:HOROSA_JDK17_URL.Trim()
+    if ($envUrl -match '^https?://') {
+      $urls += $envUrl
+    } else {
+      Write-Host '[WARN] HOROSA_JDK17_URL is set but is not a valid http(s) URL. Ignore it.'
+    }
+  }
+
+  $urls += Read-HttpUrlsFromFiles -Files @(
+    (Join-Path $WinBundleRoot 'java17.url.txt'),
+    (Join-Path $CommonBundleRoot 'java17.url.txt')
+  )
+
+  $urls += @(
+    'https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jdk/hotspot/normal/eclipse?project=jdk',
+    'https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.zip'
+  )
+  return @($urls | Where-Object { $_ -match '^https?://' } | Select-Object -Unique)
+}
+
+function Install-Java17Portable {
+  try {
+    Write-Host 'winget install failed, trying portable Java 17 download...'
+    $portableRoot = $RuntimeWindowsDir
+    $javaTarget = $PortableJavaRuntimeDir
+    $tmpDir = Join-Path $env:TEMP ('horosa_java17_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss'))
+    $zipPath = Join-Path $tmpDir 'java17.zip'
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
+
+    $archiveReady = $false
+    $localArchives = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_JDK17_ZIP) -and (Test-Path $env:HOROSA_JDK17_ZIP)) {
+      $localArchives += $env:HOROSA_JDK17_ZIP.Trim()
+    }
+    $localArchives += @(
+      (Join-Path $WinBundleRoot 'java17.zip'),
+      (Join-Path $CommonBundleRoot 'java17.zip')
+    ) | Select-Object -Unique
+    foreach ($archive in $localArchives) {
+      if ([string]::IsNullOrWhiteSpace($archive)) { continue }
+      if (-not (Test-Path $archive)) { continue }
+      try {
+        Copy-Item -Path $archive -Destination $zipPath -Force
+        if ((Test-Path $zipPath) -and ((Get-Item $zipPath).Length -gt 1048576)) {
+          Write-Host ("[OK] Using bundled Java archive: {0}" -f $archive)
+          $archiveReady = $true
+          break
+        }
+      } catch {
+        Write-Host ("[WARN] Cannot use bundled Java archive {0}: {1}" -f $archive, $_.Exception.Message)
+      }
+    }
+
+    if (-not $archiveReady) {
+      $javaUrls = Get-Java17DownloadUrls
+      $archiveReady = Invoke-DownloadWithFallback -Urls $javaUrls -OutFile $zipPath -TimeoutSec 300
+    }
+    if (-not $archiveReady) {
+      Write-Host '[WARN] Portable Java archive is unavailable.'
+      return $false
+    }
+
+    $extractDir = Join-Path $tmpDir 'extract'
+    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+    # Robustly locate java.exe regardless of archive folder layout.
+    $javaExe = Get-ChildItem -Path $extractDir -Recurse -Filter java.exe -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match '\\bin\\java\.exe$' } |
+      Select-Object -First 1
+    if (-not $javaExe) {
+      Write-Host '[WARN] Portable archive extracted but java.exe not found.'
+      return $false
+    }
+    $javaHomePath = Split-Path -Parent (Split-Path -Parent $javaExe.FullName)
+
+    if (Test-Path $javaTarget) { Remove-Item -Recurse -Force $javaTarget }
+    New-Item -ItemType Directory -Force -Path $javaTarget | Out-Null
+    robocopy $javaHomePath $javaTarget /E /NFL /NDL /NJH /NJS /NP | Out-Null
+
+    $ok = Test-Path (Join-Path $javaTarget 'bin\java.exe')
+    if (-not $ok) {
+      Write-Host '[WARN] Portable Java copy finished but bin\java.exe is still missing.'
+    }
+    return $ok
+  } catch {
+    Write-Host ("Portable Java download failed: {0}" -f $_.Exception.Message)
+    return $false
+  }
+}
+
+function Resolve-Maven {
+  if ($env:HOROSA_MVN -and (Test-Path $env:HOROSA_MVN)) {
+    return $env:HOROSA_MVN
+  }
+
+  $bundled = @(
+    $PortableMavenCmd,
+    $PortableMavenBat
+  )
+  foreach ($p in $bundled) {
+    if (Test-Path $p) { return $p }
+  }
+
+  $installed = @(
+    "$env:ProgramFiles\Apache\maven\bin\mvn.cmd",
+    "$env:ProgramFiles\apache-maven\bin\mvn.cmd",
+    "$env:LocalAppData\Microsoft\WinGet\Links\mvn.cmd"
+  )
+  foreach ($p in $installed) {
+    if (Test-Path $p) { return $p }
+  }
+
+  $inPath = Get-Command 'mvn' -ErrorAction SilentlyContinue
+  if ($inPath) { return $inPath.Source }
+
+  return $null
+}
+
+function Get-MavenSourceLabel {
+  param(
+    [string]$MvnExe,
+    [string]$SystemLabel = 'system'
+  )
+
+  return (Get-ExecutableSourceLabel `
+    -CmdOrPath $MvnExe `
+    -EnvOverridePath $env:HOROSA_MVN `
+    -EnvOverrideLabel 'HOROSA_MVN' `
+    -LocalRoots @($PortableMavenRuntimeDir) `
+    -SystemLabel $SystemLabel)
+}
+
+function Install-Maven {
+  if (Install-WithWinget -PackageId 'Apache.Maven' -DisplayName 'Apache Maven') {
+    return $true
+  }
+  return (Install-MavenPortable)
+}
+
+function Install-MavenPortable {
+  try {
+    Write-Host 'winget install Maven failed, trying portable Maven download...'
+    $portableRoot = $RuntimeWindowsDir
+    $mavenTarget = $PortableMavenRuntimeDir
+    $tmpDir = Join-Path $env:TEMP ('horosa_maven_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss'))
+    $zipPath = Join-Path $tmpDir 'maven.zip'
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
+
+    $urls = @(
+      'https://downloads.apache.org/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.zip',
+      'https://archive.apache.org/dist/maven/maven-3/3.9.11/binaries/apache-maven-3.9.11-bin.zip'
+    )
+    $downloaded = Invoke-DownloadWithFallback -Urls $urls -OutFile $zipPath -TimeoutSec 240
+    if (-not $downloaded) {
+      Write-Host '[WARN] Portable Maven download failed.'
+      return $false
+    }
+
+    $extractDir = Join-Path $tmpDir 'extract'
+    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+    $mvnCmd = Get-ChildItem -Path $extractDir -Recurse -Filter mvn.cmd -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -match '\\bin\\mvn\.cmd$' } |
+      Select-Object -First 1
+    if (-not $mvnCmd) {
+      Write-Host '[WARN] Portable Maven archive extracted but mvn.cmd not found.'
+      return $false
+    }
+    $mavenHome = Split-Path -Parent (Split-Path -Parent $mvnCmd.FullName)
+
+    if (Test-Path $mavenTarget) { Remove-Item -Recurse -Force $mavenTarget }
+    New-Item -ItemType Directory -Force -Path $mavenTarget | Out-Null
+    robocopy $mavenHome $mavenTarget /E /NFL /NDL /NJH /NJS /NP | Out-Null
+
+    $ok = Test-Path (Join-Path $mavenTarget 'bin\mvn.cmd')
+    if ($ok) {
+      Write-Host ("[OK] Portable Maven ready: {0}" -f (Join-Path $mavenTarget 'bin\mvn.cmd'))
+    } else {
+      Write-Host '[WARN] Portable Maven copy finished but bin\mvn.cmd is still missing.'
+    }
+    return $ok
+  } catch {
+    Write-Host ("Portable Maven download failed: {0}" -f $_.Exception.Message)
+    return $false
+  }
+}
+
+function Get-JavaHomeFromJavaExe {
+  param([string]$JavaCmdOrPath)
+  $javaExe = Get-ExePath -CmdOrPath $JavaCmdOrPath
+  if (-not $javaExe) { return $null }
+  $binDir = Split-Path -Parent $javaExe
+  $javaHomeDir = Split-Path -Parent $binDir
+  if (Test-Path $javaHomeDir) { return $javaHomeDir }
+  return $null
+}
+
+function Get-JcmdFromJavaExe {
+  param([string]$JavaCmdOrPath)
+
+  $javaHome = Get-JavaHomeFromJavaExe -JavaCmdOrPath $JavaCmdOrPath
+  if (-not $javaHome) { return $null }
+
+  $jcmdExe = Join-Path $javaHome 'bin\jcmd.exe'
+  if (Test-Path $jcmdExe) {
+    return $jcmdExe
+  }
+
+  return $null
+}
+
+function Get-ShortStableHash {
+  param(
+    [string]$Text,
+    [int]$Length = 16
+  )
+
+  if ([string]::IsNullOrWhiteSpace($Text)) {
+    return 'default'
+  }
+
+  try {
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+      $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+      $hash = -join ($sha256.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') })
+      if ($Length -gt 0 -and $hash.Length -gt $Length) {
+        return $hash.Substring(0, $Length)
+      }
+      return $hash
+    } finally {
+      $sha256.Dispose()
+    }
+  } catch {
+    return 'default'
+  }
+}
+
+function Get-HorosaAppCdsContext {
+  param(
+    [string]$JavaExe,
+    [string]$JarFile
+  )
+
+  if (-not $AppCdsEnabled) { return $null }
+  if ([string]::IsNullOrWhiteSpace($JavaExe) -or [string]::IsNullOrWhiteSpace($JarFile)) { return $null }
+  if (-not (Test-Path $JarFile -PathType Leaf)) { return $null }
+
+  $javaVersion = Get-JavaVersionText -JavaExe $JavaExe
+  $jarItem = Get-Item -LiteralPath $JarFile -ErrorAction SilentlyContinue
+  if (-not $jarItem) { return $null }
+
+  $cacheRoot = Join-Path $RuntimeWindowsDir 'appcds'
+
+  $keySource = '{0}|{1}|{2}|{3}' -f $JarFile, $jarItem.Length, $jarItem.LastWriteTimeUtc.Ticks, $javaVersion
+  $cacheKey = Get-ShortStableHash -Text $keySource -Length 20
+  $cacheDir = Join-Path $cacheRoot ("horosa-appcds-{0}" -f $cacheKey)
+  $archivePath = Join-Path $cacheDir 'astrostudyboot-dynamic.jsa'
+
+  return [pscustomobject]@{
+    CacheDir = $cacheDir
+    ArchivePath = $archivePath
+    JavaVersion = $javaVersion
+    CacheKey = $cacheKey
+  }
+}
+
+function Ensure-HorosaAppCdsCacheDir {
+  param($Context)
+
+  if (-not $Context) { return $false }
+  try {
+    New-Item -ItemType Directory -Force -Path $Context.CacheDir | Out-Null
+    return $true
+  } catch {
+    Write-Host ("[WARN] AppCDS cache dir unavailable: {0}" -f $_.Exception.Message)
+    return $false
+  }
+}
+
+function Test-HorosaAppCdsArchiveReady {
+  param($Context)
+
+  if (-not $Context) { return $false }
+  if (-not (Test-Path $Context.ArchivePath -PathType Leaf)) { return $false }
+
+  try {
+    $item = Get-Item -LiteralPath $Context.ArchivePath -ErrorAction Stop
+    return ($item.Length -ge 256KB)
+  } catch {
+    return $false
+  }
+}
+
+function Invoke-HorosaAppCdsDynamicDump {
+  param(
+    [int]$ProcessId,
+    $Context,
+    [string]$JavaExe
+  )
+
+  if (-not $Context) { return $false }
+  if ($ProcessId -le 0) { return $false }
+
+  $jcmdExe = Get-JcmdFromJavaExe -JavaCmdOrPath $JavaExe
+  if (-not $jcmdExe) {
+    Write-Host '[WARN] AppCDS dynamic dump skipped: jcmd.exe not found.'
+    return $false
+  }
+
+  if (-not (Ensure-HorosaAppCdsCacheDir -Context $Context)) {
+    return $false
+  }
+
+  $archivePath = $Context.ArchivePath
+  try {
+    Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+  } catch {}
+
+  try {
+    # horosa_local_cds_dump_watchdog_v1: jcmd can wedge indefinitely against a GC-stalled or
+    # half-dead JVM (same failure class the desktop launcher hard-timeouts at 180s). Run it in
+    # a job with a 180s watchdog; on timeout, stop the job and continue shutdown without the
+    # archive - a missed warm-start cache must never block closing the app.
+    $dumpJob = Start-Job -ScriptBlock {
+      param($JcmdPath, $TargetPid, $Archive)
+      & $JcmdPath $TargetPid VM.cds dynamic_dump $Archive 2>&1 | Out-String
+    } -ArgumentList $jcmdExe, $ProcessId, $archivePath
+    $completed = Wait-Job -Job $dumpJob -Timeout 180
+    $output = ''
+    if ($completed) {
+      $output = (Receive-Job -Job $dumpJob 2>&1 | Out-String)
+    } else {
+      Stop-Job -Job $dumpJob -ErrorAction SilentlyContinue
+      Write-Host '[WARN] AppCDS dynamic dump timed out after 180s; continuing shutdown without archive.'
+    }
+    Remove-Job -Job $dumpJob -Force -ErrorAction SilentlyContinue
+    if (Test-HorosaAppCdsArchiveReady -Context $Context) {
+      Write-Host ("[INFO] AppCDS dynamic dump completed: {0}" -f $archivePath)
+      return $true
+    }
+    if ($output -and $output.Trim()) {
+      Write-Host ("[WARN] AppCDS dynamic dump did not produce a ready archive: {0}" -f $output.Trim())
+    }
+  } catch {
+    Write-Host ("[WARN] AppCDS dynamic dump failed: {0}" -f $_.Exception.Message)
+  }
+
+  return $false
+}
+
+function Invoke-Maven {
+  param(
+    [string]$MvnExe,
+    [string]$WorkingDir,
+    [string[]]$MavenArgs
+  )
+  try {
+    $p = Start-Process -FilePath $MvnExe -WorkingDirectory $WorkingDir -ArgumentList $MavenArgs -NoNewWindow -Wait -PassThru
+    return ($p.ExitCode -eq 0)
+  } catch {
+    Write-Host ("[WARN] Maven run failed in {0}: {1}" -f $WorkingDir, $_.Exception.Message)
+    return $false
+  }
+}
+
+function Install-MavenAliasArtifact {
+  param(
+    [string]$MvnExe,
+    [string]$WorkingDir,
+    [string]$JarPath,
+    [string]$GroupId,
+    [string]$ArtifactId,
+    [string]$Version
+  )
+  if (-not (Test-Path $JarPath)) { return $false }
+  $args = @(
+    'install:install-file',
+    "-Dfile=$JarPath",
+    "-DgroupId=$GroupId",
+    "-DartifactId=$ArtifactId",
+    "-Dversion=$Version",
+    '-Dpackaging=jar',
+    '-DgeneratePom=true'
+  )
+  return (Invoke-Maven -MvnExe $MvnExe -WorkingDir $WorkingDir -MavenArgs $args)
+}
+
+function Test-JarFileLooksValid {
+  param([string]$Path)
+
+  if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+  if (-not (Test-Path $Path -PathType Leaf)) { return $false }
+
+  try {
+    $fileInfo = Get-Item -LiteralPath $Path -ErrorAction Stop
+    if ($fileInfo.Length -lt 1MB) { return $false }
+
+    Add-Type -AssemblyName 'System.IO.Compression.FileSystem' -ErrorAction SilentlyContinue | Out-Null
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($fileInfo.FullName)
+    try {
+      if ($zip.Entries.Count -eq 0) { return $false }
+
+      $manifestEntry = $zip.GetEntry('META-INF/MANIFEST.MF')
+      if (-not $manifestEntry) { return $false }
+
+      $manifestStream = $manifestEntry.Open()
+      try {
+        $manifestReader = New-Object System.IO.StreamReader($manifestStream)
+        try {
+          $manifestText = $manifestReader.ReadToEnd()
+        } finally {
+          $manifestReader.Dispose()
+        }
+      } finally {
+        $manifestStream.Dispose()
+      }
+
+      return ($manifestText -match '(?im)^Main-Class\s*:')
+    } finally {
+      $zip.Dispose()
+    }
+  } catch {
+    return $false
+  }
+}
+
+function Get-BackendSourceLatestWriteTimeUtc {
+  $srvRoot = Join-Path $ProjectDir 'astrostudysrv'
+  if (-not (Test-Path $srvRoot)) {
+    return $null
+  }
+
+  $latest = @(
+    Get-ChildItem -Path $srvRoot -Recurse -File -Include *.java,*.properties,pom.xml -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -notmatch '[\\/](target|\.git|node_modules)[\\/]' } |
+      Sort-Object LastWriteTimeUtc -Descending |
+      Select-Object -First 1
+  )
+  if ($latest.Count -gt 0 -and $latest[0]) {
+    return $latest[0].LastWriteTimeUtc
+  }
+  return $null
+}
+
+function Try-BuildBackendJar {
+  param(
+    [switch]$ForceRebuild
+  )
+
+  if (Test-Path $JarPath) {
+    if ((Test-JarFileLooksValid -Path $JarPath) -and (-not $ForceRebuild)) { return $true }
+
+    Prepare-BackendJarRefresh
+
+    if ($ForceRebuild) {
+      Write-Host ("[WARN] Existing backend jar is stale, forcing local rebuild: {0}" -f $JarPath)
+    } else {
+      Write-Host ("[WARN] Existing backend jar is invalid, forcing local rebuild: {0}" -f $JarPath)
+    }
+    try {
+      Remove-Item -LiteralPath $JarPath -Force -ErrorAction Stop
+    } catch {
+      Write-Host ("[WARN] Could not remove invalid backend jar before rebuild: {0}" -f $_.Exception.Message)
+      return $false
+    }
+  }
+
+  $mvn = Resolve-Maven
+  if (-not $mvn) {
+    if (Install-Maven) {
+      Start-Sleep -Seconds 2
+      $mvn = Resolve-Maven
+    }
+  }
+  if (-not $mvn) {
+    Write-Host '[WARN] Maven not found, skip auto build.'
+    return $false
+  }
+  $script:MavenBin = $mvn
+  $script:MavenSourceLabel = Get-MavenSourceLabel -MvnExe $mvn
+
+  $buildJava = Ensure-BackendJava -RequireJdk
+  if (-not $buildJava) {
+    Write-Host '[WARN] Java 17+ JDK unavailable, skip auto build.'
+    return $false
+  }
+  $buildJavaHome = Get-JavaHomeFromJavaExe -JavaCmdOrPath $buildJava
+  $javacPath = if ($buildJavaHome) { Join-Path $buildJavaHome 'bin/javac.exe' } else { $null }
+  if (-not $javacPath -or -not (Test-Path $javacPath)) {
+    Write-Host '[WARN] JDK compiler (javac) not found, retrying backend Java bootstrap...'
+    $buildJava = Ensure-BackendJava -RequireJdk
+    $buildJavaHome = Get-JavaHomeFromJavaExe -JavaCmdOrPath $buildJava
+    $javacPath = if ($buildJavaHome) { Join-Path $buildJavaHome 'bin/javac.exe' } else { $null }
+    if (-not $javacPath -or -not (Test-Path $javacPath)) {
+      Write-Host '[WARN] JDK compiler (javac) not found, skip auto build.'
+      return $false
+    }
+  }
+
+  $srvRoot = Join-Path $ProjectDir 'astrostudysrv'
+  if (-not (Test-Path $srvRoot)) {
+    Write-Host '[WARN] Backend source folder missing, skip auto build.'
+    return $false
+  }
+
+  $oldJavaHome = $env:JAVA_HOME
+  $oldPath = $env:Path
+  try {
+    $env:JAVA_HOME = $buildJavaHome
+    $env:Path = (Join-Path $buildJavaHome 'bin') + ';' + $oldPath
+
+    if ($ForceRebuild) {
+      Write-Host 'Backend source is newer than local jar, trying local Maven rebuild...'
+    } else {
+      Write-Host 'Backend jar missing, trying local Maven build...'
+    }
+    $moduleOrder = @(
+      'boundless',
+      'basecomm',
+      'image',
+      'astroswisseph',
+      'astrodeeplearn',
+      'astroesp',
+      'astrostudy',
+      'astrostudycn',
+      'astroreader'
+    )
+
+    foreach ($module in $moduleOrder) {
+      $moduleDir = Join-Path $srvRoot $module
+      $pom = Join-Path $moduleDir 'pom.xml'
+      if (-not (Test-Path $pom)) { continue }
+      Write-Host ("[mvn] install {0}" -f $module)
+      $ok = Invoke-Maven -MvnExe $mvn -WorkingDir $moduleDir -MavenArgs @('-DskipTests', 'install')
+      if (-not $ok) { return $false }
+
+      if ($module -eq 'boundless') {
+        $builtJar = Join-Path $moduleDir 'target\boundless-1.2.1.2.jar'
+        if (Test-Path $builtJar) {
+          Write-Host '[mvn] install alias boundless:1.2.1 -> local jar'
+          $aliasOk = Install-MavenAliasArtifact -MvnExe $mvn -WorkingDir $moduleDir -JarPath $builtJar -GroupId 'boundless' -ArtifactId 'boundless' -Version '1.2.1'
+          if (-not $aliasOk) { return $false }
+        }
+      }
+
+      if ($module -eq 'basecomm') {
+        $builtJar = Join-Path $moduleDir 'target\basecomm-1.1.1.jar'
+        if (Test-Path $builtJar) {
+          Write-Host '[mvn] install alias spacex:basecomm:1.1.2.2 -> local jar'
+          $aliasOk = Install-MavenAliasArtifact -MvnExe $mvn -WorkingDir $moduleDir -JarPath $builtJar -GroupId 'spacex' -ArtifactId 'basecomm' -Version '1.1.2.2'
+          if (-not $aliasOk) { return $false }
+        }
+      }
+    }
+
+    $bootDir = Join-Path $srvRoot 'astrostudyboot'
+    if (-not (Test-Path (Join-Path $bootDir 'pom.xml'))) { return $false }
+    Write-Host '[mvn] package astrostudyboot'
+    $bootOk = Invoke-Maven -MvnExe $mvn -WorkingDir $bootDir -MavenArgs @('-DskipTests', 'package')
+    if (-not $bootOk) { return $false }
+  } finally {
+    $env:JAVA_HOME = $oldJavaHome
+    $env:Path = $oldPath
+  }
+
+  return (Test-Path $JarPath)
+}
+
+function Get-ExePath {
+  param([string]$CmdOrPath)
+  if (-not $CmdOrPath) { return $null }
+  if (Test-Path $CmdOrPath) { return (Resolve-Path $CmdOrPath).Path }
+  $cmd = Get-Command $CmdOrPath -ErrorAction SilentlyContinue
+  if ($cmd -and $cmd.Source) { return $cmd.Source }
+  return $null
+}
+
+function Get-ExecutableSourceLabel {
+  param(
+    [string]$CmdOrPath,
+    [string]$EnvOverridePath,
+    [string]$EnvOverrideLabel,
+    [string[]]$LocalRoots,
+    [string]$SystemLabel = 'system'
+  )
+
+  if ([string]::IsNullOrWhiteSpace($CmdOrPath)) {
+    return 'missing'
+  }
+
+  $resolvedPath = Get-ExePath -CmdOrPath $CmdOrPath
+  if (-not $resolvedPath) {
+    $resolvedPath = $CmdOrPath
+  }
+
+  if (-not [string]::IsNullOrWhiteSpace($EnvOverridePath)) {
+    try {
+      $overridePath = (Resolve-Path $EnvOverridePath -ErrorAction Stop).Path
+      $candidatePath = (Resolve-Path $resolvedPath -ErrorAction Stop).Path
+      if ($overridePath -eq $candidatePath) {
+        return $EnvOverrideLabel
+      }
+    } catch {}
+  }
+
+  foreach ($localRoot in @($LocalRoots | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+    try {
+      $normalizedRoot = (Resolve-Path $localRoot -ErrorAction Stop).Path
+      $normalizedCandidate = (Resolve-Path $resolvedPath -ErrorAction Stop).Path
+      if ($normalizedCandidate.StartsWith($normalizedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 'portable-runtime'
+      }
+    } catch {}
+  }
+
+  return $SystemLabel
+}
+
+function Sync-RuntimeFromExe {
+  param(
+    [string]$ExeCmdOrPath,
+    [string]$TargetDir,
+    [int]$UpLevels = 1,
+    [string]$CheckRelative = ''
+  )
+  $exe = Get-ExePath -CmdOrPath $ExeCmdOrPath
+  if (-not $exe) { return $false }
+
+  $src = Split-Path -Parent $exe
+  for ($i = 0; $i -lt $UpLevels; $i++) {
+    $src = Split-Path -Parent $src
+  }
+  if (-not (Test-Path $src)) { return $false }
+
+  if (Test-Path $TargetDir) { Remove-Item -Recurse -Force $TargetDir }
+  New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+  robocopy $src $TargetDir /E /NFL /NDL /NJH /NJS /NP | Out-Null
+
+  if (-not $CheckRelative) { return $true }
+  return (Test-Path (Join-Path $TargetDir $CheckRelative))
+}
+
+function Ensure-PythonRuntimeDeps {
+  param(
+    [string]$PythonExe,
+    [string]$ProjectRoot
+  )
+  $checkDeps = {
+    param([string]$Exe, [string]$ProjRoot)
+    try {
+      $flatlibPath = Join-Path $ProjRoot 'flatlib-ctrad2'
+      $flatlibEscaped = $flatlibPath.Replace('\', '\\')
+      & $Exe -c "import os,sys;p=r'$flatlibEscaped';p and os.path.isdir(os.path.join(p,'flatlib')) and sys.path.insert(0,p);import cherrypy,jsonpickle,swisseph,flatlib,ephem,streamlit,pandas,plotly,svgwrite,fpdf,pytz,opencc,zhconv,sxtwl,cn2an,cnlunar,bidict,kinliuren,drawsvg,kerykeion;import astropy.units;print('ok')" *> $null
+      return ($LASTEXITCODE -eq 0)
+    } catch {
+      return $false
+    }
+  }
+
+  $installFromWheelDir = {
+    param([string]$Exe, [string]$WheelDir, [string]$ProjRoot)
+    if (-not (Test-Path $WheelDir)) { return $false }
+    try {
+      Write-Host ("Installing Python dependencies from local wheelhouse: {0}" -f $WheelDir)
+      $requirementsPath = Join-Path $ProjRoot 'astropy\requirements.txt'
+      if (Test-Path $requirementsPath) {
+        & $Exe -m pip install --disable-pip-version-check --no-input --no-index --find-links $WheelDir -r $requirementsPath
+      } else {
+        & $Exe -m pip install --disable-pip-version-check --no-input --no-index --find-links $WheelDir cherrypy jsonpickle pyswisseph ephem streamlit pandas plotly svgwrite fpdf2 pytz opencc-python-reimplemented zhconv sxtwl cn2an cnlunar bidict kinliuren drawsvg kerykeion astropy
+      }
+      if ($LASTEXITCODE -ne 0) { return $false }
+      return (& $checkDeps $Exe $ProjRoot)
+    } catch {
+      return $false
+    }
+  }
+
+  try {
+    if (& $checkDeps $PythonExe $ProjectRoot) {
+      Write-Host 'Python dependencies already satisfied, skip install.'
+      return $true
+    }
+  } catch {
+    # continue to install
+  }
+
+  try {
+    & $PythonExe -m ensurepip --upgrade *> $null
+  } catch {
+    # embedded python may already include pip
+  }
+
+  $wheelDirs = @(
+    (Join-Path $Root 'runtime/windows/wheels'),
+    (Join-Path $Root 'runtime/wheels'),
+    (Join-Path $WinBundleRoot 'wheels'),
+    (Join-Path $CommonBundleRoot 'wheels')
+  ) | Select-Object -Unique
+  foreach ($wheelDir in $wheelDirs) {
+    if (& $installFromWheelDir $PythonExe $wheelDir $ProjectRoot) {
+      return $true
+    }
+  }
+
+  try {
+    Write-Host 'Installing Python dependencies for local runtime (online fallback)...'
+    $requirementsPath = Join-Path $ProjectRoot 'astropy\requirements.txt'
+    if (Test-Path $requirementsPath) {
+      & $PythonExe -m pip install --disable-pip-version-check --no-input -r $requirementsPath
+    } else {
+      & $PythonExe -m pip install --disable-pip-version-check --no-input cherrypy jsonpickle pyswisseph ephem streamlit pandas plotly svgwrite fpdf2 pytz opencc-python-reimplemented zhconv sxtwl cn2an cnlunar bidict kinliuren drawsvg kerykeion astropy
+    }
+    if ($LASTEXITCODE -ne 0) { return $false }
+    return (& $checkDeps $PythonExe $ProjectRoot)
+  } catch {
+    Write-Host ("Python dependency install failed: {0}" -f $_.Exception.Message)
+    return $false
+  }
+}
+
+function Sync-BundledFrontend {
+  $sources = @(
+    (Join-Path $WinBundleRoot 'dist-file'),
+    (Join-Path $WinBundleRoot 'dist'),
+    (Join-Path $CommonBundleRoot 'dist-file'),
+    (Join-Path $CommonBundleRoot 'dist')
+  )
+  foreach ($src in $sources) {
+    if (-not (Test-Path (Join-Path $src 'index.html'))) { continue }
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $DistDir) | Out-Null
+    if (Test-Path $DistDir) { Remove-Item -Recurse -Force $DistDir }
+    New-Item -ItemType Directory -Force -Path $DistDir | Out-Null
+    robocopy $src $DistDir /E /NFL /NDL /NJH /NJS /NP | Out-Null
+    if (Test-Path (Join-Path $DistDir 'index.html')) {
+      Write-Host ("[OK] Frontend bundle restored from: {0}" -f $src)
+      $script:FrontendSource = 'bundle'
+      return $true
+    }
+  }
+  return $false
+}
+
+function Ensure-FrontendStaticLayout {
+  param([string]$DistPath)
+
+  if (-not $DistPath) { return }
+  $indexPath = Join-Path $DistPath 'index.html'
+  if (-not (Test-Path $indexPath)) { return }
+
+  $html = Get-Content -Path $indexPath -Raw -ErrorAction SilentlyContinue
+  if (-not $html) { return }
+  if ($html -notmatch '/static/umi\.') { return }
+
+  $staticDir = Join-Path $DistPath 'static'
+  New-Item -ItemType Directory -Force -Path $staticDir | Out-Null
+
+  $fixed = $false
+  Get-ChildItem -Path $DistPath -File -Filter 'umi.*' | ForEach-Object {
+    $dest = Join-Path $staticDir $_.Name
+    if (-not (Test-Path $dest)) {
+      Copy-Item -Path $_.FullName -Destination $dest -Force
+      $fixed = $true
+    }
+  }
+
+  if ($fixed) {
+    Write-Host '[OK] Repaired frontend static layout for /static assets.'
+  }
+
+  # Some bundles reference font URLs as url(static/...) inside /static/umi*.css.
+  # Browser then requests /static/static/* when CSS is served from /static/.
+  # Mirror first-level static files into static/static to avoid font 404.
+  $nestedStaticDir = Join-Path $staticDir 'static'
+  $needsNestedMirror = $false
+  Get-ChildItem -Path $staticDir -File -Filter 'umi*.css' -ErrorAction SilentlyContinue | ForEach-Object {
+    $cssText = Get-Content -Path $_.FullName -Raw -ErrorAction SilentlyContinue
+    if ($cssText -and $cssText -match 'url\(\s*static\/') {
+      $needsNestedMirror = $true
+    }
+  }
+
+  if ($needsNestedMirror) {
+    New-Item -ItemType Directory -Force -Path $nestedStaticDir | Out-Null
+    Get-ChildItem -Path $staticDir -File -ErrorAction SilentlyContinue | ForEach-Object {
+      $dest = Join-Path $nestedStaticDir $_.Name
+      if (-not (Test-Path $dest)) {
+        Copy-Item -Path $_.FullName -Destination $dest -Force
+        $fixed = $true
+      }
+    }
+  }
+
+  if ($needsNestedMirror -and $fixed) {
+    Write-Host '[OK] Repaired frontend nested static assets for relative font URLs.'
+  }
+}
+
+function Get-BackendJarDownloadUrls {
+  $urls = @()
+  if ($env:HOROSA_BOOT_JAR_URL) {
+    $envUrl = $env:HOROSA_BOOT_JAR_URL.Trim()
+    if ($envUrl -match '^https?://') {
+      $urls += $envUrl
+    } else {
+      Write-Host '[WARN] HOROSA_BOOT_JAR_URL is set but is not a valid http(s) URL. Ignore it.'
+    }
+  }
+
+  $urls += Read-HttpUrlsFromFiles -Files @(
+    (Join-Path $WinBundleRoot 'astrostudyboot.url.txt'),
+    (Join-Path $WinBundleRoot 'astrostudyboot.jar.url'),
+    (Join-Path $WinBundleRoot 'astrostudyboot.urls.txt'),
+    (Join-Path $CommonBundleRoot 'astrostudyboot.url.txt'),
+    (Join-Path $CommonBundleRoot 'astrostudyboot.jar.url'),
+    (Join-Path $CommonBundleRoot 'astrostudyboot.urls.txt')
+  )
+
+  # GitHub source ZIP stores this LFS-tracked jar as a pointer file, so keep a public
+  # binary URL as a built-in fallback for one-click startup users.
+  $urls += @(
+    'https://media.githubusercontent.com/media/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/main/local/workspace/runtime/windows/bundle/astrostudyboot.jar'
+  )
+
+  return @($urls | Where-Object { $_ -match '^https?://' } | Select-Object -Unique)
+}
+
+function Ensure-BackendJar {
+  if (Test-Path $JarPath) {
+    if (Test-JarFileLooksValid -Path $JarPath) {
+      if (-not $CheckSourceFreshness) {
+        $script:JarSource = 'project'
+        return $true
+      }
+
+      $sourceStamp = Get-BackendSourceLatestWriteTimeUtc
+      $jarStamp = (Get-Item $JarPath).LastWriteTimeUtc
+      if (-not $sourceStamp -or $jarStamp -ge $sourceStamp) {
+        $script:JarSource = 'project'
+        return $true
+      }
+
+      Write-Host ("[WARN] Backend source is newer than existing jar ({0:u} > {1:u}), preferring local rebuild." -f $sourceStamp, $jarStamp)
+      if (Try-BuildBackendJar -ForceRebuild) {
+        if (Test-JarFileLooksValid -Path $JarPath) {
+          Write-Host ("[OK] Backend jar rebuilt locally: {0}" -f $JarPath)
+          $script:JarSource = 'build'
+          return $true
+        }
+      }
+      Write-Host '[WARN] Local backend rebuild did not produce a valid jar, falling back to bundled/download sources.'
+    }
+
+    Prepare-BackendJarRefresh
+
+    Write-Host ("[WARN] Existing backend jar is invalid, trying bundled copy: {0}" -f $JarPath)
+    try {
+      Remove-Item -LiteralPath $JarPath -Force -ErrorAction Stop
+    } catch {
+      Write-Host ("[WARN] Could not remove invalid backend jar: {0}" -f $_.Exception.Message)
+      return $false
+    }
+  }
+
+  if (Try-BuildBackendJar) {
+    if (Test-JarFileLooksValid -Path $JarPath) {
+      Write-Host ("[OK] Backend jar built locally: {0}" -f $JarPath)
+      $script:JarSource = 'build'
+      return $true
+    }
+
+    Write-Host ("[WARN] Backend jar build finished but jar is invalid: {0}" -f $JarPath)
+    try {
+      Remove-Item -LiteralPath $JarPath -Force -ErrorAction Stop
+    } catch {}
+  }
+
+  $sources = New-Object System.Collections.Generic.List[string]
+  foreach ($direct in @(
+    (Join-Path $WinBundleRoot 'astrostudyboot.jar'),
+    (Join-Path $CommonBundleRoot 'astrostudyboot.jar')
+  )) {
+    if ($direct -and (Test-Path $direct)) {
+      $sources.Add($direct)
+    }
+  }
+  foreach ($baseDir in @($WinBundleRoot, $CommonBundleRoot)) {
+    if (-not (Test-Path $baseDir)) { continue }
+    $versionedJars = @(
+      Get-ChildItem -Path $baseDir -Filter 'astrostudyboot-*.jar' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending
+    )
+    foreach ($jar in $versionedJars) {
+      $sources.Add($jar.FullName)
+    }
+  }
+
+  foreach ($src in @($sources.ToArray() | Select-Object -Unique)) {
+    if (-not (Test-Path $src)) { continue }
+    if (-not (Test-JarFileLooksValid -Path $src)) {
+      Write-Host ("[WARN] Skip invalid bundled backend jar: {0}" -f $src)
+      continue
+    }
+
+    try {
+      New-Item -ItemType Directory -Force -Path (Split-Path -Parent $JarPath) | Out-Null
+      Copy-Item -Path $src -Destination $JarPath -Force
+    } catch {
+      Write-Host ("[WARN] Failed to restore backend jar from {0}: {1}" -f $src, $_.Exception.Message)
+      continue
+    }
+
+    if (Test-JarFileLooksValid -Path $JarPath) {
+      Write-Host ("[OK] Backend jar restored from: {0}" -f $src)
+      $script:JarSource = 'bundle'
+      return $true
+    }
+
+    Write-Host ("[WARN] Restored backend jar is still invalid, trying next source: {0}" -f $src)
+    try {
+      Remove-Item -LiteralPath $JarPath -Force -ErrorAction Stop
+    } catch {}
+  }
+
+  $jarUrls = @(Get-BackendJarDownloadUrls)
+  if ($jarUrls.Count -gt 0) {
+    Write-Host ("Trying backend jar download sources: {0}" -f $jarUrls.Count)
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $JarPath) | Out-Null
+    if (Invoke-DownloadWithFallback -Urls $jarUrls -OutFile $JarPath -TimeoutSec 240) {
+      if (Test-JarFileLooksValid -Path $JarPath) {
+        Write-Host ("[OK] Backend jar downloaded to: {0}" -f $JarPath)
+        $script:JarSource = 'download'
+        return $true
+      }
+
+      Write-Host ("[WARN] Downloaded backend jar is invalid, will try local build: {0}" -f $JarPath)
+      try {
+        Remove-Item -LiteralPath $JarPath -Force -ErrorAction Stop
+      } catch {}
+    }
+  }
+
+  return $false
+}
+
+function Get-NodeVersionInfo {
+  param([string]$NodeCmdOrPath)
+
+  if ([string]::IsNullOrWhiteSpace($NodeCmdOrPath)) { return $null }
+  try {
+    $out = & $NodeCmdOrPath -v 2>$null
+    if (-not $out) { return $null }
+
+    $versionText = ($out | Select-Object -First 1).ToString().Trim()
+    $match = [System.Text.RegularExpressions.Regex]::Match($versionText, '^v?(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)')
+    if (-not $match.Success) { return $null }
+
+    return [pscustomobject]@{
+      Major = [int]$match.Groups['major'].Value
+      Minor = [int]$match.Groups['minor'].Value
+      Patch = [int]$match.Groups['patch'].Value
+      Text = $versionText
+    }
+  } catch {
+    return $null
+  }
+}
+
+function Test-NodeJsSupported {
+  param([string]$NodeCmdOrPath)
+
+  $version = Get-NodeVersionInfo -NodeCmdOrPath $NodeCmdOrPath
+  if (-not $version) { return $false }
+  return ($version.Major -ge 20)
+}
+
+function Get-PortableNodeJsCandidates {
+  $candidates = @(
+    $env:HOROSA_NODE,
+    $PortableNodeExe,
+    (Join-Path $Root 'runtime/node/node.exe'),
+    (Join-Path $ProjectDir 'runtime/windows/node/node.exe'),
+    (Join-Path $ProjectDir 'runtime/node/node.exe')
+  )
+
+  return @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+}
+
+function Get-SystemNodeJsCandidates {
+  $candidates = @(
+    "$env:LocalAppData\Programs\nodejs\node.exe",
+    "$env:ProgramFiles\nodejs\node.exe",
+    "$env:ProgramFiles(x86)\nodejs\node.exe"
+  )
+
+  try {
+    $nodeCmd = Get-Command node -ErrorAction Stop
+    if ($nodeCmd -and $nodeCmd.Source -and ($nodeCmd.Source -notmatch 'WindowsApps')) {
+      $candidates += $nodeCmd.Source
+    }
+  } catch {}
+
+  return $candidates
+}
+
+function Get-NodeJsCandidates {
+  return @((Get-PortableNodeJsCandidates) + (Get-SystemNodeJsCandidates))
+}
+
+function Resolve-NodeJsFromCandidates {
+  param(
+    [string[]]$Candidates,
+    [string]$ScopeLabel = 'Node.js',
+    [switch]$QuietUnsupported
+  )
+
+  $seen = @{}
+  $unsupported = New-Object System.Collections.Generic.List[string]
+
+  foreach ($candidate in @($Candidates)) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    $key = $candidate.ToLowerInvariant()
+    if ($seen.ContainsKey($key)) { continue }
+    $seen[$key] = $true
+
+    if ($candidate -ne 'node' -and (-not (Test-Path $candidate))) { continue }
+    if (Test-NodeJsSupported -NodeCmdOrPath $candidate) {
+      return $candidate
+    }
+
+    $version = Get-NodeVersionInfo -NodeCmdOrPath $candidate
+    if ($version) {
+      $unsupported.Add(("{0} ({1})" -f $candidate, $version.Text))
+    }
+  }
+
+  if ((-not $QuietUnsupported) -and $unsupported.Count -gt 0) {
+    Write-Host ("[WARN] {0} found but version is below the supported baseline (20+): {1}" -f $ScopeLabel, ($unsupported -join ', '))
+  }
+
+  return $null
+}
+
+function Resolve-NodeJs {
+  return (Resolve-NodeJsFromCandidates -Candidates (Get-NodeJsCandidates) -ScopeLabel 'Node.js')
+}
+
+function Resolve-PortableNodeJs {
+  return (Resolve-NodeJsFromCandidates -Candidates (Get-PortableNodeJsCandidates) -ScopeLabel 'Portable Node.js' -QuietUnsupported)
+}
+
+function Resolve-SystemNodeJs {
+  return (Resolve-NodeJsFromCandidates -Candidates (Get-SystemNodeJsCandidates) -ScopeLabel 'System Node.js' -QuietUnsupported)
+}
+
+function Get-NodeJsOfficialLatestV20ZipUrl {
+  $tempRoot = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) {
+    $env:TEMP
+  } elseif (-not [string]::IsNullOrWhiteSpace($env:TMP)) {
+    $env:TMP
+  } else {
+    Join-Path $RepoRoot 'log'
+  }
+
+  $tmpDir = Join-Path $tempRoot ('horosa_nodejs_manifest_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss'))
+  $manifestPath = Join-Path $tmpDir 'SHASUMS256.txt'
+  try {
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    if (-not (Invoke-DownloadWithFallback -Urls @('https://nodejs.org/dist/latest-v20.x/SHASUMS256.txt') -OutFile $manifestPath -TimeoutSec 120)) {
+      return $null
+    }
+    foreach ($line in (Get-Content -Path $manifestPath -ErrorAction SilentlyContinue)) {
+      $trimmed = "$line".Trim()
+      if ($trimmed -match '(node-v\d+\.\d+\.\d+-win-x64\.zip)$') {
+        return ("https://nodejs.org/dist/latest-v20.x/{0}" -f $Matches[1])
+      }
+    }
+  } catch {
+    Write-Host ("[WARN] Could not resolve official Node.js LTS archive URL automatically: {0}" -f $_.Exception.Message)
+  }
+
+  return $null
+}
+
+function Get-NodeJsDownloadUrls {
+  $urls = @()
+
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_NODE_URL)) {
+    $envUrl = $env:HOROSA_NODE_URL.Trim()
+    if ($envUrl -match '^https?://') {
+      $urls += $envUrl
+    } else {
+      Write-Host '[WARN] HOROSA_NODE_URL is set but is not a valid http(s) URL. Ignore it.'
+    }
+  }
+
+  $urls += Read-HttpUrlsFromFiles -Files @(
+    (Join-Path $WinBundleRoot 'node20.url.txt'),
+    (Join-Path $WinBundleRoot 'node.url.txt'),
+    (Join-Path $CommonBundleRoot 'node20.url.txt'),
+    (Join-Path $CommonBundleRoot 'node.url.txt')
+  )
+
+  $officialUrl = Get-NodeJsOfficialLatestV20ZipUrl
+  if ($officialUrl) {
+    $urls += $officialUrl
+  }
+
+  return @($urls | Where-Object { $_ -match '^https?://' } | Select-Object -Unique)
+}
+
+function Install-NodeJsPortable {
+  try {
+    Write-Host 'winget install Node.js failed, trying portable Node.js LTS download...'
+    $portableRoot = $RuntimeWindowsDir
+    $nodeTarget = $PortableNodeRuntimeDir
+    $tmpDir = Join-Path $env:TEMP ('horosa_nodejs_' + [DateTime]::Now.ToString('yyyyMMdd_HHmmss'))
+    $zipPath = Join-Path $tmpDir 'nodejs.zip'
+    New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    New-Item -ItemType Directory -Force -Path $portableRoot | Out-Null
+
+    $archiveReady = $false
+    $localArchives = @()
+    if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_NODE_ZIP) -and (Test-Path $env:HOROSA_NODE_ZIP)) {
+      $localArchives += $env:HOROSA_NODE_ZIP.Trim()
+    }
+    foreach ($baseDir in @($WinBundleRoot, $CommonBundleRoot)) {
+      if (-not (Test-Path $baseDir)) { continue }
+      $localArchives += @(
+        (Join-Path $baseDir 'node20.zip'),
+        (Join-Path $baseDir 'node.zip')
+      )
+      $localArchives += @(
+        Get-ChildItem -Path $baseDir -Filter 'node-v*-win-x64.zip' -File -ErrorAction SilentlyContinue |
+          Sort-Object LastWriteTime -Descending |
+          Select-Object -ExpandProperty FullName
+      )
+    }
+
+    foreach ($archive in @($localArchives | Select-Object -Unique)) {
+      if ([string]::IsNullOrWhiteSpace($archive)) { continue }
+      if (-not (Test-Path $archive)) { continue }
+      try {
+        Copy-Item -Path $archive -Destination $zipPath -Force
+        if ((Test-Path $zipPath) -and ((Get-Item $zipPath).Length -gt 1MB)) {
+          Write-Host ("[OK] Using bundled Node.js archive: {0}" -f $archive)
+          $archiveReady = $true
+          break
+        }
+      } catch {
+        Write-Host ("[WARN] Cannot use bundled Node.js archive {0}: {1}" -f $archive, $_.Exception.Message)
+      }
+    }
+
+    if (-not $archiveReady) {
+      $nodeUrls = @(Get-NodeJsDownloadUrls)
+      if ($nodeUrls.Count -gt 0) {
+        $archiveReady = Invoke-DownloadWithFallback -Urls $nodeUrls -OutFile $zipPath -TimeoutSec 300
+      } else {
+        Write-Host '[WARN] Official Node.js LTS download URL resolution failed.'
+      }
+    }
+    if (-not $archiveReady) {
+      Write-Host '[WARN] Portable Node.js zip download failed or no usable archive was available.'
+      return $false
+    }
+
+    $extractDir = Join-Path $tmpDir 'extract'
+    Expand-Archive -Path $zipPath -DestinationPath $extractDir -Force
+
+    $nodeExe = Get-ChildItem -Path $extractDir -Recurse -Filter node.exe -File -ErrorAction SilentlyContinue |
+      Select-Object -First 1
+    if (-not $nodeExe) {
+      Write-Host '[WARN] Portable Node.js archive extracted but node.exe not found.'
+      return $false
+    }
+    $nodeHome = Split-Path -Parent $nodeExe.FullName
+
+    if (Test-Path $nodeTarget) { Remove-Item -Recurse -Force $nodeTarget }
+    New-Item -ItemType Directory -Force -Path $nodeTarget | Out-Null
+    robocopy $nodeHome $nodeTarget /E /NFL /NDL /NJH /NJS /NP | Out-Null
+
+    $nodeOk = Test-Path (Join-Path $nodeTarget 'node.exe')
+    $npmOk = Test-Path (Join-Path $nodeTarget 'npm.cmd')
+    if (-not $nodeOk -or -not $npmOk) {
+      Write-Host '[WARN] Portable Node.js copy finished but node.exe or npm.cmd is still missing.'
+      return $false
+    }
+    return $true
+  } catch {
+    Write-Host ("Portable Node.js download failed: {0}" -f $_.Exception.Message)
+    return $false
+  }
+}
+
+function Install-NodeJs {
+  if (Install-WithWinget -PackageId 'OpenJS.NodeJS.LTS' -DisplayName 'Node.js LTS') {
+    return $true
+  }
+  if (Install-WithWinget -PackageId 'OpenJS.NodeJS' -DisplayName 'Node.js') {
+    return $true
+  }
+  return (Install-NodeJsPortable)
+}
+
+function Ensure-NodeJs {
+  $resolved = Resolve-NodeJs
+  if ($resolved) { return $resolved }
+
+  if (Install-NodeJs) {
+    Start-Sleep -Seconds 2
+    $resolved = Resolve-NodeJs
+    if ($resolved) {
+      Write-Host ("[OK] Node.js ready: {0}" -f $resolved)
+    }
+  }
+
+  return $resolved
+}
+
+function Get-NodeJsSourceLabel {
+  param(
+    [string]$NodeExe,
+    [string]$SystemLabel = 'system'
+  )
+
+  return (Get-ExecutableSourceLabel `
+    -CmdOrPath $NodeExe `
+    -EnvOverridePath $env:HOROSA_NODE `
+    -EnvOverrideLabel 'HOROSA_NODE' `
+    -LocalRoots @(
+      $PortableNodeRuntimeDir,
+      (Join-Path $Root 'runtime/node'),
+      (Join-Path $ProjectDir 'runtime/windows/node'),
+      (Join-Path $ProjectDir 'runtime/node')
+    ) `
+    -SystemLabel $SystemLabel)
+}
+
+function Ensure-FrontendNodeJs {
+  if ($env:HOROSA_NODE -and (Test-Path $env:HOROSA_NODE) -and (Test-NodeJsSupported -NodeCmdOrPath $env:HOROSA_NODE)) {
+    $script:NodeSourceLabel = 'HOROSA_NODE'
+    return $env:HOROSA_NODE
+  }
+
+  $resolved = Resolve-PortableNodeJs
+  if ($resolved) {
+    $script:NodeSourceLabel = Get-NodeJsSourceLabel -NodeExe $resolved
+    return $resolved
+  }
+
+  Write-Host '[INFO] Frontend bootstrap prefers local portable Node.js 20 runtime.'
+  if (Install-NodeJsPortable) {
+    Start-Sleep -Seconds 2
+    $resolved = Resolve-PortableNodeJs
+    if ($resolved) {
+      $script:NodeSourceLabel = Get-NodeJsSourceLabel -NodeExe $resolved
+      Write-Host ("[OK] Frontend portable Node.js ready: {0}" -f $resolved)
+      return $resolved
+    }
+  }
+
+  $systemNode = Resolve-SystemNodeJs
+  if ($systemNode) {
+    Write-Host ("[WARN] Portable Node.js bootstrap failed, trying to sync a local runtime from system Node.js: {0}" -f $systemNode)
+    $nodeSynced = Sync-RuntimeFromExe -ExeCmdOrPath $systemNode -TargetDir $PortableNodeRuntimeDir -UpLevels 0 -CheckRelative 'npm.cmd'
+    if ($nodeSynced) {
+      $resolved = Resolve-PortableNodeJs
+      if ($resolved) {
+        $script:NodeSourceLabel = Get-NodeJsSourceLabel -NodeExe $resolved
+        Write-Host ("[OK] Local Node.js runtime ready from system seed: {0}" -f $resolved)
+        return $resolved
+      }
+    }
+
+    $script:NodeSourceLabel = Get-NodeJsSourceLabel -NodeExe $systemNode -SystemLabel 'system-fallback'
+    Write-Host ("[WARN] Portable Node.js bootstrap failed, using system Node fallback: {0}" -f $systemNode)
+    return $systemNode
+  }
+
+  return $null
+}
+
+function Resolve-NpmCmd {
+  param([string]$NodeExe)
+
+  if (-not [string]::IsNullOrWhiteSpace($env:HOROSA_NPM) -and (Test-Path $env:HOROSA_NPM)) {
+    return $env:HOROSA_NPM
+  }
+
+  $nodePath = Get-ExePath -CmdOrPath $NodeExe
+  if ($nodePath) {
+    $nodeDir = Split-Path -Parent $nodePath
+    $candidates = @(
+      (Join-Path $nodeDir 'npm.cmd'),
+      (Join-Path $nodeDir 'npm')
+    )
+    foreach ($candidate in $candidates) {
+      if (Test-Path $candidate) {
+        return $candidate
+      }
+    }
+  }
+
+  try {
+    $npmCmd = Get-Command npm -ErrorAction Stop
+    if ($npmCmd -and $npmCmd.Source -and ($npmCmd.Source -notmatch 'WindowsApps')) {
+      return $npmCmd.Source
+    }
+  } catch {}
+
+  return $null
+}
+
+function Invoke-Npm {
+  param(
+    [string]$NpmExe,
+    [string]$WorkingDir,
+    [string[]]$NpmArgs,
+    [string]$LogTag = 'npm'
+  )
+
+  $stamp = [DateTime]::Now.ToString('yyyyMMdd_HHmmss_fff')
+  $stdoutPath = Join-Path $LogDir ("{0}_{1}.out.log" -f $LogTag, $stamp)
+  $stderrPath = Join-Path $LogDir ("{0}_{1}.err.log" -f $LogTag, $stamp)
+
+  try {
+    $p = Start-Process `
+      -FilePath $NpmExe `
+      -WorkingDirectory $WorkingDir `
+      -ArgumentList $NpmArgs `
+      -NoNewWindow `
+      -Wait `
+      -PassThru `
+      -RedirectStandardOutput $stdoutPath `
+      -RedirectStandardError $stderrPath
+    $success = ($p.ExitCode -eq 0)
+    $peerConflict = $false
+    if (-not $success) {
+      $peerConflict = Test-NpmPeerDependencyConflict -LogPaths @($stdoutPath, $stderrPath)
+      Write-Host ("[WARN] npm command failed (exit code {0}). Logs: {1}, {2}" -f $p.ExitCode, $stdoutPath, $stderrPath)
+    }
+
+    return [pscustomobject]@{
+      Success = $success
+      ExitCode = $p.ExitCode
+      StdOutPath = $stdoutPath
+      StdErrPath = $stderrPath
+      PeerDependencyConflict = $peerConflict
+      ErrorMessage = $null
+    }
+  } catch {
+    Write-Host ("[WARN] npm run failed in {0}: {1}" -f $WorkingDir, $_.Exception.Message)
+    return [pscustomobject]@{
+      Success = $false
+      ExitCode = -1
+      StdOutPath = $stdoutPath
+      StdErrPath = $stderrPath
+      PeerDependencyConflict = $false
+      ErrorMessage = $_.Exception.Message
+    }
+  }
+}
+
+function Set-FrontendDistContext {
+  $script:DistDir = Resolve-FrontendDistDir -ProjDir $ProjectDir
+  $script:FrontendSource = 'dist-file'
+  if ($script:DistDir -match '[\\/]astrostudyui[\\/]dist$') {
+    $script:FrontendSource = 'dist'
+  }
+  if ($script:DistDir -match '[\\/]astrostudyui[\\/]dist-file$') {
+    $script:FrontendSource = 'dist-file'
+  }
+  Write-Host ("[INFO] Frontend static dir: {0}" -f $script:DistDir)
+}
+
+function Get-FrontendSourceLatestWriteTimeUtc {
+  $uiRoot = Join-Path $ProjectDir 'astrostudyui'
+  if (-not (Test-Path $uiRoot)) {
+    return $null
+  }
+
+  $items = New-Object System.Collections.Generic.List[object]
+  $dirs = @(
+    (Join-Path $uiRoot 'src'),
+    (Join-Path $uiRoot 'public'),
+    (Join-Path $uiRoot 'scripts')
+  )
+  foreach ($dir in $dirs) {
+    if (-not (Test-Path $dir)) { continue }
+    foreach ($item in (Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -notmatch '[\\/](dist|dist-file|node_modules|\.umi|\.cache)[\\/]' })) {
+      $items.Add($item)
+    }
+  }
+
+  $files = @(
+    (Join-Path $uiRoot 'package.json'),
+    (Join-Path $uiRoot 'package-lock.json'),
+    (Join-Path $uiRoot '.umirc.js')
+  )
+  foreach ($file in $files) {
+    if (Test-Path $file) {
+      $items.Add((Get-Item $file -ErrorAction SilentlyContinue))
+    }
+  }
+
+  $latest = $items |
+    Where-Object { $_ } |
+    Sort-Object LastWriteTimeUtc -Descending |
+    Select-Object -First 1
+  if ($latest) {
+    return $latest.LastWriteTimeUtc
+  }
+  return $null
+}
+
+function Ensure-FrontendNodeModules {
+  param(
+    [string]$UiDir,
+    [string]$NpmExe
+  )
+
+  $nodeModulesDir = Join-Path $UiDir 'node_modules'
+  if ((Test-Path $nodeModulesDir) -and (Get-ChildItem -Path $nodeModulesDir -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+    return [pscustomobject]@{
+      Success = $true
+      UsedLegacyPeerDeps = $false
+      Result = $null
+    }
+  }
+
+  $lockFile = Join-Path $UiDir 'package-lock.json'
+  $baseArgs = @('install', '--no-audit', '--no-fund')
+  if (Test-Path $lockFile) {
+    Write-Host 'Frontend dependencies missing, running npm ci...'
+    $baseArgs = @('ci', '--no-audit', '--no-fund')
+  } else {
+    Write-Host 'Frontend dependencies missing, running npm install...'
+  }
+
+  $result = Invoke-Npm -NpmExe $NpmExe -WorkingDir $UiDir -NpmArgs $baseArgs -LogTag 'frontend_deps'
+  if ($result.Success) {
+    return [pscustomobject]@{
+      Success = $true
+      UsedLegacyPeerDeps = $false
+      Result = $result
+    }
+  }
+
+  if (-not $result.PeerDependencyConflict) {
+    return [pscustomobject]@{
+      Success = $false
+      UsedLegacyPeerDeps = $false
+      Result = $result
+    }
+  }
+
+  Write-Host '[WARN] Standard frontend dependency install hit a peer dependency conflict. Retrying with --legacy-peer-deps...'
+  $compatArgs = @($baseArgs + '--legacy-peer-deps')
+  $compatResult = Invoke-Npm -NpmExe $NpmExe -WorkingDir $UiDir -NpmArgs $compatArgs -LogTag 'frontend_deps_legacy'
+
+  return [pscustomobject]@{
+    Success = $compatResult.Success
+    UsedLegacyPeerDeps = $true
+    Result = $compatResult
+  }
+}
+
+function Try-BuildFrontendDist {
+  param(
+    [switch]$ForceRebuild
+  )
+
+  $uiDir = Join-Path $ProjectDir 'astrostudyui'
+  $packageJson = Join-Path $uiDir 'package.json'
+  $distFileDir = Join-Path $uiDir 'dist-file'
+  $distFileIndex = Join-Path $distFileDir 'index.html'
+
+  if (-not (Test-Path $packageJson)) {
+    $script:FrontendRepairFailureReason = 'Frontend source folder is missing package.json.'
+    Write-Host '[WARN] Frontend source folder missing package.json, skip local frontend build.'
+    return $false
+  }
+
+  $script:FrontendRepairFailureReason = $null
+  $nodeCmd = Ensure-FrontendNodeJs
+  if (-not $nodeCmd) {
+    $script:FrontendRepairFailureReason = 'Node.js auto-setup failed for frontend bootstrap.'
+    Write-Host '[WARN] Node.js 20+ not found, skip local frontend build.'
+    return $false
+  }
+  $script:NodeBin = $nodeCmd
+
+  $npmCmd = Resolve-NpmCmd -NodeExe $nodeCmd
+  if (-not $npmCmd) {
+    $script:FrontendRepairFailureReason = 'npm.cmd was not found for the selected frontend Node.js runtime.'
+    Write-Host '[WARN] npm not found, skip local frontend build.'
+    return $false
+  }
+  $script:NpmBin = $npmCmd
+  $nodeSource = Get-NodeJsSourceLabel -NodeExe $nodeCmd
+  Write-Host ("[INFO] Frontend bootstrap runtime: node={0} ({1}), npm={2}" -f $nodeCmd, $nodeSource, $npmCmd)
+
+  $depsResult = Ensure-FrontendNodeModules -UiDir $uiDir -NpmExe $npmCmd
+  if (-not $depsResult.Success) {
+    $depsLogs = @($depsResult.Result.StdOutPath, $depsResult.Result.StdErrPath) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    if ($depsResult.UsedLegacyPeerDeps) {
+      $script:FrontendRepairFailureReason = 'Frontend dependency install failed even after retrying with --legacy-peer-deps.'
+    } else {
+      $script:FrontendRepairFailureReason = 'Frontend dependency install failed before build:file.'
+    }
+    if ($depsLogs.Count -gt 0) {
+      Write-Host ("[WARN] Frontend dependency install logs: {0}" -f ($depsLogs -join ', '))
+    }
+    Write-Host '[WARN] Frontend dependencies install failed, skip local frontend build.'
+    return $false
+  }
+
+  if ($ForceRebuild -and (Test-Path $distFileDir)) {
+    try {
+      Remove-Item -Recurse -Force $distFileDir -ErrorAction Stop
+    } catch {
+      Write-Host ("[WARN] Failed to remove old dist-file before rebuild: {0}" -f $_.Exception.Message)
+    }
+  }
+
+  if ($ForceRebuild) {
+    Write-Host 'Frontend source is newer than static bundle, trying local npm rebuild...'
+  } else {
+    Write-Host 'Frontend static file missing, trying local npm build...'
+  }
+
+  $buildResult = Invoke-Npm -NpmExe $npmCmd -WorkingDir $uiDir -NpmArgs @('run', 'build:file') -LogTag 'frontend_build_file'
+  if (-not $buildResult.Success) {
+    $script:FrontendRepairFailureReason = 'Frontend build:file command failed.'
+    return $false
+  }
+
+  if (Test-Path $distFileIndex) {
+    Set-FrontendDistContext
+    $script:FrontendRepairFailureReason = $null
+    return $true
+  }
+
+  $script:FrontendRepairFailureReason = 'Frontend build finished but dist-file/index.html is still missing.'
+  Write-Host ("[WARN] Frontend build finished but index.html is still missing: {0}" -f $distFileIndex)
+  return $false
+}
+
+function Test-NpmPeerDependencyConflict {
+  param([string[]]$LogPaths)
+
+  $paths = @($LogPaths | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique)
+  if ($paths.Count -eq 0) {
+    return $false
+  }
+
+  $patterns = @(
+    'ERESOLVE',
+    'peer dependency',
+    'Could not resolve dependency',
+    '--legacy-peer-deps'
+  )
+
+  try {
+    return [bool](Select-String -Path $paths -Pattern $patterns -SimpleMatch -Quiet -ErrorAction SilentlyContinue)
+  } catch {
+    return $false
+  }
+}
+
+function Get-WarmupMarkerPath {
+  param(
+    [string]$ProjectRoot
+  )
+
+  $cacheDir = Join-Path $ProjectRoot '.horosa-local-cache-win'
+  New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+  return (Join-Path $cacheDir 'warmup-success.json')
+}
+
+function Get-WarmupFingerprint {
+  param(
+    [string]$ProjectRoot
+  )
+
+  $paths = @(
+    (Join-Path $ProjectRoot 'astrostudyui\scripts\warmHorosaRuntime.js'),
+    (Join-Path $DistDir 'index.html'),
+    $JarPath
+  )
+
+  $parts = New-Object System.Collections.Generic.List[string]
+  foreach ($path in $paths) {
+    if ([string]::IsNullOrWhiteSpace($path)) { continue }
+    if (-not (Test-Path $path)) {
+      $parts.Add(("missing:{0}" -f $path))
+      continue
+    }
+    $item = Get-Item $path -ErrorAction SilentlyContinue
+    if ($item) {
+      $parts.Add(("{0}|{1}|{2}" -f $item.FullName, $item.Length, $item.LastWriteTimeUtc.Ticks))
+    }
+  }
+
+  $raw = [System.Text.Encoding]::UTF8.GetBytes(($parts -join "`n"))
+  $sha = [System.Security.Cryptography.SHA256]::Create()
+  try {
+    $hash = $sha.ComputeHash($raw)
+  } finally {
+    $sha.Dispose()
+  }
+  return ([BitConverter]::ToString($hash)).Replace('-', '').ToLowerInvariant()
+}
+
+function Should-RunWarmup {
+  param(
+    [string]$ProjectRoot,
+    [string]$Fingerprint
+  )
+
+  if ($env:HOROSA_DISABLE_WARMUP -eq '1') {
+    Write-Host '[warmup] Disabled by HOROSA_DISABLE_WARMUP=1.'
+    return $false
+  }
+  if ($env:HOROSA_FORCE_WARMUP -eq '1') {
+    Write-Host '[warmup] Forced by HOROSA_FORCE_WARMUP=1.'
+    return $true
+  }
+
+  $markerPath = Get-WarmupMarkerPath -ProjectRoot $ProjectRoot
+  if (-not (Test-Path $markerPath)) {
+    return $true
+  }
+
+  try {
+    $raw = Get-Content -Path $markerPath -Raw -Encoding UTF8
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      return $true
+    }
+    $marker = $raw | ConvertFrom-Json -Depth 20
+    if ($marker -and $marker.fingerprint -eq $Fingerprint) {
+      Write-Host ("[warmup] Cache hit, skip runtime warmup. fingerprint={0}" -f $Fingerprint)
+      return $false
+    }
+  } catch {
+    Write-Host ("[warmup][WARN] Failed to read warmup marker, will rerun: {0}" -f $_.Exception.Message)
+  }
+
+  return $true
+}
+
+function Invoke-HorosaWarmup {
+  param(
+    [string]$ProjectRoot,
+    [switch]$Background
+  )
+
+  $warmScript = Join-Path $ProjectRoot 'astrostudyui\scripts\warmHorosaRuntime.js'
+  if (-not (Test-Path $warmScript)) {
+    return
+  }
+
+  $nodeCmd = Resolve-NodeJs
+  if (-not $nodeCmd) {
+    Write-Host '[WARN] Node.js not found, skip runtime warmup.'
+    return
+  }
+
+  $fingerprint = Get-WarmupFingerprint -ProjectRoot $ProjectRoot
+  if (-not (Should-RunWarmup -ProjectRoot $ProjectRoot -Fingerprint $fingerprint)) {
+    return
+  }
+
+  $markerPath = Get-WarmupMarkerPath -ProjectRoot $ProjectRoot
+  $warmOut = Join-Path $LogDir 'warmup.log'
+  $warmErr = Join-Path $LogDir 'warmup.log.err'
+  $warmArgs = @(
+    $warmScript,
+    '--marker',
+    $markerPath,
+    '--fingerprint',
+    $fingerprint
+  )
+  Write-Host ("[warmup] Using Node.js: {0}" -f $nodeCmd)
+  Write-Host ("[warmup] Preheating critical runtime endpoints via {0}" -f $warmScript)
+
+  try {
+    if ($Background) {
+      Start-Process -FilePath $nodeCmd `
+        -ArgumentList $warmArgs `
+        -WorkingDirectory (Split-Path -Parent $warmScript) `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $warmOut `
+        -RedirectStandardError $warmErr | Out-Null
+      Write-Host '[warmup] Started in background; startup will not wait.'
+      return
+    }
+
+    $proc = Start-Process -FilePath $nodeCmd `
+      -ArgumentList $warmArgs `
+      -WorkingDirectory (Split-Path -Parent $warmScript) `
+      -PassThru `
+      -WindowStyle Hidden `
+      -RedirectStandardOutput $warmOut `
+      -RedirectStandardError $warmErr
+
+    if (-not (Wait-Process -Id $proc.Id -Timeout 180 -ErrorAction SilentlyContinue)) {
+      Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+      Write-Host '[WARN] Runtime warmup timed out after 180s, continue without blocking startup.'
+      return
+    }
+
+    if ($proc.ExitCode -eq 0) {
+      Write-Host '[warmup] Runtime warmup completed.'
+    } else {
+      Write-Host ("[WARN] Runtime warmup exited with code {0}. See {1}" -f $proc.ExitCode, $warmErr)
+    }
+  } catch {
+    Write-Host ("[WARN] Runtime warmup failed: {0}" -f $_.Exception.Message)
+  }
+}
+
+function Get-PythonVersionText {
+  param([string]$PythonExe)
+  if (-not $PythonExe) { return 'unknown' }
+  try {
+    $out = & $PythonExe -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" 2>$null
+    if ($out) {
+      return ($out | Select-Object -First 1).ToString().Trim()
+    }
+  } catch {}
+  return 'unknown'
+}
+
+function Get-JavaVersionText {
+  param([string]$JavaExe)
+  if (-not $JavaExe) { return 'unknown' }
+  try {
+    $cmdLine = ('"{0}" -version 2>&1' -f $JavaExe)
+    $versionOut = cmd /c $cmdLine
+    if ($versionOut) {
+      return ($versionOut | Select-Object -First 1).ToString().Trim()
+    }
+  } catch {}
+  return 'unknown'
+}
+
+function Get-NodeVersionText {
+  param([string]$NodeExe)
+  if (-not $NodeExe) { return 'missing' }
+  $version = Get-NodeVersionInfo -NodeCmdOrPath $NodeExe
+  if ($version) {
+    return $version.Text
+  }
+  return 'unknown'
+}
+
+function Show-PreflightRuntimeSummary {
+  param(
+    [string]$PythonExe,
+    [string]$JavaExe,
+    [string]$NodeExe,
+    [string]$MavenExe,
+    [string]$NpmExe
+  )
+
+  $pyVersion = Get-PythonVersionText -PythonExe $PythonExe
+  $javaVersion = Get-JavaVersionText -JavaExe $JavaExe
+  $nodeVersion = Get-NodeVersionText -NodeExe $NodeExe
+  Write-Host '[PRECHECK] Runtime resolution summary:'
+  Write-Host ("  python: {0}" -f $PythonExe)
+  Write-Host ("  python version: {0}" -f $pyVersion)
+  Write-Host ("  python source: {0}" -f $(if ($script:PythonSourceLabel) { $script:PythonSourceLabel } else { 'unknown' }))
+  Write-Host ("  java: {0}" -f $JavaExe)
+  Write-Host ("  java version: {0}" -f $javaVersion)
+  Write-Host ("  java source: {0}" -f $(if ($script:JavaSourceLabel) { $script:JavaSourceLabel } else { 'unknown' }))
+  Write-Host ("  node: {0}" -f $(if ($NodeExe) { $NodeExe } else { 'missing/not-needed-yet' }))
+  Write-Host ("  node version: {0}" -f $nodeVersion)
+  Write-Host ("  node source: {0}" -f $(if ($script:NodeSourceLabel) { $script:NodeSourceLabel } else { 'unknown' }))
+  Write-Host ("  maven: {0}" -f $(if ($MavenExe) { $MavenExe } else { 'missing/not-needed-yet' }))
+  Write-Host ("  maven source: {0}" -f $(if ($script:MavenSourceLabel) { $script:MavenSourceLabel } else { 'unknown/not-needed-yet' }))
+  Write-Host ("  npm: {0}" -f $(if ($NpmExe) { $NpmExe } else { 'missing/not-needed-yet' }))
+  Write-Host ("  backend jar source: {0}" -f $script:JarSource)
+  Write-Host ("  frontend source: {0}" -f $script:FrontendSource)
+  if ($script:FrontendRepairFailureReason) {
+    Write-Host ("  frontend last failure: {0}" -f $script:FrontendRepairFailureReason)
+  }
+  if ($script:AppCdsContext) {
+    $appCdsState = if (Test-HorosaAppCdsArchiveReady -Context $script:AppCdsContext) { 'ready' } else { 'recording' }
+    Write-Host ("  appcds: {0} ({1})" -f $appCdsState, $script:AppCdsContext.ArchivePath)
+  } else {
+    Write-Host ("  appcds: {0}" -f ($(if($script:AppCdsEnabled){'disabled/unavailable'}else{'disabled'})))
+  }
+  Write-Host ("  ports: web={0} chart={1} backend={2}" -f $WebPort, $ChartPort, $BackendPort)
+}
+
+if (-not (Test-Path $ProjectDir)) {
+  Write-Host "Project folder not found: $ProjectDir"
+  Read-Host 'Press Enter to exit'
+  exit 1
+}
+
+if (-not $CheckSourceFreshness) {
+  Write-Host '[INFO] Fast startup mode: skip source freshness scans (set HOROSA_CHECK_SOURCE_FRESHNESS=1 to re-enable).'
+}
+
+$frontendIndex = Join-Path $DistDir 'index.html'
+$frontendSourceStamp = $null
+$frontendDistStamp = $null
+$needsFrontendRebuild = $false
+if (Test-Path $frontendIndex) {
+  $frontendDistStamp = (Get-Item $frontendIndex).LastWriteTimeUtc
+  if ($CheckSourceFreshness) {
+    $frontendSourceStamp = Get-FrontendSourceLatestWriteTimeUtc
+  }
+  if ($frontendSourceStamp) {
+    if ($frontendSourceStamp -gt $frontendDistStamp) {
+      Write-Host ("[WARN] Frontend source is newer than static bundle ({0:u} > {1:u}), preferring local rebuild." -f $frontendSourceStamp, $frontendDistStamp)
+      $needsFrontendRebuild = $true
+    }
+  }
+} else {
+  $needsFrontendRebuild = $true
+}
+
+if ($needsFrontendRebuild) {
+  if (Try-BuildFrontendDist -ForceRebuild) {
+    Write-Host ("[OK] Frontend static bundle rebuilt locally: {0}" -f $DistDir)
+  } else {
+    Write-Host '[WARN] Local frontend rebuild failed, trying bundle restore...'
+    $distRestored = Sync-BundledFrontend
+    if ($distRestored) {
+      Set-FrontendDistContext
+    } else {
+      Write-Host "Frontend static file is still missing after one-click self-repair: $DistDir\index.html"
+      if ($script:FrontendRepairFailureReason) {
+        Write-Host ("Frontend self-repair diagnosis: {0}" -f $script:FrontendRepairFailureReason)
+      }
+      if ($script:NodeBin) {
+        Write-Host ("Frontend bootstrap Node.js: {0}" -f $script:NodeBin)
+      }
+      if ($script:NpmBin) {
+        Write-Host ("Frontend bootstrap npm: {0}" -f $script:NpmBin)
+      }
+      Write-Host 'Launcher already tried Node.js auto-setup, local npm rebuild, and bundled frontend restore.'
+      Write-Host 'Please confirm network access, or provide HOROSA_NODE / HOROSA_NODE_URL / runtime/windows/bundle/node20.url.txt, then rerun START_HERE.bat.'
+      Read-Host 'Press Enter to exit'
+      exit 1
+    }
+  }
+}
+
+Ensure-FrontendStaticLayout -DistPath $DistDir
+$NodeBin = if ($script:NodeBin) { $script:NodeBin } else { Resolve-NodeJs }
+if ($NodeBin -and (-not $script:NodeSourceLabel)) {
+  $script:NodeSourceLabel = Get-NodeJsSourceLabel -NodeExe $NodeBin
+}
+
+if (-not (Ensure-BackendJar)) {
+  Write-Host "Backend jar is still missing after one-click self-repair: $JarPath"
+  Write-Host 'Launcher already tried local Maven rebuild, bundled jar restore, and download fallback.'
+  Write-Host 'Please confirm network access, or provide HOROSA_BOOT_JAR_URL / runtime/windows/bundle/astrostudyboot.url.txt, then rerun START_HERE.bat.'
+  Read-Host 'Press Enter to exit'
+  exit 1
+}
+
+$PythonBin = Resolve-Python
+if (-not $PythonBin) {
+  $installed = Install-WithWinget -PackageId 'Python.Python.3.11' -DisplayName 'Python 3.11'
+  if ($installed) {
+    $PythonBin = Resolve-Python
+  }
+  if (-not $PythonBin) {
+    $portableInstalled = Install-PythonPortable
+    if ($portableInstalled) {
+      Start-Sleep -Seconds 1
+      $PythonBin = Resolve-Python311
+      if (-not $PythonBin) {
+        $PythonBin = Resolve-Python
+      }
+    }
+  }
+  if (-not $PythonBin) {
+    Write-Host 'Python 3.11/3.12 not found.'
+    Write-Host 'Tried layered resolution: runtime/windows/python -> HOROSA_PYTHON -> system Python -> winget -> portable download.'
+    Write-Host 'Install Python 3.11 manually (recommended for offline startup), then rerun this launcher.'
+    Read-Host 'Press Enter to exit'
+    exit 1
+  }
+}
+
+$selectedPythonVersion = Get-PythonVersionInfo -PythonCmdOrPath $PythonBin
+if ($selectedPythonVersion -and $selectedPythonVersion.Major -eq 3 -and $selectedPythonVersion.Minor -eq 12) {
+  Write-Host '[WARN] Python 3.12 detected. If dependency install fails, launcher will try switching to Python 3.11.'
+}
+
+$PyRuntimeDir = $PortablePythonRuntimeDir
+if (-not (Test-Path (Join-Path $PyRuntimeDir 'python.exe'))) {
+  Write-Host 'Preparing local Python runtime for offline use...'
+  $pySynced = Sync-RuntimeFromExe -ExeCmdOrPath $PythonBin -TargetDir $PyRuntimeDir -UpLevels 0 -CheckRelative 'python.exe'
+  if ($pySynced) {
+    $PythonBin = Join-Path $PyRuntimeDir 'python.exe'
+    Write-Host "[OK] Local Python runtime ready: $PythonBin"
+  } else {
+    Write-Host '[WARN] Could not sync local Python runtime, will continue with system Python.'
+  }
+}
+
+$depsReady = Ensure-PythonRuntimeDeps -PythonExe $PythonBin -ProjectRoot $ProjectDir
+if ($depsReady -and (-not (Test-PythonDepsReady -PythonCmdOrPath $PythonBin))) {
+  Write-Host '[WARN] Python dependency check failed after install attempt; will try fallback.'
+  $depsReady = $false
+}
+if (-not $depsReady) {
+  $currentVersion = Get-PythonVersionInfo -PythonCmdOrPath $PythonBin
+  $isPython311 = $false
+  if ($currentVersion -and $currentVersion.Major -eq 3 -and $currentVersion.Minor -eq 11) {
+    $isPython311 = $true
+  }
+
+  if (-not $isPython311) {
+    Write-Host '[WARN] Current Python is not 3.11. Trying Python 3.11 for better offline compatibility...'
+    $python311 = Resolve-Python311
+    if (-not $python311) {
+      $installed311 = Install-WithWinget -PackageId 'Python.Python.3.11' -DisplayName 'Python 3.11'
+      if ($installed311) {
+        Start-Sleep -Seconds 2
+        $python311 = Resolve-Python311
+      }
+      if (-not $python311) {
+        $portable311 = Install-PythonPortable
+        if ($portable311) {
+          Start-Sleep -Seconds 1
+          $python311 = Resolve-Python311
+        }
+      }
+    }
+
+    if ($python311) {
+      if (Ensure-PythonRuntimeDeps -PythonExe $python311 -ProjectRoot $ProjectDir) {
+        $PythonBin = $python311
+        $depsReady = $true
+        Write-Host ("[OK] Switched to Python 3.11: {0}" -f $PythonBin)
+      } else {
+        Write-Host '[WARN] Python 3.11 is available but dependency install still failed.'
+      }
+    }
+  }
+
+  if (-not $depsReady) {
+    $runtimePythonExe = Join-Path $PyRuntimeDir 'python.exe'
+    $usingBundledPython = $false
+    try {
+      if ((Test-Path $PythonBin) -and (Test-Path $runtimePythonExe)) {
+        $usingBundledPython = ((Resolve-Path $PythonBin).Path -ieq (Resolve-Path $runtimePythonExe).Path)
+      }
+    } catch {
+      $usingBundledPython = $false
+    }
+
+    if ($usingBundledPython) {
+      Write-Host '[WARN] Bundled Python dependencies are incomplete, trying system Python fallback...'
+      $fallbackCandidates = @(
+        "$env:LocalAppData\Programs\Python\Python311\python.exe",
+        "$env:LocalAppData\Programs\Python\Python312\python.exe",
+        "$env:ProgramFiles\Python311\python.exe",
+        "$env:ProgramFiles\Python312\python.exe",
+        'C:\Python311\python.exe',
+        'C:\Python312\python.exe',
+        'python'
+      )
+      foreach ($candidate in $fallbackCandidates) {
+        if (-not (Test-PythonSupported -PythonCmdOrPath $candidate)) { continue }
+        if ($candidate -ne 'python' -and (-not (Test-Path $candidate))) { continue }
+        if ($candidate -ne 'python' -and (Test-Path $PythonBin)) {
+          try {
+            if ((Resolve-Path $candidate).Path -ieq (Resolve-Path $PythonBin).Path) { continue }
+          } catch {}
+        }
+
+        if (Ensure-PythonRuntimeDeps -PythonExe $candidate -ProjectRoot $ProjectDir) {
+          $PythonBin = $candidate
+          $depsReady = $true
+          Write-Host ("[OK] Switched to system Python: {0}" -f $PythonBin)
+          break
+        }
+      }
+    }
+  }
+}
+
+if (-not $depsReady) {
+  Write-Host 'Python dependencies are incomplete. Startup aborted.'
+  Read-Host 'Press Enter to exit'
+  exit 1
+}
+
+$script:PythonSourceLabel = Get-PythonSourceLabel -PythonExe $PythonBin
+
+$JavaBin = Ensure-BackendJava
+if (-not $JavaBin) {
+  Write-Host 'Java 17+ not found.'
+  Write-Host 'Launcher tried portable Java bootstrap first and system Java only as the last fallback.'
+  Read-Host 'Press Enter to exit'
+  exit 1
+}
+
+if ($AppCdsEnabled) {
+  $AppCdsContext = Get-HorosaAppCdsContext -JavaExe $JavaBin -JarFile $JarPath
+  if ($AppCdsContext -and (Ensure-HorosaAppCdsCacheDir -Context $AppCdsContext)) {
+    if (Test-HorosaAppCdsArchiveReady -Context $AppCdsContext) {
+      Write-Host ("[INFO] AppCDS archive ready: {0}" -f $AppCdsContext.ArchivePath)
+    } else {
+      Write-Host ("[INFO] AppCDS training pending; archive will be generated via dynamic_dump: {0}" -f $AppCdsContext.ArchivePath)
+    }
+  } else {
+    $AppCdsContext = $null
+  }
+}
+
+if (-not $ReusingRunningServices) {
+  try {
+    $portLayout = Resolve-PortLayout -PreferredWebPort $DefaultWebPort -PreferredChartPort $DefaultChartPort -PreferredBackendPort $DefaultBackendPort
+    $WebPort = $portLayout.WebPort
+    $ChartPort = $portLayout.ChartPort
+    $BackendPort = $portLayout.BackendPort
+    if ($portLayout.UsedAlternatePorts) {
+      Write-Host ("[INFO] Default ports are occupied by another app/copy. Auto-switched to web={0} chart={1} backend={2}" -f $WebPort, $ChartPort, $BackendPort)
+    }
+  } catch {
+    Write-Host ("Port layout resolution failed: {0}" -f $_.Exception.Message)
+    Read-Host 'Press Enter to exit'
+    exit 1
+  }
+}
+
+$env:HOROSA_WEB_PORT = [string]$WebPort
+$env:HOROSA_CHART_PORT = [string]$ChartPort
+$env:HOROSA_SERVER_PORT = [string]$BackendPort
+$env:HOROSA_SERVER_ROOT = "http://127.0.0.1:$BackendPort"
+if ([string]::IsNullOrWhiteSpace($env:HOROSA_DESKTOP_MONGO_OPTIONAL)) {
+  $env:HOROSA_DESKTOP_MONGO_OPTIONAL = '1'
+}
+if ([string]::IsNullOrWhiteSpace($env:HOROSA_DESKTOP_MONGO_SKIP_PING)) {
+  $env:HOROSA_DESKTOP_MONGO_SKIP_PING = '1'
+}
+if ([string]::IsNullOrWhiteSpace($env:HOROSA_MONGO_FALLBACK_DIR)) {
+  $env:HOROSA_MONGO_FALLBACK_DIR = Join-Path $ProjectDir '.horosa-local-cache-win\mongo-fallback'
+}
+
+if (-not $NodeBin) {
+  $NodeBin = Resolve-NodeJs
+}
+if ($NodeBin -and (-not $script:NodeSourceLabel)) {
+  $script:NodeSourceLabel = Get-NodeJsSourceLabel -NodeExe $NodeBin
+}
+if ($JavaBin -and (-not $script:JavaSourceLabel)) {
+  $script:JavaSourceLabel = Get-JavaSourceLabel -JavaExe $JavaBin
+}
+if ($PythonBin -and (-not $script:PythonSourceLabel)) {
+  $script:PythonSourceLabel = Get-PythonSourceLabel -PythonExe $PythonBin
+}
+
+Show-PreflightRuntimeSummary -PythonExe $PythonBin -JavaExe $JavaBin -NodeExe $NodeBin -MavenExe $MavenBin -NpmExe $NpmBin
+Write-Host ("Using Python: {0}" -f $PythonBin)
+if ($script:PythonSourceLabel) {
+  Write-Host ("Using Python source: {0}" -f $script:PythonSourceLabel)
+}
+Write-Host ("Using Java: {0}" -f $JavaBin)
+if ($script:JavaSourceLabel) {
+  Write-Host ("Using Java source: {0}" -f $script:JavaSourceLabel)
+}
+if ($NodeBin) {
+  Write-Host ("Using Node.js: {0}" -f $NodeBin)
+}
+if ($script:NodeSourceLabel) {
+  Write-Host ("Using Node.js source: {0}" -f $script:NodeSourceLabel)
+}
+if ($MavenBin) {
+  Write-Host ("Using Maven: {0}" -f $MavenBin)
+}
+if ($script:MavenSourceLabel) {
+  Write-Host ("Using Maven source: {0}" -f $script:MavenSourceLabel)
+}
+if ($NpmBin) {
+  Write-Host ("Using npm: {0}" -f $NpmBin)
+}
+Write-Host ("Performance mode: {0} (set HOROSA_PERF_MODE=0 to disable)" -f ($(if($PerfMode){'ON'}else{'OFF'})))
+
+$ShouldCleanupOnExit = $true
+
+if (-not $ReusingRunningServices) {
+  Cleanup-All
+}
+
+$oldPythonPath = $env:PYTHONPATH
+$oldPythonNoUserSite = $env:PYTHONNOUSERSITE
+$oldPythonUtf8 = $env:PYTHONUTF8
+# horosa_local_env_sanitize_v1: host-poison variables that inject flags/paths into OUR child
+# interpreters (the desktop launcher strips the same set). Snapshot -> clear -> restore in finally.
+$oldPythonHome = $env:PYTHONHOME
+$oldPythonStartup = $env:PYTHONSTARTUP
+$oldUnderscoreJavaOptions = ${env:_JAVA_OPTIONS}
+$oldJavaToolOptions = $env:JAVA_TOOL_OPTIONS
+$oldJdkJavaOptions = $env:JDK_JAVA_OPTIONS
+$oldClasspath = $env:CLASSPATH
+Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue
+Remove-Item Env:PYTHONSTARTUP -ErrorAction SilentlyContinue
+Remove-Item Env:_JAVA_OPTIONS -ErrorAction SilentlyContinue
+Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue
+Remove-Item Env:JDK_JAVA_OPTIONS -ErrorAction SilentlyContinue
+Remove-Item Env:CLASSPATH -ErrorAction SilentlyContinue
+# Perf mode also skips the backend's startup cron + transgroup full-scan (desktop-proven pure win,
+# ~2-4s off java boot). Snapshotted; HOROSA_PERF_MODE=0 leaves stock behavior untouched.
+$oldEnableStartupCron = $env:HOROSA_ENABLE_STARTUP_CRON
+$oldEnableStartupTransgroup = $env:HOROSA_ENABLE_STARTUP_TRANSGROUP_INIT
+if ($PerfMode) {
+  $env:HOROSA_ENABLE_STARTUP_CRON = '0'
+  $env:HOROSA_ENABLE_STARTUP_TRANSGROUP_INIT = '0'
+}
+$oldHorosaSwissephPath = $env:HOROSA_SWISSEPH_PATH
+$oldHorosaSwephPath = $env:HOROSA_SWEPH_PATH
+$oldSeEphePath = $env:SE_EPHE_PATH
+$proxyEnvSnapshot = Enable-LocalLoopbackProxyBypass
+$pyPathItems = @(
+  (Join-Path $ProjectDir 'astropy'),
+  (Join-Path $ProjectDir 'flatlib-ctrad2')
+) | Where-Object { $_ -and (Test-Path $_) }
+$pyPathPrefix = ($pyPathItems -join ';')
+if ($oldPythonPath) {
+  if ($pyPathPrefix) {
+    $env:PYTHONPATH = $pyPathPrefix + ';' + $oldPythonPath
+  } else {
+    $env:PYTHONPATH = $oldPythonPath
+  }
+} else {
+  $env:PYTHONPATH = $pyPathPrefix
+}
+$env:PYTHONNOUSERSITE = '1'
+$env:PYTHONUTF8 = '1'
+$swephPath = Join-Path $ProjectDir 'flatlib-ctrad2\flatlib\resources\swefiles'
+if (Test-Path $swephPath) {
+  $env:HOROSA_SWISSEPH_PATH = $swephPath
+  $env:HOROSA_SWEPH_PATH = $swephPath
+  if (-not $oldSeEphePath) {
+    $env:SE_EPHE_PATH = $swephPath
+  }
+}
+
+try {
+  if (-not $ReusingRunningServices) {
+    if (-not (Wait-PortFree -Port $ChartPort -TimeoutMs 6000)) {
+      throw "Port $ChartPort is still in use before backend startup"
+    }
+    if (-not (Wait-PortFree -Port $BackendPort -TimeoutMs 6000)) {
+      throw "Port $BackendPort is still in use before backend startup"
+    }
+
+    Write-Host '[1/4] Starting local backend services...'
+
+    $pyScript = Join-Path $ProjectDir 'astropy/websrv/webchartsrv.py'
+    # Embedded Python ignores PYTHONPATH, so inject project roots explicitly.
+    $pyBootstrapProjectDir = $ProjectDir -replace '\\', '\\\\' -replace "'", "\'"
+    $pyBootstrapScriptPath = $pyScript -replace '\\', '\\\\' -replace "'", "\'"
+    $pyBootstrapPaths = @(
+      (Join-Path $ProjectDir 'astropy'),
+      (Join-Path $ProjectDir 'flatlib-ctrad2')
+    ) | Where-Object { $_ -and (Test-Path $_) } | ForEach-Object {
+      "'" + (($_ -replace '\\', '\\\\') -replace "'", "\'") + "'"
+    }
+    $pyBootstrapList = ($pyBootstrapPaths -join ', ')
+    $pyBootstrap = "import os, runpy, sys; os.chdir('" + $pyBootstrapProjectDir + "'); sys.path[:] = [p for p in sys.path if p not in ('', os.getcwd())]; sys.path[0:0]=[" + $pyBootstrapList + "]; runpy.run_path('" + $pyBootstrapScriptPath + "', run_name='__main__')"
+    # -X utf8 belt-and-braces on top of PYTHONUTF8=1: the CLI flag cannot be overridden by any
+    # inherited environment, so CJK paths survive even exotic host codepage setups.
+    $null = Start-Background -FilePath $PythonBin -Arguments @('-X', 'utf8', '-c', (Quote-Arg $pyBootstrap)) -LogPath $PyLog -PidFile $PyPidFile
+
+    $mongoSelectTimeoutMs = if ($PerfMode) { 180 } else { 800 }
+    $mongoConnectTimeoutMs = if ($PerfMode) { 180 } else { 800 }
+    $mongoReadTimeoutMs = if ($PerfMode) { 220 } else { 1000 }
+    $redisPoolTimeoutMs = if ($PerfMode) { 400 } else { 1000 }
+    $cacheExpireSeconds = if ($PerfMode) { 300 } else { 120 }
+
+    $javaArgs = @(
+      "-Dhorosa.log.basedir=$HorosaLogBaseDir",
+      "-Dhorosa.mongo.serverSelectionTimeoutMS=$mongoSelectTimeoutMs",
+      "-Dhorosa.mongo.connectTimeoutMS=$mongoConnectTimeoutMs",
+      "-Dhorosa.mongo.readTimeoutMS=$mongoReadTimeoutMs",
+      '-Dhorosa.trustedRuntime=true',
+      '-Dhorosa.desktop.fastPath=true',
+      # Ownership tag (mirrors service-manager.js horosa-desktop tag): shows up in the process
+      # command line, so Test-ProcessOwnedByProject can positively identify THIS launcher's java
+      # even when Jar/Dist path markers are defeated by symlinks/UNC remapping.
+      '-Dhorosa.runtime.owner=horosa-local-windows'
+    )
+    if ($PerfMode) {
+      # horosa_local_jvm_fast_start_v1: desktop-proven pure-win JVM set for a single local user
+      # (small serial-GC heap, no Spring background pre-init thread, no log4j2 JMX MBeans).
+      # HOROSA_PERF_MODE=0 restores stock JVM defaults.
+      $javaArgs = @(
+        '-XX:+UseSerialGC',
+        '-Xms128m',
+        '-Xmx512m',
+        '-Dspring.backgroundpreinitializer.ignore=true',
+        '-Dlog4j2.disable.jmx=true'
+      ) + $javaArgs
+    }
+    if ($AppCdsContext) {
+      if (Test-HorosaAppCdsArchiveReady -Context $AppCdsContext) {
+        $javaArgs += @(
+          '-Xshare:auto',
+          "-XX:SharedArchiveFile=$($AppCdsContext.ArchivePath)"
+        )
+        Write-Host '[INFO] AppCDS enabled for backend launch.'
+      } else {
+        $javaArgs += @(
+          '-XX:+RecordDynamicDumpInfo'
+        )
+        Write-Host '[INFO] AppCDS recording will be captured via jcmd dynamic_dump before backend shutdown.'
+      }
+    }
+    $javaArgs += @(
+      '-jar',
+      (Quote-Arg $JarPath),
+      "--server.port=$BackendPort",
+      "--astrosrv=http://127.0.0.1:$ChartPort",
+      '--mongodb.ip=127.0.0.1',
+      '--mongodb.host=127.0.0.1',
+      '--redis.ip=127.0.0.1',
+      "--redis.pool.timeout=$redisPoolTimeoutMs",
+      '--cachehelper.needcache=false',
+      "--cachehelper.expireinsecond=$cacheExpireSeconds",
+      '--paramhash.cache.enable=false',
+      '--astrohelper.disable.request.cache=true'
+    )
+    if ($PerfMode) {
+      $javaArgs += @(
+        '--needtranslog=false',
+        '--mongo.statement.log=false'
+      )
+    }
+
+    $null = Start-Background -FilePath $JavaBin -Arguments $javaArgs -LogPath $JavaLog -PidFile $JavaPidFile
+
+    $ready = $false
+    for ($i = 0; $i -lt 240; $i++) {
+      $pyPid = Get-PidFromFile -Path $PyPidFile
+      $javaPid = Get-PidFromFile -Path $JavaPidFile
+      if (-not $pyPid -or -not $javaPid) { break }
+
+      $pyAlive = Get-Process -Id $pyPid -ErrorAction SilentlyContinue
+      $javaAlive = Get-Process -Id $javaPid -ErrorAction SilentlyContinue
+      if (-not $pyAlive -or -not $javaAlive) { break }
+
+      if ((Test-PortOpen -Port $ChartPort) -and (Test-PortOpen -Port $BackendPort)) {
+        # horosa_local_http_heartbeat_v1: confirm the backend actually answers HTTP before
+        # declaring ready (port bound != Spring context up).
+        if (Test-BackendHttpAlive -Port $BackendPort) {
+          $ready = $true
+          break
+        }
+      }
+      Start-Sleep -Milliseconds 250
+    }
+
+    if (-not $ready) {
+      Write-Host "Backend not ready in time, required ports: $ChartPort and $BackendPort"
+      if (Test-Path $PyLog) {
+        Write-Host '--- python log tail ---'
+        Get-Content $PyLog -Tail 30
+      }
+      if (Test-Path "$PyLog.err") {
+        Write-Host '--- python err tail ---'
+        Get-Content "$PyLog.err" -Tail 30
+      }
+      if (Test-Path $JavaLog) {
+        Write-Host '--- java log tail ---'
+        Get-Content $JavaLog -Tail 30
+      }
+      if (Test-Path "$JavaLog.err") {
+        Write-Host '--- java err tail ---'
+        Get-Content "$JavaLog.err" -Tail 30
+      }
+      throw 'Backend failed to start'
+    }
+
+    Write-Host "backend: http://127.0.0.1:$BackendPort"
+    Write-Host "chartpy: http://127.0.0.1:$ChartPort"
+
+    Write-Host "[2/4] Starting local web service on 127.0.0.1:$WebPort ..."
+    if (Test-PortOpen -Port $WebPort) {
+      throw "Port $WebPort is already in use"
+    }
+
+    $null = Start-Background -FilePath $PythonBin -Arguments @('-m', 'http.server', "$WebPort", '--bind', '127.0.0.1', '--directory', (Quote-Arg $DistDir)) -LogPath $WebLog -PidFile $WebPidFile
+
+    $webReady = $false
+    for ($i = 0; $i -lt 30; $i++) {
+      if (Test-PortOpen -Port $WebPort) {
+        $webReady = $true
+        break
+      }
+      Start-Sleep -Milliseconds 300
+    }
+
+    if (-not $webReady) {
+      throw "Web service failed to start. Check log: $WebLog"
+    }
+
+    if ($PerfMode) {
+      $blockingWarmup = $env:HOROSA_BLOCKING_WARMUP -eq '1'
+      Invoke-HorosaWarmup -ProjectRoot $ProjectDir -Background:(-not $blockingWarmup)
+    }
+  } else {
+    Write-Host "backend: http://127.0.0.1:$BackendPort"
+    Write-Host "chartpy: http://127.0.0.1:$ChartPort"
+    Write-Host "[2/4] Reusing local web service on 127.0.0.1:$WebPort ..."
+  }
+
+  Save-ServiceState -WebPort $WebPort -ChartPort $ChartPort -BackendPort $BackendPort
+
+  $serverRoot = "http://127.0.0.1:$BackendPort"
+  $encodedServerRoot = [System.Uri]::EscapeDataString($serverRoot)
+  $encodedChartRoot = [System.Uri]::EscapeDataString("http://127.0.0.1:$ChartPort")
+  $cacheBust = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+  $url = "http://127.0.0.1:$WebPort/index.html?srv=$encodedServerRoot&chartSrv=$encodedChartRoot&kentangSrv=$encodedChartRoot&v=$cacheBust"
+
+  Write-Host '[3/4] Opening browser...'
+  if ($env:HOROSA_NO_BROWSER -eq '1') {
+    Write-Host "[4/4] Started (no-browser mode): $url"
+    if ($env:HOROSA_SMOKE_TEST -eq '1') {
+      $waitSec = 6
+      if ($env:HOROSA_SMOKE_WAIT_SECONDS) {
+        try { $waitSec = [int]$env:HOROSA_SMOKE_WAIT_SECONDS } catch {}
+      }
+      if ($waitSec -lt 1) { $waitSec = 1 }
+      Write-Host ("Smoke test mode: wait {0}s then stop services." -f $waitSec)
+      Start-Sleep -Seconds $waitSec
+    } else {
+      Write-Host 'Press Enter to stop local services.'
+      Read-Host 'Press Enter to stop'
+    }
+  } else {
+    $browser = Resolve-Browser
+    if ($browser) {
+      $windowBounds = Get-BrowserAppWindowBounds
+      Stop-BrowserProcessesForProfile -ProfileRoot $BrowserProfile
+      Reset-BrowserProfileWindowPlacement -ProfileRoot $BrowserProfile
+      if (-not (Ensure-BrowserProfileZoomPreference -ProfileRoot $BrowserProfile)) {
+        Write-Host '[WARN] Browser zoom preference could not be enforced; existing profile zoom may be reused.'
+      }
+      $args = @(
+        "--user-data-dir=$BrowserProfile",
+        "--app=$url",
+        '--start-maximized',
+        "--window-size=$($windowBounds.Width),$($windowBounds.Height)",
+        "--window-position=$($windowBounds.Left),$($windowBounds.Top)",
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-features=DialMediaRouteProvider'
+      )
+      $bp = Start-Process -FilePath $browser -ArgumentList $args -PassThru
+      if (-not (Enforce-BrowserWindowBounds -BrowserExePath $browser -ProfileRoot $BrowserProfile -Bounds $windowBounds -TimeoutMs 12000)) {
+        Write-Host '[WARN] Browser window bounds could not be enforced in time; command-line bounds still applied.'
+      }
+      if ($KeepServicesRunning) {
+        $ShouldCleanupOnExit = $false
+      }
+      Write-Host "[4/4] Started: $url"
+      if ($ShouldCleanupOnExit) {
+        Write-Host 'Close this app window to stop local services.'
+      } else {
+        Write-Host "Close this app window; next launch will reuse the local services."
+      }
+      Wait-Process -Id $bp.Id
+    } else {
+      Start-Process $url | Out-Null
+      Write-Host "[4/4] Started: $url"
+      Write-Host 'No Chrome/Edge/Brave/Chromium found.'
+      Write-Host 'Close browser, then come back here and press Enter to stop services.'
+      Read-Host 'Press Enter to stop'
+    }
+  }
+
+  if ($ShouldCleanupOnExit) {
+    Write-Host 'Browser closed, stopping local services...'
+  } else {
+    Write-Host 'App window closed, keeping local services running for faster next launch...'
+  }
+} catch {
+  $RunStatus = 'FAILED'
+  $RunFailureMessage = $_.Exception.Message
+  Write-Host "Startup failed: $($_.Exception.Message)"
+  Write-Host "Log directory: $LogDir"
+  Read-Host 'Press Enter to exit'
+  exit 1
+} finally {
+  if ($ShouldCleanupOnExit) {
+    Cleanup-All
+  }
+  Restore-EnvSnapshot -Snapshot $proxyEnvSnapshot
+  $env:PYTHONPATH = $oldPythonPath
+  if ($null -ne $oldPythonNoUserSite) {
+    $env:PYTHONNOUSERSITE = $oldPythonNoUserSite
+  } else {
+    Remove-Item Env:PYTHONNOUSERSITE -ErrorAction SilentlyContinue
+  }
+  if ($null -ne $oldPythonUtf8) {
+    $env:PYTHONUTF8 = $oldPythonUtf8
+  } else {
+    Remove-Item Env:PYTHONUTF8 -ErrorAction SilentlyContinue
+  }
+  if ($null -ne $oldHorosaSwissephPath) {
+    $env:HOROSA_SWISSEPH_PATH = $oldHorosaSwissephPath
+  } else {
+    Remove-Item Env:HOROSA_SWISSEPH_PATH -ErrorAction SilentlyContinue
+  }
+  if ($null -ne $oldHorosaSwephPath) {
+    $env:HOROSA_SWEPH_PATH = $oldHorosaSwephPath
+  } else {
+    Remove-Item Env:HOROSA_SWEPH_PATH -ErrorAction SilentlyContinue
+  }
+  if ($null -ne $oldSeEphePath) {
+    $env:SE_EPHE_PATH = $oldSeEphePath
+  } else {
+    Remove-Item Env:SE_EPHE_PATH -ErrorAction SilentlyContinue
+  }
+  # horosa_local_env_sanitize_v1: symmetric restore of the host-poison snapshot set.
+  if ($null -ne $oldPythonHome) { $env:PYTHONHOME = $oldPythonHome } else { Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue }
+  if ($null -ne $oldPythonStartup) { $env:PYTHONSTARTUP = $oldPythonStartup } else { Remove-Item Env:PYTHONSTARTUP -ErrorAction SilentlyContinue }
+  if ($null -ne $oldUnderscoreJavaOptions) { ${env:_JAVA_OPTIONS} = $oldUnderscoreJavaOptions } else { Remove-Item Env:_JAVA_OPTIONS -ErrorAction SilentlyContinue }
+  if ($null -ne $oldJavaToolOptions) { $env:JAVA_TOOL_OPTIONS = $oldJavaToolOptions } else { Remove-Item Env:JAVA_TOOL_OPTIONS -ErrorAction SilentlyContinue }
+  if ($null -ne $oldJdkJavaOptions) { $env:JDK_JAVA_OPTIONS = $oldJdkJavaOptions } else { Remove-Item Env:JDK_JAVA_OPTIONS -ErrorAction SilentlyContinue }
+  if ($null -ne $oldClasspath) { $env:CLASSPATH = $oldClasspath } else { Remove-Item Env:CLASSPATH -ErrorAction SilentlyContinue }
+  if ($null -ne $oldEnableStartupCron) { $env:HOROSA_ENABLE_STARTUP_CRON = $oldEnableStartupCron } else { Remove-Item Env:HOROSA_ENABLE_STARTUP_CRON -ErrorAction SilentlyContinue }
+  if ($null -ne $oldEnableStartupTransgroup) { $env:HOROSA_ENABLE_STARTUP_TRANSGROUP_INIT = $oldEnableStartupTransgroup } else { Remove-Item Env:HOROSA_ENABLE_STARTUP_TRANSGROUP_INIT -ErrorAction SilentlyContinue }
+  Append-RunIssueSummary -Status $RunStatus -FailureMessage $RunFailureMessage
+}
