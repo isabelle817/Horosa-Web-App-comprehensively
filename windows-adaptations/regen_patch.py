@@ -82,6 +82,8 @@ def main():
         else:
             out_lines.append(ln)
     patch_bytes = b"\n".join(out_lines)
+    if not patch_bytes.endswith(b"\n"):
+        patch_bytes += b"\n"  # POSIX 文本约定;与历史补丁字节一致
 
     # round-trip:打回纯净基线,LF 归一后必须 == 工作区现状
     rt_dir = f"{tmpd}/rt"
