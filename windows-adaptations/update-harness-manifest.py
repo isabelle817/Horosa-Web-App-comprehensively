@@ -49,7 +49,11 @@ FILES = {
     "desktop_installer_bundle/scripts/verify_all_services.py": "institutional gate: launches the packaged chart service and POSTs a REAL request to EVERY mounted python route (eager + kentang) in the post-warmup production state, with a mount-drift check (new service without a probe row = release FAIL); wired into release_selfcheck.py",
     "desktop_installer_bundle/electron/update-splash.js": "detached PowerShell WPF 'installing update' splash for the silent-install minutes (survives the NSIS taskkill of Horosa.exe; self-closes on relaunch/timeout; HOROSA_UPDATE_SPLASH=0)",
     "desktop_installer_bundle/assets/installer.nsh": "NSIS hooks: disk-space gate, uninstall cleanup, OS gate, details-visible install log + phase banners",
-    ".claude/skills/horosa-dev/SKILL.md": "the dev/sync/release runbook (sync playbook, jar rebuild, gotchas)",
+    ".claude/skills/horosa-dev/SKILL.md": "the dev/sync/release runbook CORE (rules + runbooks + commands; restructured 2026-07-04)",
+    ".claude/skills/horosa-dev/references/gotchas-full.md": "the full 49-gotcha institutional archive (verbatim history + topic index; new gotchas append HERE)",
+    "CLAUDE.md": "repo-root session baseline (paths, red lines, verification entry points; local-only)",
+    "desktop_installer_bundle/scripts/run_pytest_embedded.ps1": "one-command astropy pytest on the EMBEDDED interpreter (gotcha #29 recipe as code)",
+    "desktop_installer_bundle/scripts/verify_release_live.ps1": "post-release LIVE verification: server digests==local + prerelease/latest + feed probe (SKILL 铁律 12 as code)",
 }
 
 
