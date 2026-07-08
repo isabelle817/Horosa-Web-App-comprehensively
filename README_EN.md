@@ -2,7 +2,7 @@
 
 [简体中文](README_ZH.md) · English
 
-<img src="desktop_installer_bundle/assets/horosa_setup_badge.png" alt="Horosa" width="128" />
+<img src="assets/horosa_setup_badge.png" alt="Horosa" width="128" />
 
 # Horosa
 
@@ -49,13 +49,13 @@ You do not need to install Python or Java yourself—the runtime ships inside th
 ## Screenshots
 
 <div align="center">
-<img src="docs/assets/screenshots/horosa-2.0-main-workspace.png" alt="Astrology workspace" width="900" />
+<img src="assets/screenshots/horosa-2.0-main-workspace.png" alt="Astrology workspace" width="900" />
 <p><em>Astrology workspace — chart controls on the left, the wheel canvas in the center, and detail tabs (info, aspects, planets, classical, patterns) on the right.</em></p>
 
-<img src="docs/assets/screenshots/horosa-2.0-sanshi-workspace.png" alt="Sanshi workspace" width="900" />
+<img src="assets/screenshots/horosa-2.0-sanshi-workspace.png" alt="Sanshi workspace" width="900" />
 <p><em>Sanshi workspace — setup panel, the nine-palace plate, and overview tabs all visible at once.</em></p>
 
-<img src="docs/assets/screenshots/horosa-2.0-module-navigator.png" alt="Module navigator" width="900" />
+<img src="assets/screenshots/horosa-2.0-module-navigator.png" alt="Module navigator" width="900" />
 <p><em>The command overlay groups charts, Yi & Sanshi, and tools, with search and recents for fast switching.</em></p>
 </div>
 
@@ -148,7 +148,7 @@ Charts and cases save locally with tags, snapshots, and raw backend payloads. Ev
 
 **v2.6.1 polishes the AI-mount full options + multi-moment / range-scan output + Feng Shui "Bagua Yang-dwelling" method v2 (front-end only) + a batch of cross-module fixes.** One backend change forwards `pdYears` in `ChartController.getParams()` → `astrostudyboot.jar` rebuilt.
 
-Full log on the [v2.6.7 release page](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.7) and the [local release notes](docs/releases/2.6.7.md) (v2.6.6 at [docs/releases/2.6.6.md](docs/releases/2.6.6.md), v2.6.5 at [docs/releases/2.6.5.md](docs/releases/2.6.5.md), v2.6.4 at [docs/releases/2.6.4.md](docs/releases/2.6.4.md), v2.6.3 at [docs/releases/2.6.3.md](docs/releases/2.6.3.md), v2.6.2 installer patch at [docs/releases/2.6.2.md](docs/releases/2.6.2.md), v2.6.1 features at [docs/releases/2.6.1.md](docs/releases/2.6.1.md)); previous version v2.6.0 at [docs/releases/2.6.0.md](docs/releases/2.6.0.md).
+Full changelog and release history on [GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases) — each version's Release page carries its complete changelog and assets.
 
 ## Under the Hood
 
@@ -181,10 +181,10 @@ Start from the entry point that matches your goal:
 
 - public-facing layout and bilingual portal: [README.md](README.md)
 - the full Chinese guide: [README_ZH.md](README_ZH.md)
-- desktop bundle and installer internals: [desktop_installer_bundle/README.md](desktop_installer_bundle/README.md)
-- project structure: [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
-- clean-machine runtime fix and release notes: [docs/CLEAN_MACHINE_NATIVE_RUNTIME_FIX.md](docs/CLEAN_MACHINE_NATIVE_RUNTIME_FIX.md)
-- application source: `local/workspace/Horosa-Web-*/` — frontend in `astrostudyui`, backends in `astrostudysrv` and `astropy`, vendored engines in `vendor`
+- product source: [`local/workspace/Horosa-Web-…/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/) — frontend `astrostudyui`, backends `astrostudysrv` / `astropy`, engines `vendor`, ephemeris `flatlib-ctrad2`
+- runtime-prep scripts (with bundled VC++ runtime): [`prepareruntime/`](prepareruntime/)
+- Windows adaptation layer (post-sync Windows-only patches): [`windows-adaptations/`](windows-adaptations/)
+- release history & full notes: [GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
 
 ## Acknowledgements
 

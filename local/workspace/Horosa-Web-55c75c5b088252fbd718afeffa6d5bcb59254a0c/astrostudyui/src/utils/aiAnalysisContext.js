@@ -1,0 +1,2985 @@
+import DateTime from '../components/comp/DateTime';
+import request from './request';
+import * as Constants from './constants';
+import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from './dayBoundary';
+import { applyAIExportSectionFilterToSnapshot } from './aiExport';
+import {
+	getTechniqueSettingsSchema,
+	mergeOptionsIntoRecord,
+	mergeOptionsIntoPayload,
+	applyLocalStorageSettings,
+	snapshotLocalStorageSettings,
+	restoreLocalStorageSettings,
+	pruneOptionsToNonDefault,
+} from './techniqueMountSettings';
+
+// 用户拍板·v2.2.1: 给 AI 看的"排盘规则"语义说明,作为 first-class metadata 显式标注。
+// 让 GPT/Claude/Ollama 看到 snapshot 时知道四柱按哪种规则计算,不会按错语义解读。
+function buildDayBoundaryMeta(after23NewDay, lateZiHourUseNextDay){
+	const a23 = after23NewDay === 0 || after23NewDay === '0' || after23NewDay === false ? 0 : 1;
+	const lzh = lateZiHourUseNextDay === 0 || lateZiHourUseNextDay === '0' || lateZiHourUseNextDay === false ? 0 : 1;
+	const dayLabel = a23 === 1 ? '23点算第二天(日柱进位次日)' : '24点算第二天(日柱守今、24点才换日柱)';
+	const hourLabel = lzh === 1 ? '晚子时按次日日柱计算(时干用次日日干起子时)' : '晚子时按当日柱计算(时干用今日日干起子时)';
+	return {
+		after23NewDay: a23,
+		lateZiHourUseNextDay: lzh,
+		dayBoundaryLabel: dayLabel,
+		lateZiHourLabel: hourLabel,
+		note: `本盘排盘规则：日柱开关【${dayLabel}】+ 时柱开关【${hourLabel}】。23:00–23:59 范围内,日柱与时柱按上述规则计算;其他时辰两个开关均不影响。`,
+	};
+}
+import { buildAstroSnapshotContent, loadAstroAISnapshot, buildClassicalAnalysisSection } from './astroAiSnapshot';
+import { getCaseTypeLabel, getCaseTypeMeta, listLocalCases } from './localcases';
+import { listLocalCharts } from './localcharts';
+import { loadModuleAISnapshot, saveModuleAISnapshot } from './moduleAiSnapshot';
+import { fetchChart } from '../services/astro';
+import { AI_ANALYSIS_STORES, getStoreRecord, putStoreRecord } from './aiAnalysisStore';
+import { buildRetrievedContextText } from './aiAnalysisRag';
+import { fetchPreciseNongli } from './preciseCalcBridge';
+import { calcDunJia, buildDunJiaSnapshotText } from '../components/dunjia/DunJiaCalc';
+import { fetchTaiyiPan, buildTaiyiSnapshotText } from '../components/taiyi/TaiYiCalc';
+import { buildTongSheFaModel, buildTongSheFaSnapshot } from '../components/tongshefa/TongSheFaMain';
+import { buildJinKouData } from '../components/jinkou/JinKouCalc';
+import { resolveJinKouDiFen } from '../components/jinkou/JinKouState';
+import { buildLiuRengSnapshotText } from '../components/lrzhan/LiuRengMain';
+import { buildJinKouSnapshotText } from '../components/jinkou/JinKouMain';
+import { buildGuaSnapshotText, buildTimeGua } from '../components/guazhan/GuaZhanMain';
+import { buildBaziSnapshotForParams } from '../components/cntradition/BaZi';
+import { buildZiweiSnapshotForParams } from '../components/ziwei/ZiWeiMain';
+import { buildIndiaSnapshotForFields } from '../components/astro/IndiaChart';
+import { buildFirdariaSnapshotText, buildPrimaryDirectSnapshotText } from '../components/direction/AstroDirectMain';
+import { buildDistributionsSnapshotText } from '../components/astro/AstroDistributions';
+import { buildAgePointSnapshotText } from '../components/astro/AstroAgePoint';
+import { buildPlanetaryAgesSnapshotText } from './planetaryAges';
+import { buildVedicProgSnapshotText } from '../components/astro/AstroVedicProgressions';
+import { buildBalbillusSnapshotText } from './balbillus';
+import { buildTriplicityRulersSnapshotText } from './triplicityRulers';
+import { buildKeypointsSnapshotText } from './keypoints120';
+import { buildLunationPhaseSnapshotText } from './lunationPhase';
+import { buildExtraReturnsSnapshotText } from '../components/astro/AstroExtraReturns';
+import { buildYearSystem129SnapshotText } from '../components/astro/AstroYearSystem129';
+import { buildPlanetaryArcSnapshotText } from '../components/astro/AstroPlanetaryArc';
+import { buildPersianDirectedSnapshotText } from '../components/astro/AstroPersianDirected';
+import { buildJaynesProgSnapshotText } from '../components/astro/AstroJaynesProgressions';
+import { buildZodialReleaseSnapshotText } from '../components/astro/AstroZR';
+import { buildDecennialsSnapshotText } from '../components/astro/AstroDecennials';
+import { buildKinAstroSnapshotForFields } from '../components/kinastro/KinAstroMain';
+import { buildHuangJiSnapshotForFields } from '../components/huangji/HuangJiMain';
+import { buildTaiXuanSnapshotForFields } from '../components/taixuan/TaiXuanMain';
+import { buildJingJueSnapshotForFields } from '../components/jingjue/JingJueMain';
+import { buildWuZhaoSnapshotForFields } from '../components/wuzhao/WuZhaoMain';
+import { buildShenYiShuSnapshotForFields } from '../components/shenyishu/ShenYiShuMain';
+import { buildGuolaoSnapshotForFields } from '../components/guolao/GuoLaoChartMain';
+import { buildSuzhanSnapshotText } from '../components/suzhan/SuZhanMain';
+import { buildGermanySnapshotForFields } from '../components/germany/AstroMidpoint';
+import { buildPredictiveSnapshotText } from './predictiveAiSnapshot';
+import { runHorary } from '../divination/horary/horaryEngine';
+import { buildHorarySnapshot } from '../divination/horary/horarySnapshot';
+import { runElection } from '../divination/election/electionEngine';
+import { buildElectionSnapshot } from '../divination/election/electionSnapshot';
+import { buildLocalBaziResult } from './baziLunarLocal';
+import { calculate as canpingCalculate, buildSnapshotText as buildCanpingSnapshotText, liunianSeries as canpingLiunianSeries } from './canpingLocal';
+import { calculate as heluoCalc, daYun as heluoDaYun, judge as heluoJudge, buildSnapshotText as buildHeluoSnapshotText, solarTermHuagong as heluoSolarTermHuagong } from './heluoLocal';
+import { Solar as HeluoSolar } from 'lunar-javascript';
+// P5 主限法盘快照：方位法/度数换算的中文标签 + 默认（纯 util，无组件依赖、不回环 aiAnalysisContext）。
+import { getPdMethodLabel, getPdTimeKeyLabel, DEFAULT_PD_METHOD, DEFAULT_PD_TIME_KEY } from './primaryDirectionSync';
+
+const DEFAULT_PD_ASPECTS = [0, 60, 90, 120, 180];
+const DEFAULT_CONTEXT_CHAR_LIMIT = 18000;
+const MODULE_SNAPSHOT_PREFIX = 'horosa.ai.snapshot.module.v1.';
+const DEFAULT_QIMEN_OPTIONS = {
+	jieQiType: 1,
+	yearGanZhiType: 2,
+	monthGanZhiType: 1,
+	dayGanZhiType: 0,
+	qijuMethod: 'zhirun',
+	kongMode: 'day',
+	yimaMode: 'day',
+	timeAlg: 0,
+	shiftPalace: 0,
+	after23NewDay: defaultAfter23NewDay(),
+	lateZiHourUseNextDay: defaultLateZiHourUseNextDay(),
+	fengJu: false,
+	paiPanType: 3,
+	zhiShiType: 0,
+	yueJiaQiJuType: 1,
+};
+const DEFAULT_TAIYI_OPTIONS = {
+	style: 3,
+	tn: 0,
+	tenching: 0,
+	sex: '男',
+	rotation: '固定',
+};
+
+export const ANALYSIS_TECHNIQUE_LABELS = {
+	astrochart: '星盘',
+	astrochart_like: '十三分盘 / 占星地图',
+	indiachart: '印度占星',
+	relative: '合盘',
+	guolao: '七政四余',
+	germany: '量化盘',
+	jieqi: '节气盘',
+	jieqi_meta: '节气盘-通用参数',
+	jieqi_chunfen: '节气盘-春分',
+	jieqi_xiazhi: '节气盘-夏至',
+	jieqi_qiufen: '节气盘-秋分',
+	jieqi_dongzhi: '节气盘-冬至',
+	primarydirect: '星运-主限法',
+	primarydirchart: '星运-主限法盘',
+	zodialrelease: '星运-黄道星释',
+	firdaria: '星运-法达星限',
+	distributions: '星运-界推运',
+	agepoint: '星运-年龄推进点',
+	profection: '星运-小限法',
+	solararc: '星运-太阳弧',
+	solarreturn: '星运-太阳返照',
+	lunarreturn: '星运-月亮返照',
+	givenyear: '星运-流年法',
+	decennials: '星运-十年大运',
+	planetaryages: '星运-行星年龄',
+	vedicprog: '星运-恒星推运',
+	balbillus: '星运-Balbillus',
+	triplicityrulers: '星运-三分主星',
+	keypoints: '星运-数字相位',
+	lunationphase: '星运-月相推运',
+	extrareturns: '星运-多重回归',
+	yearsystem129: '星运-129年系统',
+	planetaryarc: '星运-行星弧',
+	persiandirected: '星运-波斯向运',
+	jaynesprog: '星运-赤纬推运',
+	cntradition: '辅助',
+	bazi: '八字',
+	ziwei: '紫微斗数',
+	suzhan: '宿占',
+	otherbu: '骰子',
+	fengshui: '风水',
+	sixyao: '六爻',
+	tongshefa: '统摄法',
+	liureng: '大六壬',
+	jinkou: '金口诀',
+	qimen: '奇门遁甲',
+	sanshiunited: '三式合一',
+	taiyi: '太乙',
+	horary: '卜卦盘',
+	election: '择日盘',
+	mundane: '世俗盘',
+	canping: '邵子参评数',
+	heluo: '河洛理数',
+	xianqin: '演禽',
+	cetian: '策天飞星',
+	huangji: '皇极经世',
+	wuzhao: '五兆',
+	taixuan: '太玄筮法',
+	jingjue: '荆诀',
+	shenyishu: '神易数',
+};
+
+// AI 分析「使用技法」命盘类下拉。仅收录能按本盘数据返回结构化快照的技法。
+// 仍排除（命盘类无法复用 builder）：relative(合盘,需两张盘)、cntradition(辅助,无可复用 builder)。
+// 注：wuzhao/taixuan/jingjue/shenyishu/huangji 均在 CASE_TYPE_OPTIONS 可存事盘，存案 payload 带 snapshot 字符串。
+//   挂载走 ANALYSIS_CASE_TECHNIQUES 的 case 分支：getTechniqueSnapshotFromPayload 经 extractSnapshotText 读 payload.snapshot
+//   字符串出正文(确定性、不重算)；事盘列表预览须 extractCaseSnapshotText 同样认字符串(原只认对象 .content → 修)。
+//   jieqi(节气盘,非单盘/多次取数)、otherbu(骰子,随机不可复算)、fengshui(风水) 暂无事盘存储(不在 CASE_TYPE_OPTIONS)→ 仍只导出不挂载。
+// 标签仍保留在 ANALYSIS_TECHNIQUE_LABELS（导出/他处可能引用）。
+export const ANALYSIS_CHART_TECHNIQUES = [
+	'astrochart',
+	'astrochart_like',
+	'indiachart',
+	'guolao',
+	'germany',
+	'primarydirect',
+	'primarydirchart',
+	'zodialrelease',
+	'firdaria',
+	'distributions',
+	'agepoint',
+	'profection',
+	'solararc',
+	'solarreturn',
+	'lunarreturn',
+	'givenyear',
+	'decennials',
+	'planetaryages',
+	'vedicprog',
+	'balbillus',
+	'triplicityrulers',
+	'keypoints',
+	'lunationphase',
+	'extrareturns',
+	'yearsystem129',
+	'planetaryarc',
+	'persiandirected',
+	'jaynesprog',
+	'bazi',
+	'ziwei',
+	'suzhan',
+	'canping',
+	'heluo',
+	'xianqin',
+	'cetian',
+	'huangji',
+];
+
+export const ANALYSIS_CASE_TECHNIQUES = [
+	'sixyao',
+	'tongshefa',
+	'liureng',
+	'jinkou',
+	'qimen',
+	'sanshiunited',
+	'taiyi',
+	'suzhan',
+	'horary',
+	'election',
+	'mundane',
+	// 报数/揲蓍/起例 确定性术：均在 CASE_TYPE_OPTIONS 可存事盘，存案 payload 带 snapshot 字符串 + 起算时定型的
+	// 时间设置(fieldSnapshot)；case 分支按 payload.snapshot 出正文(不重算)，与 sixyao/mundane 同范式。
+	// huangji 此前只登 ANALYSIS_CHART_TECHNIQUES → 其事盘不被列为可挂技法(listAnalysisTechniqueOptions 给 CASE 集) →
+	// 补登于此(同时保留 CHART 登记：命盘侧按出生重算 buildHuangJiSnapshotForFields 不变)。
+	'wuzhao',
+	'taixuan',
+	'jingjue',
+	'shenyishu',
+	'huangji',
+];
+
+// 「时间确定式法」：盘面完全由起课时间 + 默认设置(含地点)决定，可即时起盘。
+// 用途：① 新的「起课时间」入口对它们即时起盘；② 已存事盘若 payload 缺该技法，按其起课时间自动补算。
+// 含西洋卜卦盘 horary / 择日盘 election——二者仅凭时间+地点即可起西洋盘、引擎默认类别(general/marriage)即出结构化裁决/评分。
+// 六爻/统摄法/宿占等【不在此列】——六爻是摇钱/报数起卦，按时间重算 = 伪造一个不同的卦，永远只认存盘。
+export const TIME_CASTABLE_DIVINATION = ['liureng', 'jinkou', 'qimen', 'taiyi', 'sanshiunited', 'horary', 'election'];
+const TIME_CASTABLE_SET = new Set(TIME_CASTABLE_DIVINATION);
+// 「起课时间」源额外允许六爻——时间起卦是确定性式法（时间即输入，非伪造摇卦）；
+// 但「已存事盘」源仍不按时间重算六爻（保持 case 护栏，见 getAnalysisTechniqueContexts）。
+// 时间确定/时间派种(seed/数据全由时间派生)式法均纳入「起课时间」源白名单:
+// · sixyao 六爻(时间起卦)、huangji 皇极经世(元会运世按时间确定);
+// · taixuan/jingjue 报数法用起课时间 yyyyMMddHHmm 派生 seed,反复挂载确定;
+// · wuzhao 干支起例(纯时间)/shenyishu hourSource=auto seasonSource=auto 全由时间推断。
+// 仍排除 tongshefa/suzhan/mundane —— 需用户手动选盘或事先存盘(凭时间起会得无意义默认值,不如显示「缺失」让用户去事盘存好再挂载)。
+const TIMEPOINT_CASTABLE_SET = new Set([...TIME_CASTABLE_DIVINATION, 'sixyao', 'huangji', 'taixuan', 'jingjue', 'wuzhao', 'shenyishu']);
+
+function safeParseJson(txt, defVal = null){
+	if(!txt){
+		return defVal;
+	}
+	try{
+		return JSON.parse(txt);
+	}catch(e){
+		return defVal;
+	}
+}
+
+function parseBirthString(text, zone = '+08:00'){
+	const raw = `${text || ''}`.trim();
+	const matched = raw.match(/^(-?\d+)-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+	if(!matched){
+		return new DateTime({ zone });
+	}
+	const yearVal = parseInt(matched[1], 10);
+	return new DateTime({
+		ad: yearVal < 0 ? -1 : 1,
+		year: Math.abs(yearVal),
+		month: parseInt(matched[2], 10),
+		date: parseInt(matched[3], 10),
+		hour: parseInt(matched[4] || '0', 10),
+		minute: parseInt(matched[5] || '0', 10),
+		second: parseInt(matched[6] || '0', 10),
+		zone: zone || '+08:00',
+	});
+}
+
+function normalizeTags(group){
+	const parsed = safeParseJson(group, null);
+	if(Array.isArray(parsed)){
+		return parsed;
+	}
+	if(Array.isArray(group)){
+		return group;
+	}
+	if(typeof group === 'string' && group.trim() !== ''){
+		return group.split(/[,，\n]/g).map((item)=>`${item || ''}`.trim()).filter(Boolean);
+	}
+	return [];
+}
+
+// 主限推算年数兜底:与 AstroPrimaryDirection.normalizePdYears 同口径(取整、夹 1–180、坏值回退 100)。
+function normalizePdYearsValue(value){
+	if(value === undefined || value === null || value === ''){
+		return 100;
+	}
+	const n = Math.round(Number(value));
+	if(!Number.isFinite(n)){
+		return 100;
+	}
+	return Math.max(1, Math.min(3000, n));
+}
+
+function buildFieldObject(record){
+	// 起课时间合成的 timepoint record 用 divTime 不用 birth(参 AIAnalysisMain.js:1029),
+	// 旧实现只读 record.birth → 撞 fallback `new DateTime({zone})` 用当前系统时间起盘,
+	// 太玄/荆诀/五兆/神易数 等 backend 拿到时再格式化就出 NaN-undefined-undefined。
+	// 兜底 birth ?? divTime,两者皆同口径 'YYYY-MM-DD HH:mm:ss' 即可被 parseBirthString 正确匹配。
+	const birthText = record.birth || record.divTime || '';
+	const birth = parseBirthString(birthText, record.zone);
+	return {
+		cid: { value: record.cid || null },
+		ad: { value: birth.ad },
+		date: { value: birth.clone().startOf('date') },
+		time: { value: birth.clone() },
+		zone: { value: record.zone || birth.zone || '+08:00' },
+		lat: { value: record.lat || '' },
+		lon: { value: record.lon || '' },
+		gpsLat: { value: record.gpsLat || 0 },
+		gpsLon: { value: record.gpsLon || 0 },
+		name: { value: record.name || '' },
+		pos: { value: record.pos || '' },
+		hsys: { value: record.hsys !== undefined ? record.hsys : 0 },
+		zodiacal: { value: record.zodiacal !== undefined ? record.zodiacal : 0 },
+		// 恒星黄道盘挂载 AI 时,沿用该盘保存的 ayanāṃśa(缺省 ''=后端默认 Lahiri),
+		// 使 AI 快照行星经度与盘面一致(全链路:储存→挂载→AI)。
+		siderealAyanamsa: { value: record.siderealAyanamsa !== undefined ? record.siderealAyanamsa : '' },
+		// AI 挂载「每技法设置」可覆盖的占星排盘开关:优先读 record(挂载重算时 merge 进 record.*),
+		// 缺省回退现状默认(0)→ 不调任何项时与现状逐字一致(守「默认即现状」)。
+		tradition: { value: record.tradition !== undefined && record.tradition !== null ? record.tradition : 0 },
+		strongRecption: { value: record.strongRecption !== undefined && record.strongRecption !== null ? record.strongRecption : 0 },
+		simpleAsp: { value: record.simpleAsp !== undefined && record.simpleAsp !== null ? record.simpleAsp : 0 },
+		virtualPointReceiveAsp: { value: record.virtualPointReceiveAsp !== undefined && record.virtualPointReceiveAsp !== null ? record.virtualPointReceiveAsp : 0 },
+		doubingSu28: { value: record.doubingSu28 !== undefined && record.doubingSu28 !== null ? Number(record.doubingSu28) : undefined },
+		houseStartMode: { value: 0 },
+		predictive: { value: 1 },
+		showPdBounds: { value: 1 },
+		pdtype: { value: record.pdtype === 1 ? 1 : 0 },
+		// P0 起 record 可能持久化用户实选 (placidus / 其它 timeKey)；优先读 record，
+		// 不存在时回退到默认 Alcabitius+Ptolemy (守 v2.5.3 默认路径字节级一致)。
+		pdMethod: { value: record.pdMethod || 'core_alchabitius' },
+		pdTimeKey: { value: record.pdTimeKey || 'Ptolemy' },
+		// 主限法进阶开关(向运顺逆 / 映点 / 界):顺逆默认都开(用户偏好),映点/界默认关。
+		pdDirect: { value: record.pdDirect === 0 ? 0 : 1 },
+		pdConverse: { value: record.pdConverse === 0 ? 0 : 1 },
+		pdAntiscia: { value: record.pdAntiscia ? 1 : 0 },
+		pdTerms: { value: record.pdTerms ? 1 : 0 },
+		// 主限推算年数:挂载「每技法设置」可经 record.pdYears 覆盖(默认 100、范围 1–3000,
+		// 与 AstroPrimaryDirection.normalizePdYears / perchart.py 兜底一致;>360 走多圈复发行)。缺省→100=现状字节级一致。
+		pdYears: { value: normalizePdYearsValue(record.pdYears) },
+		pdaspects: { value: DEFAULT_PD_ASPECTS.slice(0) },
+		// 时间算法(0=真太阳时按经度校正 / 1=直接时间用钟表时)+ 晚子时口径须从存盘读取,
+		// 否则 canping/heluo 等八字类快照会对「直接时间」盘错用真太阳时校正、忽略晚子时设置(口径与显示不一致)。
+		timeAlg: { value: (record.timeAlg !== undefined && record.timeAlg !== null) ? record.timeAlg : 0 },
+		phaseType: { value: record.phaseType !== undefined && record.phaseType !== null ? record.phaseType : 0 },
+		godKeyPos: { value: record.godKeyPos !== undefined && record.godKeyPos !== null ? record.godKeyPos : '年' },
+		after23NewDay: { value: (record.after23NewDay !== undefined && record.after23NewDay !== null) ? record.after23NewDay : defaultAfter23NewDay() },
+		lateZiHourUseNextDay: { value: (record.lateZiHourUseNextDay !== undefined && record.lateZiHourUseNextDay !== null) ? record.lateZiHourUseNextDay : defaultLateZiHourUseNextDay() },
+		adjustJieqi: { value: record.adjustJieqi !== undefined && record.adjustJieqi !== null ? record.adjustJieqi : 0 },
+		gender: { value: record.gender !== undefined && record.gender !== null ? record.gender : 1 },
+		southchart: { value: record.southchart !== undefined && record.southchart !== null ? record.southchart : 0 },
+		// 七政四余命度/罗计模式:挂载设置可经 record 携带(缺省 undefined → builder 回退全局 localStorage 默认,即现状)。
+		guolaoLifeMode: { value: record.guolaoLifeMode !== undefined && record.guolaoLifeMode !== null ? record.guolaoLifeMode : undefined },
+		// 印占：岁差制/分宫制(挂载设置可调,缺省回退印占默认)。
+		indiaHsys: { value: record.indiaHsys !== undefined && record.indiaHsys !== null ? record.indiaHsys : undefined },
+		indiaAyanamsa: { value: record.indiaAyanamsa !== undefined && record.indiaAyanamsa !== null ? record.indiaAyanamsa : undefined },
+		guolaoNodeMode: { value: record.guolaoNodeMode !== undefined && record.guolaoNodeMode !== null ? record.guolaoNodeMode : undefined },
+		// 容许度（对齐 models/astro.js fieldsToParams）：
+		//  - orbScale(整体缩放,数字):挂载可经 record.orbScale 覆盖(0.5–2.5,默认1);缺省/1 → undefined(后端零回归=现状)。
+		//  - orbs(逐星对象):仅当挂载开「沿用本盘自定义容许度」(record.useStoredOrbs)时才下发存盘 record.orbs;
+		//    默认不下发(=现状,后端用默认容许度)。对象型不进 prune 比较(prune 只看 useStoredOrbs 布尔)。
+		orbScale: { value: (record.orbScale !== undefined && record.orbScale !== null && Number(record.orbScale) !== 1 && Number.isFinite(Number(record.orbScale))) ? Number(record.orbScale) : undefined },
+		orbs: { value: (record.useStoredOrbs && record.orbs && typeof record.orbs === 'object' && Object.keys(record.orbs).length) ? record.orbs : undefined },
+		group: { value: normalizeTags(record.group) },
+	};
+}
+
+function fieldParams(fields){
+	return {
+		cid: null,
+		ad: fields.date.value.ad,
+		date: fields.date.value.format('YYYY/MM/DD'),
+		time: fields.time.value.format('HH:MM:SS'),
+		zone: fields.date.value.zone,
+		lat: fields.lat.value,
+		lon: fields.lon.value,
+		gpsLat: fields.gpsLat.value,
+		gpsLon: fields.gpsLon.value,
+		hsys: fields.hsys.value,
+		southchart: fields.southchart.value,
+		zodiacal: fields.zodiacal.value, siderealAyanamsa: fields.siderealAyanamsa ? fields.siderealAyanamsa.value : '',
+		tradition: fields.tradition.value,
+		doubingSu28: fields.doubingSu28.value,
+		strongRecption: fields.strongRecption.value,
+		simpleAsp: fields.simpleAsp.value,
+		virtualPointReceiveAsp: fields.virtualPointReceiveAsp.value,
+		predictive: fields.predictive.value,
+		showPdBounds: fields.showPdBounds.value,
+		pdtype: fields.pdtype.value,
+		pdMethod: fields.pdMethod.value,
+		pdTimeKey: fields.pdTimeKey.value,
+		pdDirect: fields.pdDirect ? fields.pdDirect.value : 1,
+		pdConverse: fields.pdConverse ? fields.pdConverse.value : 0,
+		pdAntiscia: fields.pdAntiscia ? fields.pdAntiscia.value : 0,
+		pdTerms: fields.pdTerms ? fields.pdTerms.value : 0,
+		pdYears: fields.pdYears ? fields.pdYears.value : 100,
+		pdaspects: fields.pdaspects.value,
+		// 容许度（对齐 models/astro.js fieldsToParams:248-249）：falsy → undefined（不下发=后端零回归）。
+		orbs: (fields.orbs && fields.orbs.value) ? fields.orbs.value : undefined,
+		orbScale: (fields.orbScale && fields.orbScale.value) ? fields.orbScale.value : undefined,
+		name: fields.name.value,
+		pos: fields.pos.value,
+		group: fields.group.value,
+	};
+}
+
+function buildSnapshotMetaFromRecord(record, extraMeta = {}){
+	const parts = buildSourceSignature({
+		sourceType: record && record.birth ? 'chart' : 'case',
+		record,
+	});
+	return {
+		date: parts.date || '',
+		time: parts.time || '',
+		zone: parts.zone || '',
+		lon: parts.lon || '',
+		lat: parts.lat || '',
+		...extraMeta,
+	};
+}
+
+function buildCaseSnapshotFields(record){
+	const dt = parseBirthString(record && (record.divTime || record.updateTime || ''), record && record.zone ? record.zone : '+08:00');
+	return {
+		ad: { value: dt.ad },
+		date: { value: dt.clone() },
+		time: { value: dt.clone() },
+		zone: { value: record && record.zone ? record.zone : dt.zone || '+08:00' },
+		lon: { value: record && record.lon ? record.lon : '' },
+		lat: { value: record && record.lat ? record.lat : '' },
+		gpsLon: { value: record && record.gpsLon !== undefined ? record.gpsLon : 0 },
+		gpsLat: { value: record && record.gpsLat !== undefined ? record.gpsLat : 0 },
+		gender: { value: record && record.gender !== undefined && record.gender !== null ? record.gender : 1 },
+		after23NewDay: { value: record && record.after23NewDay !== undefined ? record.after23NewDay : defaultAfter23NewDay() },
+		lateZiHourUseNextDay: { value: record && record.lateZiHourUseNextDay !== undefined ? record.lateZiHourUseNextDay : defaultLateZiHourUseNextDay() },
+		timeAlg: { value: record && record.timeAlg !== undefined ? record.timeAlg : 0 },
+	};
+}
+
+function buildCaseSnapshotParams(record){
+	const fields = buildCaseSnapshotFields(record || {});
+	return {
+		date: fields.date.value.format('YYYY-MM-DD'),
+		time: fields.time.value.format('HH:mm:ss'),
+		zone: fields.zone.value,
+		lon: fields.lon.value,
+		lat: fields.lat.value,
+		gpsLat: fields.gpsLat.value,
+		gpsLon: fields.gpsLon.value,
+		after23NewDay: (fields.after23NewDay && fields.after23NewDay.value !== undefined) ? fields.after23NewDay.value : defaultAfter23NewDay(),
+		lateZiHourUseNextDay: (fields.lateZiHourUseNextDay && fields.lateZiHourUseNextDay.value !== undefined) ? fields.lateZiHourUseNextDay.value : defaultLateZiHourUseNextDay(),
+	};
+}
+
+function getSnapshotSaveModuleName(key){
+	if(key === 'sixyao'){
+		return 'guazhan';
+	}
+	return key;
+}
+
+function getCaseGenderLabel(record){
+	return `${record && record.gender !== undefined && record.gender !== null ? record.gender : ''}` === '0' ? '女' : '男';
+}
+
+function saveGeneratedTechniqueSnapshot(key, content, record, extraMeta = {}){
+	const text = `${content || ''}`.trim();
+	if(!text){
+		return null;
+	}
+	return saveModuleAISnapshot(
+		getSnapshotSaveModuleName(normalizeTechniqueKey(key)),
+		text,
+		buildSnapshotMetaFromRecord(record, extraMeta)
+	);
+}
+
+function buildSanshiUnifiedFallbackSnapshot(record, payload){
+	const result = payload && payload.result ? payload.result : {};
+	const sections = [];
+	if(result.liureng){
+		const liurengText = buildLiuRengSnapshotText(
+			buildCaseSnapshotParams(record),
+			result.liureng,
+			null,
+			null,
+			2,
+			'土',
+			record && record.gender !== undefined && record.gender !== null ? record.gender : 1
+		);
+		if(liurengText){
+			sections.push(`[大六壬]\n${liurengText}`);
+		}
+	}
+	if(result.dunjia){
+		const qimenText = buildDunJiaSnapshotText(result.dunjia);
+		if(qimenText){
+			sections.push(`[奇门遁甲]\n${qimenText}`);
+		}
+	}
+	if(result.taiyi){
+		const taiyiText = buildTaiyiSnapshotText(result.taiyi);
+		if(taiyiText){
+			sections.push(`[太乙]\n${taiyiText}`);
+		}
+	}
+	if(result.keData || result.sanChuan){
+		sections.push('[三式合一结构化数据]\n' + JSON.stringify({
+			options: payload && payload.options ? payload.options : {},
+			result: payload && payload.result ? payload.result : {},
+		}, null, 2));
+	}
+	return sections.join('\n\n').trim();
+}
+
+async function requestLiurengGods(record){
+	const fields = buildCaseSnapshotFields(record);
+	const params = {
+		ad: fields.ad.value,
+		date: fields.date.value.format('YYYY-MM-DD'),
+		time: fields.time.value.format('HH:mm'),
+		zone: fields.zone.value,
+		lon: fields.lon.value,
+		lat: fields.lat.value,
+		gpsLat: fields.gpsLat.value,
+		gpsLon: fields.gpsLon.value,
+		after23NewDay: fields.after23NewDay.value,
+		lateZiHourUseNextDay: fields.lateZiHourUseNextDay && fields.lateZiHourUseNextDay.value !== undefined ? fields.lateZiHourUseNextDay.value : defaultLateZiHourUseNextDay(),
+	};
+	const data = await request(`${Constants.ServerRoot}/liureng/gods`, {
+		body: JSON.stringify(params),
+		silent: true,
+		timeoutMs: 45000,
+	});
+	const result = data && data[Constants.ResultKey] ? data[Constants.ResultKey] : null;
+	if(!result || !result.liureng){
+		return null;
+	}
+	return {
+		params,
+		liureng: result.liureng,
+	};
+}
+
+async function regenerateLiurengSnapshot(record, options){
+	const result = await requestLiurengGods(record);
+	if(!result || !result.liureng){
+		return '';
+	}
+	// AI 挂载「每技法设置」:起课法/换将/分昼夜/贵人/五行经 options 透传（缺省=现状）。
+	const o = options && typeof options === 'object' ? options : {};
+	const castOpts = {
+		castMethod: o.castMethod,
+		xuanShiZhi: o.xuanShiZhi,
+		yanShuNum: o.yanShuNum,
+		yueJiangMethod: o.yueJiangMethod,
+		fenZhouYe: o.fenZhouYe,
+	};
+	const guirengType = (o.guireng !== undefined && o.guireng !== null) ? o.guireng : 2;
+	const zhangshengElem = o.wuxing || '土';
+	// buildLiuRengSnapshotText 内部用 chartObj 经 buildLiuRengLayout 算「天地盘/四课/三传」——
+	// 需 chartObj.nongli.time + nongli.dayGanZi + objects(月将=太阳座) + isDiurnal。
+	// 旧实现第 4 参传 null → 布局为空 → 起课时间/三式合一的大六壬不出。修法：以 result.liureng 为底，
+	// 若缺 objects 则补一份 /chart（含太阳座与昼夜）。
+	let chartObj = result.liureng;
+	if(!chartObj.objects || !chartObj.objects.length){
+		try{
+			const p = result.params || {};
+			const chartParams = { ...p, date: ('' + (p.date || '')).replace(/-/g, '/'), hsys: 0, zodiacal: 0, cid: null };
+			const co = await request(`${Constants.ServerRoot}/chart`, { body: JSON.stringify(chartParams), silent: true });
+			const r = co && co[Constants.ResultKey] ? co[Constants.ResultKey] : null;
+			const inner = r && r.chart ? r.chart : r;
+			if(inner && Array.isArray(inner.objects)){
+				chartObj = { ...result.liureng, objects: inner.objects, isDiurnal: inner.isDiurnal !== undefined ? inner.isDiurnal : result.liureng.isDiurnal };
+			}
+		}catch(e){ /* 取不到则退回 result.liureng */ }
+	}
+	return buildLiuRengSnapshotText(
+		result.params,
+		result.liureng,
+		null,
+		chartObj,
+		guirengType,
+		zhangshengElem,
+		record && record.gender !== undefined && record.gender !== null ? record.gender : 1,
+		castOpts
+	);
+}
+
+async function regenerateJinkouSnapshot(record, payload){
+	const result = await requestLiurengGods(record);
+	if(!result || !result.liureng){
+		return '';
+	}
+	const timeText = result.liureng && result.liureng.nongli ? result.liureng.nongli.time : '';
+	const diFen = resolveJinKouDiFen(
+		payload && payload.diFen,
+		false,
+		timeText,
+		!!(payload && payload.diFen)
+	);
+	const jinkouData = buildJinKouData(result.liureng, {
+		diFen,
+		// 金口诀贵神兜底 = 0（六壬法）=== JinKouMain state + schema 默认；原写死 2（星占法）会与齿轮显示的「六壬法(默认)」对不上。
+		guirengType: payload && payload.guireng !== undefined && payload.guireng !== null ? payload.guireng : 0,
+		isDiurnal: null,
+		// AI 挂载「每技法设置」:月将/占时经 payload 透传（缺省=自动取，buildJinKouData 内部按节气/时支兜底=现状）。
+		yueJiang: payload && payload.yueJiang,
+		zhanShi: payload && payload.zhanShi,
+	});
+	return buildJinKouSnapshotText(
+		result.params,
+		result.liureng,
+		null,
+		jinkouData,
+		payload && payload.wuxing ? payload.wuxing : '土',
+		payload && payload.guireng !== undefined && payload.guireng !== null ? payload.guireng : 0,
+		record && record.gender !== undefined && record.gender !== null ? record.gender : 1
+	);
+}
+
+async function regenerateQimenSnapshot(record, payload){
+	const fields = buildCaseSnapshotFields(record);
+	const params = buildCaseSnapshotParams(record);
+	const nongli = await fetchPreciseNongli(params);
+	if(!nongli){
+		return '';
+	}
+	// 兼容事盘(payload.options/faRelatedPeople)与命盘(payload.qimen.{options,faRelatedPeople})两种结构。
+	const qs = payload && payload.qimen && typeof payload.qimen === 'object' ? payload.qimen : payload;
+	const options = {
+		...DEFAULT_QIMEN_OPTIONS,
+		...(qs && qs.options ? qs.options : {}),
+	};
+	const pan = calcDunJia(fields, nongli, options, {});
+	// 显式还原相关人员(空[]也算显式、覆盖全局兜底)，使八门化气大阵生年干随已存记录一致(AI 挂载/储存四同步)。
+	pan.faRelatedPeople = qs && Array.isArray(qs.faRelatedPeople) ? qs.faRelatedPeople : [];
+	return buildDunJiaSnapshotText(pan);
+}
+
+async function regenerateTaiyiSnapshot(record, payload){
+	const fields = buildCaseSnapshotFields(record);
+	const params = buildCaseSnapshotParams(record);
+	const nongli = await fetchPreciseNongli(params);
+	if(!nongli){
+		return '';
+	}
+	const options = {
+		...DEFAULT_TAIYI_OPTIONS,
+		...(payload && payload.options ? payload.options : {}),
+	};
+	if(!options.sex){
+		options.sex = getCaseGenderLabel(record);
+	}
+	const pan = await fetchTaiyiPan(fields, nongli, options);
+	return buildTaiyiSnapshotText(pan);
+}
+
+async function regenerateSanshiUnifiedSnapshot(record, payload){
+	// 六壬子组:挂载齿轮的合并选项落在 payload.options(optionsPath:'options');regenerateLiurengSnapshot 读 options.*
+	// (castMethod/guireng/wuxing/换将/分昼夜/选时/演数)。原先此处没传 → 三式合一的大六壬永远默认盘(C-❌2 缺口)。
+	const [liurengText, qimenText, taiyiText] = await Promise.all([
+		regenerateLiurengSnapshot(record, payload && payload.options),
+		regenerateQimenSnapshot(record, payload),
+		regenerateTaiyiSnapshot(record, payload),
+	]);
+	const sections = [];
+	if(liurengText){
+		sections.push(`[大六壬]\n${liurengText}`);
+	}
+	if(qimenText){
+		sections.push(`[奇门遁甲]\n${qimenText}`);
+	}
+	if(taiyiText){
+		sections.push(`[太乙]\n${taiyiText}`);
+	}
+	if(sections.length){
+		return sections.join('\n\n').trim();
+	}
+	return buildSanshiUnifiedFallbackSnapshot(record, payload || {});
+}
+
+function generateCaseTechniqueSnapshot(record, moduleName, payload){
+	const key = normalizeTechniqueKey(moduleName || (payload && payload.module) || (record && record.sourceModule) || '');
+	if(!record || !key){
+		return '';
+	}
+	const params = buildCaseSnapshotParams(record);
+	switch(key){
+	case 'liureng':
+		if(!payload || !payload.liureng){
+			return '';
+		}
+		return buildLiuRengSnapshotText(
+			params,
+			payload.liureng,
+			payload.runyear || null,
+			null,
+			payload.guireng !== undefined && payload.guireng !== null ? payload.guireng : 2,
+			payload.wuxing || '土',
+			record.gender !== undefined && record.gender !== null ? record.gender : 1,
+			{
+				castMethod: payload.castMethod,
+				xuanShiZhi: payload.xuanShiZhi,
+				yanShuNum: payload.yanShuNum,
+				yueJiangMethod: payload.yueJiangMethod,
+				fenZhouYe: payload.fenZhouYe,
+			}
+		);
+	case 'jinkou': {
+		if(!payload || !payload.liureng){
+			return '';
+		}
+		const timeText = payload.liureng && payload.liureng.nongli ? payload.liureng.nongli.time : '';
+		const diFen = resolveJinKouDiFen(
+			payload.diFen,
+			false,
+			timeText,
+			!!payload.diFen
+		);
+		const jinkouData = buildJinKouData(payload.liureng, {
+			diFen,
+			// 金口诀贵神兜底 0（六壬法）=== 组件/schema 默认（原写死 2 对不上）。
+			guirengType: payload.guireng !== undefined && payload.guireng !== null ? payload.guireng : 0,
+			isDiurnal: null,
+			// 已存事盘 payload 含月将/占时则透传（缺省=自动取=现状）。
+			yueJiang: payload.yueJiang,
+			zhanShi: payload.zhanShi,
+		});
+		return buildJinKouSnapshotText(
+			params,
+			payload.liureng,
+			payload.runyear || null,
+			jinkouData,
+			// 五行兜底 '土' === 组件/schema/regenerateJinkouSnapshot 默认（原 '' 会整段跳过十二长生、与现状不一致）。
+			payload.wuxing || '土',
+			payload.guireng !== undefined && payload.guireng !== null ? payload.guireng : 0,
+			record.gender !== undefined && record.gender !== null ? record.gender : 1
+		);
+	}
+	case 'qimen': {
+		const qpan = payload && (payload.pan || (payload.result && payload.result.dunjia) || payload.dunjia);
+		if(!qpan){
+			return '';
+		}
+		// 已存事盘 pan 多已带 faRelatedPeople(存盘时 stamp)；旧记录无则显式置空数组(避免误用全局当前选择)。
+		if(!Array.isArray(qpan.faRelatedPeople)){
+			qpan.faRelatedPeople = payload && Array.isArray(payload.faRelatedPeople) ? payload.faRelatedPeople : [];
+		}
+		return buildDunJiaSnapshotText(qpan);
+	}
+	case 'tongshefa': {
+		const selection = payload && (payload.selection || (payload.tongshefa && payload.tongshefa.selection));
+		if(!selection){
+			return '';
+		}
+		return buildTongSheFaSnapshot(buildTongSheFaModel(selection));
+	}
+	case 'sixyao':
+		if(!payload || !payload.gua){
+			return '';
+		}
+		return buildGuaSnapshotText(buildCaseSnapshotFields(record), payload && payload.gua ? payload.gua : {});
+	case 'mundane':
+		// 世俗盘(入宫/新月/满月/日食/月食/地区盘/行星周期):astro 类事盘,存档时 DivinationChartShell 已写
+		// 格式化 buildAiSnapshot 全文于 payload.aiSnapshot → 挂载直接复用(世俗盘类型多样,不按时间重算)。
+		return (payload && payload.aiSnapshot && `${payload.aiSnapshot}`.trim()) ? `${payload.aiSnapshot}` : '';
+	case 'taiyi':
+		if(!payload || !(payload.pan || (payload.result && payload.result.taiyi) || payload.taiyi)){
+			return '';
+		}
+		return buildTaiyiSnapshotText(payload.pan || (payload.result && payload.result.taiyi) || payload.taiyi);
+	case 'sanshiunited':
+		if(!payload || (!payload.moduleSnapshots && !payload.modules && !payload.snapshot && !payload.result)){
+			return '';
+		}
+		return buildSanshiUnifiedFallbackSnapshot(record, payload || {});
+	default:
+		return '';
+	}
+}
+
+async function regenerateCaseTechniqueSnapshot(record, moduleName, payload){
+	const key = normalizeTechniqueKey(moduleName || (payload && payload.module) || (record && record.sourceModule) || '');
+	if(!record || !key){
+		return '';
+	}
+	// 六壬起课法等配置由「每技法设置」merge 进 payload 顶层（mergeOptionsIntoPayload optionsPath:''）→ 透传给 regenerate。
+	const p = payload && typeof payload === 'object' ? payload : {};
+	const liurengOpts = {
+		castMethod: p.castMethod,
+		xuanShiZhi: p.xuanShiZhi,
+		yanShuNum: p.yanShuNum,
+		yueJiangMethod: p.yueJiangMethod,
+		fenZhouYe: p.fenZhouYe,
+		guireng: p.guireng,
+		wuxing: p.wuxing,
+	};
+	switch(key){
+	case 'liureng':
+		return regenerateLiurengSnapshot(record, liurengOpts);
+	case 'jinkou':
+		return regenerateJinkouSnapshot(record, payload);
+	case 'qimen':
+		return regenerateQimenSnapshot(record, payload);
+	case 'taiyi':
+		return regenerateTaiyiSnapshot(record, payload);
+	case 'sanshiunited':
+		return regenerateSanshiUnifiedSnapshot(record, payload);
+	case 'horary':
+		return regenerateHorarySnapshot(record, p);
+	case 'election':
+		return regenerateElectionSnapshot(record, p);
+	case 'sixyao':
+		return regenerateSixyaoSnapshot(record);
+	case 'huangji':
+		return buildHuangJiSnapshotForFields(buildFieldObject(record));
+	case 'taixuan':
+		// 用户在挂载设置改 seed → 经 mergeOptionsIntoPayload optionsPath:'' 进 payload 顶层。
+		return buildTaiXuanSnapshotForFields(buildFieldObject(record), { seed: p.seed });
+	case 'jingjue':
+		return buildJingJueSnapshotForFields(buildFieldObject(record), { seed: p.seed });
+	case 'wuzhao':
+		return buildWuZhaoSnapshotForFields(buildFieldObject(record), {
+			mode: p.mode,
+			number: p.number,
+			manual: p.manual,
+			manualSplits: p.manualSplits,
+		});
+	case 'shenyishu':
+		return buildShenYiShuSnapshotForFields(buildFieldObject(record), {
+			hourSource: p.hourSource,
+			manualHour: p.manualHour,
+			seasonSource: p.seasonSource,
+			manualSeason: p.manualSeason,
+		});
+	default:
+		return '';
+	}
+}
+
+// 六爻「时间起卦」——「起课时间」入口 + 已存事盘缺 payload.gua 时走（确定性时间式法、非伪造摇卦，用户拍板放开）。
+// 已存 payload.gua 优先、不进此路（在上游 generateCaseTechniqueSnapshot 已处理）。失败(缺时间/历法不全)→优雅返 ''、不崩整个挂载。
+async function regenerateSixyaoSnapshot(record){
+	try{
+		const fields = buildCaseSnapshotFields(record);
+		const params = buildCaseSnapshotParams(record);
+		const nongli = await fetchPreciseNongli(params);
+		if(!nongli){
+			return '';
+		}
+		const gua = buildTimeGua(nongli);
+		if(!gua){
+			return '';
+		}
+		return buildGuaSnapshotText(fields, gua);
+	}catch(e){
+		return '';
+	}
+}
+
+// 八字多运限（批A，对称 ziwei）：解析 record 的 liunianSel/liuyueSel/liuriSel/liushiSel 为 number[]。
+// 任一非空 → 产出多选 period({liunian,liuyue,liuri,liushi})；buildBaziSnapshotText 据此追加多运限段。
+// 全空(默认)→ null → 不挂任何运限段，与现状逐字一致（守「默认即现状」）。
+function buildChartBaziPeriodFromRecord(record){
+	if(!record || typeof record !== 'object'){
+		return null;
+	}
+	const liunian = pickFiniteNumberArray(record.liunianSel);
+	const liuyue = pickFiniteNumberArray(record.liuyueSel);
+	const liuri = pickFiniteNumberArray(record.liuriSel);
+	const liushi = pickFiniteNumberArray(record.liushiSel);
+	if(!liunian.length && !liuyue.length && !liuri.length && !liushi.length){
+		return null;
+	}
+	return { liunian, liuyue, liuri, liushi };
+}
+
+// 命盘技法的出生参数（形状对齐各组件 genParams：date 'YYYY-MM-DD' / time 'HH:mm:ss'）。
+// 报告功能: 导出供 reportChartCapture 等模块复用,把 chart record 转成 bazi/ziwei 起盘 params。
+export { buildChartBaziParams, buildChartZiweiParams };
+function buildChartBaziParams(record){
+	const fields = buildFieldObject(record);
+	const params = {
+		date: fields.date.value.format('YYYY-MM-DD'),
+		time: fields.time.value.format('HH:mm:ss'),
+		zone: fields.zone.value,
+		lon: fields.lon.value,
+		lat: fields.lat.value,
+		gpsLat: fields.gpsLat.value,
+		gpsLon: fields.gpsLon.value,
+		gender: fields.gender.value,
+		timeAlg: fields.timeAlg.value,
+		phaseType: fields.phaseType.value,
+		godKeyPos: fields.godKeyPos.value,
+		after23NewDay: fields.after23NewDay.value,
+		lateZiHourUseNextDay: fields.lateZiHourUseNextDay && fields.lateZiHourUseNextDay.value !== undefined ? fields.lateZiHourUseNextDay.value : defaultLateZiHourUseNextDay(),
+		adjustJieqi: fields.adjustJieqi.value,
+	};
+	// 多运限仅挂载侧显式覆盖时才挂上（builder 据此追加段），缺省不挂 → 默认字节级一致。
+	// 注：period 仅供前端本地消费，不发后端（buildBaziSnapshotForParams 起盘 params 不含它，按需单独消费）。
+	const period = buildChartBaziPeriodFromRecord(record);
+	if(period){
+		params.period = period;
+	}
+	return params;
+}
+
+function pickFiniteNumber(value){
+	// 空/空串 → null（不算选择）；可解析数字 → 取整；否则 null。空输入被 UI 强转 0 时由各 level 的
+	// find-or-首项兜底吸收，绝不抛、绝不留 undefined。
+	if(value === undefined || value === null || `${value}` === ''){
+		return null;
+	}
+	const n = Number(value);
+	return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+// 把 record.* 的「数组 / 逗号分隔串 / 单值」统一解析为去重的有限整数数组（保序）。
+// multiselect 草稿是数组；文本年份列表是逗号/空白分隔串；空/坏值 → []（不算选择，守「默认即现状」）。
+function pickFiniteNumberArray(value){
+	if(value === undefined || value === null){
+		return [];
+	}
+	let raw = value;
+	if(!Array.isArray(raw)){
+		const s = `${raw}`.trim();
+		if(s === ''){
+			return [];
+		}
+		raw = s.split(/[,，\s]+/);
+	}
+	const out = [];
+	const seen = {};
+	raw.forEach((item)=>{
+		const v = pickFiniteNumber(item);
+		if(v === null){
+			return;
+		}
+		if(!seen[v]){
+			seen[v] = true;
+			out.push(v);
+		}
+	});
+	return out;
+}
+
+function buildChartZiweiPeriodFromRecord(record){
+	// 多选运限(批A)：把 record 的 daxianSel/liunianSel/liuyueSel/liuriSel/liushiSel 各解析为 number[]。
+	// 任一非空 → 产出多选 period({daxian,liunian,liuyue,liuri,liushi})；buildZiweiPeriodLines 据此多段循环。
+	// 全空(默认)→ 返回 null → 走原路径(只含本命+大限)，与现状逐字一致(守「默认即现状」)。
+	if(!record || typeof record !== 'object'){
+		return null;
+	}
+	const daxian = pickFiniteNumberArray(record.daxianSel);
+	const liunian = pickFiniteNumberArray(record.liunianSel);
+	const liuyue = pickFiniteNumberArray(record.liuyueSel);
+	const liuri = pickFiniteNumberArray(record.liuriSel);
+	const liushi = pickFiniteNumberArray(record.liushiSel);
+	if(!daxian.length && !liunian.length && !liuyue.length && !liuri.length && !liushi.length){
+		return null;
+	}
+	return { daxian, liunian, liuyue, liuri, liushi };
+}
+
+function buildChartZiweiParams(record){
+	const fields = buildFieldObject(record);
+	const params = {
+		date: fields.date.value.format('YYYY-MM-DD'),
+		time: fields.time.value.format('HH:mm:ss'),
+		zone: fields.zone.value,
+		lon: fields.lon.value,
+		lat: fields.lat.value,
+		gpsLat: fields.gpsLat.value,
+		gpsLon: fields.gpsLon.value,
+		gender: fields.gender.value,
+		timeAlg: fields.timeAlg.value === 1 ? 1 : 0,
+		after23NewDay: fields.after23NewDay.value,
+		lateZiHourUseNextDay: fields.lateZiHourUseNextDay && fields.lateZiHourUseNextDay.value !== undefined ? fields.lateZiHourUseNextDay.value : defaultLateZiHourUseNextDay(),
+	};
+	// 四化流派 + 运限层:仅挂载侧显式覆盖时才挂上(builder 据此切流派/追加[运限]段),缺省不挂 → 默认字节级一致。
+	// 注:这两键不是 /ziwei/birth 的后端参数(后端只读上面的起盘字段),由 buildZiweiSnapshotForParams 本地消费。
+	if(record && record.sihuaSchool !== undefined && record.sihuaSchool !== null && `${record.sihuaSchool}` !== ''){
+		params.sihuaSchool = `${record.sihuaSchool}`;
+	}
+	const period = buildChartZiweiPeriodFromRecord(record);
+	if(period){
+		params.period = period;
+	}
+	return params;
+}
+
+// 数算（参评数 / 河洛理数）：纯前端。先用本盘出生数据排四柱（buildLocalBaziResult），再喂各自引擎。
+// 镜像 HeLuoMain.getModel 的取数口径；缺四柱即返 null → 上层显示「缺失」（不挂空表头）。
+function buildChartShusuanBazi(record){
+	try{
+		const params = buildChartBaziParams(record);
+		const bazi = buildLocalBaziResult(params).bazi;
+		const fc = (bazi && bazi.fourColumns) || {};
+		const gz = (p)=>(p && (p.ganzi || p.ganZhi)) || '';
+		const fourPillars = { year: gz(fc.year), month: gz(fc.month), day: gz(fc.day), hour: gz(fc.time) };
+		if(!fourPillars.year || !fourPillars.month || !fourPillars.day || !fourPillars.hour){
+			return null;
+		}
+		return {
+			fourPillars,
+			yearGz: fourPillars.year,
+			monthZhi: fourPillars.month.charAt(1),
+			dayZhi: fourPillars.day.charAt(1),
+			hourZhi: fourPillars.hour.charAt(1),
+			birthYear: parseInt(`${params.date}`.slice(0, 4), 10) || 0,
+			gender: bazi.gender === 'Female' ? '女' : '男',
+		};
+	}catch(e){
+		return null;
+	}
+}
+
+// opts.method（AI 挂载「每技法设置」）：'ming'(明法,默认) / 'gu'(古法,日支取宫)。
+// 缺省/坏值回退 'ming' → 与现状逐字一致(守「默认即现状」)。dayPalace(canpingLocal) 据 method 改命宫取法。
+async function buildCanpingSnapshotForRecord(record, opts){
+	const b = buildChartShusuanBazi(record);
+	if(!b){ return ''; }
+	const method = (opts && opts.method === 'gu') ? 'gu' : 'ming';
+	try{
+		const result = canpingCalculate({
+			yearGz: b.yearGz,
+			monthBranch: b.monthZhi,
+			dayBranch: b.dayZhi,
+			hourBranch: b.hourZhi,
+			gender: b.gender,
+			method: method,
+			qiyunAge: 1,
+		});
+		// 补全生涯流年表:此前不传 liunianRows → result.liunian 恒 null、快照缺整层流年(用户反馈数算缺流年)。
+		let liunianRows = null;
+		try{
+			const series = canpingLiunianSeries({
+				yearGz: b.yearGz,
+				monthBranch: b.monthZhi,
+				dayBranch: b.dayZhi,
+				hourBranch: b.hourZhi,
+				gender: b.gender,
+				method: method,
+				qiyunAge: 1,
+				birthYear: b.birthYear,
+				startAge: 1,
+				endAge: 120,
+			});
+			liunianRows = (series && series.rows) || null;
+		}catch(e){ liunianRows = null; }
+		return buildCanpingSnapshotText(result, { liunianRows }) || '';
+	}catch(e){
+		return '';
+	}
+}
+
+// 河洛真实节气化工（镜像 HeLuoMain.solarTerm）：据出生公历日算所处节气 + 是否四立前 18 日(土用)，
+// 再据取化工法返回 {hg,fh,...}。无 lunar 数据 → null（judge 回退 MONTH_HG 月支近似）。
+const HELUO_LI_TERMS = ['立春', '立夏', '立秋', '立冬'];
+function heluoSolarTermForDate(dateStr, quHuaGong){
+	try{
+		const [y, m, d] = `${dateStr || ''}`.split('-').map((x)=>parseInt(x, 10));
+		if(!y || !m || !d){ return null; }
+		const solar = HeluoSolar.fromYmd(y, m, d);
+		const lunar = solar.getLunar();
+		const prev = lunar.getPrevJieQi(true);
+		const prevName = prev.getName();
+		const jd = solar.getJulianDay();
+		const tbl = lunar.getJieQiTable();
+		const tuyong = HELUO_LI_TERMS.some((n)=>{
+			const t = tbl[n];
+			if(!t){ return false; }
+			const diff = t.getJulianDay() - jd;
+			return diff >= 0 && diff <= 18;
+		});
+		return heluoSolarTermHuagong(prevName, tuyong, { quHuaGong: quHuaGong || 'tuWangKunGen' });
+	}catch(e){
+		return null;
+	}
+}
+
+// opts.quHuaGong（AI 挂载「每技法设置」）：'tuWangKunGen'(土王寄坤艮,默认) / 'siFangBoOnly'(直取四方伯)。
+// 取化工法只影响真实节气化工（solarTermHuagong）；而本无头 builder 现状给 judge 传 st=null（走 MONTH_HG 月支近似），
+// 与主页面 HeLuoMain（用真实节气 st）本就不同。为守「默认即现状」(快照逐字节不变)：
+//   - 默认/未覆盖 → 仍传 st=null（MONTH_HG），与现状字节级一致；
+//   - 仅当用户显式覆盖 quHuaGong 时 → 据出生公历日算真实节气化工并传入 judge（取化工法在此生效，改 [命运篇] 化工行）。
+// 注：覆盖后改用真实节气化工，比 MONTH_HG 更准（与屏显一致），属有意为之；不覆盖则零回归。
+async function buildHeluoSnapshotForRecord(record, opts){
+	const b = buildChartShusuanBazi(record);
+	if(!b){ return ''; }
+	const overrideQuHuaGong = opts && (opts.quHuaGong === 'tuWangKunGen' || opts.quHuaGong === 'siFangBoOnly') ? opts.quHuaGong : null;
+	try{
+		const chart = heluoCalc({
+			fourPillars: b.fourPillars,
+			gender: b.gender,
+			hourZhi: b.hourZhi,
+			birthYear: b.birthYear,
+			monthZhi: b.monthZhi,
+		});
+		if(!chart || !chart.xian || !chart.xian.name || !chart.hou || !chart.hou.name){
+			return '';
+		}
+		const dy = heluoDaYun(chart.xian, chart.hou, b.birthYear);
+		// 默认 st=null（MONTH_HG，=现状）；仅覆盖时算真实节气化工。
+		let st = null;
+		if(overrideQuHuaGong){
+			let dateStr = '';
+			try{ dateStr = `${buildChartBaziParams(record).date || ''}`; }catch(e){ dateStr = ''; }
+			st = heluoSolarTermForDate(dateStr, overrideQuHuaGong);
+		}
+		const jg = heluoJudge(chart, b.fourPillars, b.monthZhi, st);
+		return buildHeluoSnapshotText(chart, jg, dy) || '';
+	}catch(e){
+		return '';
+	}
+}
+
+// 取该盘的西洋星盘原始结果（含 predictive 衍生数据，如 firdaria；可选含主限法）。
+async function fetchChartResultForRecord(record, options = {}){
+	const fields = buildFieldObject(record);
+	const rsp = await fetchChart({
+		...fieldParams(fields),
+		includePrimaryDirection: !!options.includePrimaryDirection,
+	}, {
+		silent: true,
+		timeoutMs: 20000,
+	});
+	return rsp && rsp.Result ? rsp.Result : null;
+}
+
+// 卜卦盘 horary：仅凭起课时间+地点起西洋盘(无需人工摇卦),用引擎默认类别 general 出结构化裁决快照。
+// 与 DivinationChartShell 同源(fetchChart→Result→runHorary);后端不可达 → 无盘返 '' → 显「缺失」(西洋盘必后端)。
+async function regenerateHorarySnapshot(record, options){
+	// 起课/事盘记录用 divTime,但西洋盘 fetch 走 buildFieldObject(读 record.birth)→ 须把起课时刻映射为 birth 才能起盘。
+	const chartRecord = (record && record.birth) ? record : { ...record, birth: (record && (record.divTime || record.updateTime)) || '' };
+	const chart = await fetchChartResultForRecord(chartRecord);
+	if(!chart){
+		return '';
+	}
+	try{
+		// AI 挂载「每技法设置」:问卜类别经 options.topicId 透传（缺省 general=现状）。
+		const topicId = (options && typeof options === 'object' && options.topicId) ? options.topicId : 'general';
+		const j = runHorary(chart, topicId);
+		return j ? (buildHorarySnapshot(j) || '') : '';
+	}catch(e){
+		return '';
+	}
+}
+
+// 择日盘 election：同理,引擎默认 topicId=marriage(runElection 自带兜底)出总评/红线/分项/应期/建议快照。
+async function regenerateElectionSnapshot(record, options){
+	// 同 horary:起课/事盘记录用 divTime,映射为 birth 后才能起西洋盘。
+	const chartRecord = (record && record.birth) ? record : { ...record, birth: (record && (record.divTime || record.updateTime)) || '' };
+	const chart = await fetchChartResultForRecord(chartRecord);
+	if(!chart){
+		return '';
+	}
+	try{
+		// AI 挂载「每技法设置」:用事类别经 options.topicId 透传（缺省 marriage=现状）。
+		const topicId = (options && typeof options === 'object' && options.topicId) ? options.topicId : 'marriage';
+		const j = runElection(chart, topicId);
+		return j ? (buildElectionSnapshot(j) || '') : '';
+	}catch(e){
+		return '';
+	}
+}
+
+// ===== P4 区间扫描：把单一目标时刻扩展为「from→to 按 step」的多时点列表 =====
+// 守铁律「默认即现状」：endStr 空 或 step 非 y/m/d → 返回单点 [startStr || now]（与扫描前逐字节一致）。
+// 仅当 endStr 非空且 step 合法时才循环；段数上限 SCAN_SEGMENT_CAP（防快照爆），超限截断并置 truncated。
+const SCAN_SEGMENT_CAP = 30;
+// 今日（YYYY-MM-DD）——date 型扫描起点兜底（与 vedic/jaynes builder 内 today() 同口径，单点时不用它，仅多点起点空时兜底）。
+function todayDateStr(){
+	const d = new Date();
+	return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+}
+function buildDatetimeScanPoints(startStr, endStr, step, fmt, nowFallback){
+	const start = `${startStr || ''}`.trim();
+	const end = `${endStr || ''}`.trim();
+	const stp = (step === 'y' || step === 'm' || step === 'd') ? step : '';
+	// 单点（现状）：无终点 / 无步进。
+	if(!end || !stp){
+		return { points: [start || (typeof nowFallback === 'function' ? nowFallback() : '')], truncated: false };
+	}
+	let startDt = null;
+	let endDt = null;
+	try{
+		const startSeed = start || (typeof nowFallback === 'function' ? nowFallback() : '');
+		startDt = new DateTime().parse(`${startSeed}`, fmt);
+		endDt = new DateTime().parse(`${end}`, fmt);
+	}catch(e){
+		startDt = null;
+		endDt = null;
+	}
+	if(!startDt || !endDt || !Number.isFinite(Number(startDt.jdn)) || !Number.isFinite(Number(endDt.jdn))){
+		// 解析失败 → 退回单点（不破坏现状、不抛）。
+		return { points: [start || (typeof nowFallback === 'function' ? nowFallback() : '')], truncated: false };
+	}
+	// 终点早于起点 → 退回单点（避免空/反向循环）。
+	if(Number(endDt.jdn) < Number(startDt.jdn)){
+		return { points: [start || (typeof nowFallback === 'function' ? nowFallback() : '')], truncated: false };
+	}
+	const points = [];
+	let truncated = false;
+	const cur = startDt.clone();
+	let guard = 0;
+	while(Number(cur.jdn) <= Number(endDt.jdn) + 1e-9){
+		points.push(cur.format(fmt));
+		if(points.length >= SCAN_SEGMENT_CAP){
+			// 还没到终点就到上限 → 截断标记。
+			const peek = cur.clone();
+			peek.add(1, stp);
+			if(Number(peek.jdn) <= Number(endDt.jdn) + 1e-9){
+				truncated = true;
+			}
+			break;
+		}
+		cur.add(1, stp);
+		guard += 1;
+		if(guard > 5000){ break; } // 终极防呆（步进异常时不死循环）。
+	}
+	if(points.length === 0){
+		points.push(startDt.format(fmt));
+	}
+	return { points, truncated };
+}
+
+// P5 主限法盘快照（无头）：取含主限法的西洋盘 → 把「所选时刻」换算成主限年龄弧 → 出 [主限法盘设置] 段。
+// 搬自 AstroPrimaryDirectionChart.js 的盘快照逻辑（buildSnapshotText + getPdArcFromDate）——纯文本快照，
+// 不真正套盘渲染；datetime 缺省（空）→ 取此刻（=组件默认 buildDefaultDateTime≈本命+当前年龄，这里用此刻近似，
+// 与表格 fallthrough 旧行为相比是「真盘设置段」而非「表格行」，修正了盘喂表格的 Bug）。
+function pdSplitDegreeText(value){
+	const num = Number(value);
+	if(!Number.isFinite(num)){
+		return `${value || ''}`;
+	}
+	const neg = num < 0 ? '-' : '';
+	const abs = Math.abs(num);
+	const deg = Math.floor(abs + 1e-12);
+	let minute = Math.round((abs - deg) * 60);
+	if(minute >= 60){
+		return `${neg}${deg + 1}度0分`;
+	}
+	return `${neg}${deg}度${minute}分`;
+}
+function pdBirthDateTime(chartObj){
+	const params = chartObj && chartObj.params ? chartObj.params : {};
+	const birth = `${params.birth || ''}`.trim();
+	const parts = birth.split(' ');
+	if(parts.length < 2){
+		return null;
+	}
+	let text = `${parts[0]} ${parts[1]}`;
+	if(parts[1].split(':').length === 2){
+		text = `${text}:00`;
+	}
+	try{
+		const dt = new DateTime().parse(text, 'YYYY-MM-DD HH:mm:ss');
+		if(params.zone){
+			dt.zone = params.zone;
+			dt.calcJdn();
+		}
+		return dt;
+	}catch(e){
+		return null;
+	}
+}
+function pdJdnFromArc(birthDt, arc){
+	if(!birthDt){
+		return 0;
+	}
+	const magnitude = Math.abs(Number(arc));
+	if(!Number.isFinite(magnitude)){
+		return birthDt.jdn;
+	}
+	const years = Math.floor(magnitude + 1e-12);
+	const fraction = magnitude - years;
+	const whole = birthDt.clone();
+	whole.addYear(years);
+	const next = birthDt.clone();
+	next.addYear(years + 1);
+	const wholeDays = whole.jdn - birthDt.jdn;
+	const spanDays = next.jdn - whole.jdn;
+	return birthDt.jdn + wholeDays + fraction * spanDays;
+}
+function pdArcFromDate(birthDt, currentDt){
+	if(!birthDt || !currentDt){
+		return 0;
+	}
+	const target = Number(currentDt.jdn);
+	if(!Number.isFinite(target) || target <= birthDt.jdn){
+		return 0;
+	}
+	let low = 0;
+	let high = Math.max(1, Math.ceil((target - birthDt.jdn) / 365) + 2);
+	for(let i=0; i<16; i++){
+		if(pdJdnFromArc(birthDt, high) >= target){
+			break;
+		}
+		high *= 2;
+	}
+	for(let i=0; i<64; i++){
+		const mid = (low + high) / 2;
+		const midJd = pdJdnFromArc(birthDt, mid);
+		if(midJd < target){
+			low = mid;
+		}else{
+			high = mid;
+		}
+	}
+	return (low + high) / 2;
+}
+// 把所选时刻字符串解析为 DateTime（套本命时区）；空 → 此刻。
+function pdCurrentDateTime(chartObj, datetimeStr){
+	const params = chartObj && chartObj.params ? chartObj.params : {};
+	const txt = `${datetimeStr || ''}`.trim();
+	const dt = new DateTime();
+	try{
+		if(txt){
+			dt.parse(txt.split(':').length === 2 ? `${txt}:00` : txt, 'YYYY-MM-DD HH:mm:ss');
+		}
+		if(params.zone){
+			dt.zone = params.zone;
+			dt.calcJdn();
+		}
+		return dt;
+	}catch(e){
+		return dt;
+	}
+}
+// 生成单一时刻的主限法盘快照段（chartObj 须含 params.birth）。opts: { datetime, pdMethod, pdTimeKey, direction }。
+function buildPrimaryDirChartSnapshotText(chartObj, opts){
+	if(!chartObj){
+		return '';
+	}
+	const o = opts && typeof opts === 'object' ? opts : {};
+	const params = chartObj.params || {};
+	if(!params.birth){
+		return '';
+	}
+	const pdMethod = `${o.pdMethod || params.pdMethod || DEFAULT_PD_METHOD}`;
+	const pdTimeKey = `${o.pdTimeKey || params.pdTimeKey || DEFAULT_PD_TIME_KEY}`;
+	const direction = `${o.direction || params.direction || 'direct'}`;
+	const currentDt = pdCurrentDateTime(chartObj, o.datetime);
+	const birthDt = pdBirthDateTime(chartObj);
+	const currentArc = pdArcFromDate(birthDt, currentDt);
+	const lines = [];
+	lines.push('[出生时间]');
+	lines.push(`出生时间：${params.birth || '无'}`);
+	lines.push('');
+	lines.push('[星盘信息]');
+	lines.push(`经纬度：${`${params.lon || ''} ${params.lat || ''}`.trim() || '无'}`);
+	lines.push(`时区：${params.zone || '无'}`);
+	lines.push('');
+	lines.push('[主限法盘设置]');
+	lines.push(`时间选择：${currentDt ? currentDt.format('YYYY-MM-DD HH:mm:ss') : '无'}`);
+	lines.push(`推运方法：${getPdMethodLabel(pdMethod)}`);
+	lines.push(`度数换算：${getPdTimeKeyLabel(pdTimeKey)}`);
+	lines.push(`向运方向：${direction === 'converse' ? '逆向 Converse' : '顺向 Direct'}`);
+	lines.push(`当前Arc：${pdSplitDegreeText(currentArc)}`);
+	lines.push('');
+	lines.push('[主限法盘说明]');
+	lines.push('左侧双盘内圈为本命盘，外圈为按当前主限法设置和所选时间推导出的主限法盘位置。');
+	lines.push('当前页面会先将所选时间换算为主限年龄弧，再按后台主限法算法推进各星曜与虚点，最后统一投影回黄道后与本命盘套盘显示。');
+	return lines.join('\n');
+}
+
+// 5 个「目标时刻型」推运（小限 profection / 太阳弧 solararc / 太阳返照 solarreturn /
+// 月亮返照 lunarreturn / 流年 givenyear）：POST /predict/<key>，目标时刻默认「此刻」
+// （与各组件 datetime 默认一致 = 当前流年/期），用共享 buildPredictiveSnapshotText 出 [星盘信息]/[起盘信息]/[相位] 快照。
+// 无相位数据即返 '' → 挂载显示「缺失」而非空段头。
+// opts（AI 挂载「每技法设置」）：datetime（目标时刻）/ tmType（年/月/日步进）/ asporb（容许度）/ nodeRetrograde（南北交逆移）。
+// returns 型（solarreturn/lunarreturn/givenyear）另可覆盖 dirLat/dirLon/dirZone（异地返照；缺省=本命经纬时区）。
+// 全部缺省/坏值 → 回退现状默认（此刻/年/1/false/本命经纬）→ 与现状逐字一致(守「默认即现状」)。
+async function buildPredictivePeriodSnapshot(chartObj, key, opts){
+	if(!chartObj){
+		return '';
+	}
+	const np = chartObj.params || {};
+	const o = opts && typeof opts === 'object' ? opts : {};
+	let datetimeStr = '';
+	try{
+		datetimeStr = new DateTime().format('YYYY-MM-DD HH:mm');
+	}catch(e){
+		datetimeStr = '';
+	}
+	const optDatetime = `${o.datetime || ''}`.trim();
+	const tmType = (o.tmType === 'm' || o.tmType === 'd' || o.tmType === 'y') ? o.tmType : 'y';
+	const asporb = (o.asporb !== undefined && o.asporb !== null && `${o.asporb}` !== '' && Number.isFinite(Number(o.asporb))) ? Number(o.asporb) : 1;
+	const nodeRetrograde = (o.nodeRetrograde === true || o.nodeRetrograde === 1 || o.nodeRetrograde === '1');
+	// 单一时点的快照（datetimeForPoint = 'YYYY-MM-DD HH:mm'）。区间扫描循环调用它。
+	const runOnePoint = async (datetimeForPoint)=>{
+		const params = {
+			date: np.date,
+			time: np.time,
+			ad: np.ad !== undefined ? np.ad : 1,
+			zone: np.zone,
+			dirZone: (o.dirZone !== undefined && o.dirZone !== null && `${o.dirZone}` !== '') ? o.dirZone : np.zone,
+			lon: np.lon,
+			lat: np.lat,
+			gpsLat: np.gpsLat,
+			gpsLon: np.gpsLon,
+			hsys: np.hsys,
+			zodiacal: np.zodiacal, siderealAyanamsa: np.siderealAyanamsa,
+			tradition: np.tradition,
+			datetime: datetimeForPoint,
+			tmType: tmType,
+			nodeRetrograde: nodeRetrograde,
+			asporb: asporb,
+		};
+		// 异地返照（仅 returns 型：solarreturn/lunarreturn/givenyear）才下发 dirLat/dirLon——与各 Return 组件一致
+		// （默认 = 本命经纬，字节级等同现状）；profection/solararc 组件本就不带 dirLat/dirLon，不加以免改默认行为。
+		if(key === 'solarreturn' || key === 'lunarreturn' || key === 'givenyear'){
+			params.dirLat = (o.dirLat !== undefined && o.dirLat !== null && `${o.dirLat}` !== '') ? o.dirLat : np.lat;
+			params.dirLon = (o.dirLon !== undefined && o.dirLon !== null && `${o.dirLon}` !== '') ? o.dirLon : np.lon;
+		}
+		if(!params.date && np.birth){
+			const parts = `${np.birth}`.split(' ');
+			params.date = parts[0];
+			params.time = params.time || parts[1] || '';
+		}
+		try{
+			const data = await request(`${Constants.ServerRoot}/predict/${key}`, {
+				body: JSON.stringify(params),
+				timeoutMs: 60000,
+			});
+			const result = data && data[Constants.ResultKey];
+			if(!result){
+				return '';
+			}
+			return buildPredictiveSnapshotText(chartObj, params, result) || '';
+		}catch(e){
+			return '';
+		}
+	};
+	// P4 区间扫描：datetimeEnd 非空且 scanStep 合法 → 多时点；否则单点（=现状，datetime=optDatetime||now）。
+	const scan = buildDatetimeScanPoints(optDatetime || datetimeStr, o.datetimeEnd, o.scanStep, 'YYYY-MM-DD HH:mm', ()=>datetimeStr);
+	if(scan.points.length <= 1){
+		return await runOnePoint(scan.points[0] || (optDatetime || datetimeStr));
+	}
+	const segs = [];
+	for(let i=0; i<scan.points.length; i++){
+		const txt = await runOnePoint(scan.points[i]);
+		if(txt){
+			// R2 对抗自检:分隔标签不可用 【】/[] 包裹,否则被 aiExport.parseSectionTitleLine 当成 section title,
+			// 用户自定义导出段时该「时段 N/M」行会落在 wanted 外被 filterContentByWantedSections 删掉(正文段仍在,仅丢标签)。
+			segs.push(`—— 时段 ${i + 1}/${scan.points.length} · ${scan.points[i]} ——\n${txt}`);
+		}
+	}
+	if(scan.truncated){
+		segs.push(`（区间扫描已达单次上限 ${SCAN_SEGMENT_CAP} 段，后续时段已截断；如需更细请缩小区间或加大步进。）`);
+	}
+	return segs.join('\n\n');
+}
+
+// P4 通用「builder 型」推运区间扫描包裹：行星弧/恒星推运/赤纬推运的 standalone builder 各只接单一时刻 opts，
+// 此处据 record.{datetimeEnd,scanStep} 把时刻列表化后循环调 builder 产多段；end 空/step 空 → 单点（=现状）。
+//  - cfg.start：起点字符串（planetaryarc=record.targetDatetime；vedic/jaynes=record.targetDate）
+//  - cfg.fmt：时点格式（datetime='YYYY-MM-DD HH:mm'；date='YYYY-MM-DD'）
+//  - cfg.nowFallback：空起点时的兜底（datetime=此刻；date=今日）
+//  - cfg.makeOpts(pointStr)：把单一时点字符串包成 builder 的 opts
+//  - cfg.run(opts)：调对应 builder（返回 Promise<string>）
+async function runBuilderScan(record, cfg){
+	const startStr = `${cfg.start || ''}`.trim();
+	const scan = buildDatetimeScanPoints(startStr, record && record.datetimeEnd, record && record.scanStep, cfg.fmt, cfg.nowFallback);
+	if(scan.points.length <= 1){
+		// 单点（现状）：起点空 → 传 undefined（让 builder 走自身默认 today/now，逐字节一致）；非空 → 传起点串。
+		return (await cfg.run(cfg.makeOpts(startStr ? startStr : undefined)) || '');
+	}
+	const segs = [];
+	for(let i=0; i<scan.points.length; i++){
+		const txt = await cfg.run(cfg.makeOpts(scan.points[i]));
+		if(txt){
+			// R2 对抗自检:分隔标签不可用 【】/[] 包裹,否则被 aiExport.parseSectionTitleLine 当成 section title,
+			// 用户自定义导出段时该「时段 N/M」行会落在 wanted 外被 filterContentByWantedSections 删掉(正文段仍在,仅丢标签)。
+			segs.push(`—— 时段 ${i + 1}/${scan.points.length} · ${scan.points[i]} ——\n${txt}`);
+		}
+	}
+	if(scan.truncated){
+		segs.push(`（区间扫描已达单次上限 ${SCAN_SEGMENT_CAP} 段，后续时段已截断；如需更细请缩小区间或加大步进。）`);
+	}
+	return segs.join('\n\n');
+}
+
+// 命盘侧：按该盘的出生数据无头复算指定技法的快照文本。占卜/事盘走 Part F，不在此列。
+async function regenerateChartTechniqueSnapshot(record, key){
+	if(!record){
+		return '';
+	}
+	try{
+		switch(normalizeTechniqueKey(key)){
+		case 'bazi':
+			return await buildBaziSnapshotForParams(buildChartBaziParams(record));
+		case 'ziwei':
+			return await buildZiweiSnapshotForParams(buildChartZiweiParams(record));
+		case 'indiachart':
+			return await buildIndiaSnapshotForFields(buildFieldObject(record), 1);
+		case 'firdaria': {
+			// 法达星限随西洋盘 predictive 一并返回，直接读取即可。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildFirdariaSnapshotText(chartObj) || '') : '';
+		}
+		case 'distributions': {
+			// 界推运：上升点经主限运动穿越埃及界，分配星(界主)+参与星。内部 fetch /predict/dist。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (await buildDistributionsSnapshotText(chartObj) || '') : '';
+		}
+		case 'agepoint': {
+			// 年龄推进点（Huber）：年龄点自上升点起沿 Koch 宫顺行。内部 fetch /predict/agepoint。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (await buildAgePointSnapshotText(chartObj) || '') : '';
+		}
+		case 'planetaryages': {
+			// 行星年龄（托勒密人生七阶）：纯前端固定七阶表，读本命盘。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildPlanetaryAgesSnapshotText(chartObj) || '') : '';
+		}
+		case 'vedicprog': {
+			// 恒星推运（Vedic）：二/三/小限推运在恒星黄道下计算。内部 fetch /astroextra/progressions + zodiacal:1。
+			// 挂载齿轮可调 目标日期/时刻 → record.* → opts（未改时 undefined，builder 回默认 today/12:00=现状）。
+			// P4 区间扫描：targetDate 为起点、datetimeEnd/scanStep 循环多个目标日期（时刻沿用 targetTime）。
+			const chartObj = await fetchChartResultForRecord(record);
+			if(!chartObj){ return ''; }
+			return await runBuilderScan(record, {
+				start: record.targetDate,
+				fmt: 'YYYY-MM-DD',
+				nowFallback: ()=>todayDateStr(),
+				makeOpts: (pt)=>({ targetDate: pt, targetTime: record.targetTime }),
+				run: (opts)=>buildVedicProgSnapshotText(chartObj, opts),
+			});
+		}
+		case 'balbillus': {
+			// Balbillus：十年大运月制族变体（旺距削减），纯前端独立引擎，读本命盘。
+			// 挂载齿轮可调 起始星/年制/距离口径 → record.* → opts（未改时 undefined，builder normalize 回默认=现状）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildBalbillusSnapshotText(chartObj, { startPlanet: record.startPlanet, yearType: record.yearType, mode: record.mode }) || '') : '';
+		}
+		case 'triplicityrulers': {
+			// 三分主星推运：区间光体三分主星分掌人生阶段。挂载齿轮可调 划分法/寿命基准（年龄上限）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildTriplicityRulersSnapshotText(chartObj, { division: record.division, lifespan: record.lifespan }) || '') : '';
+		}
+		case 'keypoints': {
+			// 数字相位推运：120 年关键点，小年因数激活。挂载齿轮可调 释放点（命/身）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildKeypointsSnapshotText(chartObj, { mode: record.mode }) || '') : '';
+		}
+		case 'lunationphase': {
+			// 月相推运：次限日月八相，纯前端读本命盘。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildLunationPhaseSnapshotText(chartObj) || '') : '';
+		}
+		case 'extrareturns': {
+			// 多重回归：土/木/月交返照，请求型(内部拉 /astroextra/planetreturn)。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (await buildExtraReturnsSnapshotText(chartObj) || '') : '';
+		}
+		case 'yearsystem129': {
+			// 129 年系统：七政小年序列（仿 firdaria），随盘 predictive 返回。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildYearSystem129SnapshotText(chartObj) || '') : '';
+		}
+		case 'planetaryarc': {
+			// 行星弧：solararc 引擎换弧源（默认月亮弧）。内部 fetch /predict/planetaryarc。
+			// 挂载齿轮可调 弧源/目标时刻/容许度 → record.* → opts（未改时 undefined，builder 回默认 月亮/today/1=现状）。
+			// P4 区间扫描：targetDatetime 为起点、datetimeEnd/scanStep 循环多个目标时刻。
+			const chartObj = await fetchChartResultForRecord(record);
+			if(!chartObj){ return ''; }
+			return await runBuilderScan(record, {
+				start: record.targetDatetime,
+				fmt: 'YYYY-MM-DD HH:mm',
+				nowFallback: ()=>{ try{ return new DateTime().format('YYYY-MM-DD HH:mm'); }catch(e){ return ''; } },
+				makeOpts: (pt)=>({ arcSource: record.arcSource, datetime: pt, asporb: record.asporb }),
+				run: (opts)=>buildPlanetaryArcSnapshotText(chartObj, opts),
+			});
+		}
+		case 'persiandirected': {
+			// 波斯向运：黄经象征向运(1°/年,宫头不动)，应期 hit-list 纯前端算术，读本命盘。
+			// 挂载齿轮可调 速率/方向/应期年数 → record.* → opts（未改时 undefined，builder 回默认 persian/direct/90=现状）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildPersianDirectedSnapshotText(chartObj, { rateKey: record.rateKey, direction: record.direction, maxYears: record.maxYears }) || '') : '';
+		}
+		case 'jaynesprog': {
+			// Jayne 赤纬推运：推运后看赤纬平行/反平行。内部 fetch /astroextra/jaynesprog。
+			// 挂载齿轮可调 目标日期/时刻 → record.* → opts（未改时 undefined，builder 回默认 today/12:00=现状）。
+			// P4 区间扫描：targetDate 为起点、datetimeEnd/scanStep 循环多个目标日期（时刻沿用 targetTime）。
+			const chartObj = await fetchChartResultForRecord(record);
+			if(!chartObj){ return ''; }
+			return await runBuilderScan(record, {
+				start: record.targetDate,
+				fmt: 'YYYY-MM-DD',
+				nowFallback: ()=>todayDateStr(),
+				makeOpts: (pt)=>({ targetDate: pt, targetTime: record.targetTime }),
+				run: (opts)=>buildJaynesProgSnapshotText(chartObj, opts),
+			});
+		}
+		case 'primarydirect': {
+			// 主限法·表格：取含主限法的西洋盘 → 列未来 pdYears 年全部 direction 行。P0 起
+			// 方位法 + 时间换算 + pdYears 经 record.* → buildFieldObject/fieldParams 透传 /chart 复算（用户选了
+			// Placidus/Naibod 等，LLM 上下文也跟着显示）。表格无 datetime（年限范围非单一时刻）。
+			const chartObj = await fetchChartResultForRecord(record, { includePrimaryDirection: true });
+			if(!chartObj){
+				return '';
+			}
+			// 显式把用户配置的方位法/时间换算/方向类型/顺逆/映点/界回填进快照 params——与 fetchChart
+			// 复算所用 fieldParams 同源(buildFieldObject)，不依赖后端是否把请求参回显进 Result.params。
+			// 否则 [主限法设置] 段的「向运方向/映点迫星/界迫星」会误显默认值(顺向/否/否)。
+			const pdFields = buildFieldObject(record);
+			const snapshotChartObj = {
+				...chartObj,
+				params: {
+					...(chartObj.params || {}),
+					showPdBounds: 1,
+					pdMethod: pdFields.pdMethod.value,
+					pdTimeKey: pdFields.pdTimeKey.value,
+					pdtype: pdFields.pdtype.value,
+					pdDirect: pdFields.pdDirect.value,
+					pdConverse: pdFields.pdConverse.value,
+					pdAntiscia: pdFields.pdAntiscia.value,
+					pdTerms: pdFields.pdTerms.value,
+				},
+			};
+			return buildPrimaryDirectSnapshotText(snapshotChartObj) || '';
+		}
+		case 'primarydirchart': {
+			// 主限法·盘（P5 从表格 fallthrough 拆出）：取本命西洋盘 → 把「所选时刻」换算成主限年龄弧 → 出真盘快照
+			// （[主限法盘设置] 段，含时间选择/推运方法/度数换算/向运方向/当前Arc）。修原盘喂表格的 Bug。
+			// 挂载齿轮可调 时间(datetime,空=此刻)/方位法/度数换算/向运方向 → record.* → opts（缺省=现状）。
+			const chartObj = await fetchChartResultForRecord(record);
+			if(!chartObj){
+				return '';
+			}
+			return buildPrimaryDirChartSnapshotText(chartObj, {
+				datetime: record.datetime,
+				pdMethod: record.pdMethod,
+				pdTimeKey: record.pdTimeKey,
+				direction: record.direction,
+			}) || '';
+		}
+		case 'profection':
+		case 'solararc':
+		case 'solarreturn':
+		case 'lunarreturn':
+		case 'givenyear': {
+			// 目标时刻型推运：取本命西洋盘后按「此刻」起该期推运（POST /predict/<key>）。
+			// 挂载齿轮可调 目标时刻/步进/容许/南北交逆移（returns 另加异地 dirLat/dirLon/dirZone）→ record.* → opts
+			//（未改时 undefined，builder 回默认 此刻/年/1/false/本命经纬=现状）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (await buildPredictivePeriodSnapshot(chartObj, normalizeTechniqueKey(key), {
+				datetime: record.datetime,
+				tmType: record.tmType,
+				asporb: record.asporb,
+				nodeRetrograde: record.nodeRetrograde,
+				dirLat: record.dirLat,
+				dirLon: record.dirLon,
+				dirZone: record.dirZone,
+				// P4 区间扫描：end 非空且 step 有值 → 循环多段（每段一个推运时点）；缺省=单点=现状。
+				datetimeEnd: record.datetimeEnd,
+				scanStep: record.scanStep,
+			}) || '') : '';
+		}
+		case 'zodialrelease': {
+			// 黄道星释：取本命盘后 fetch /predict/zr，福点基点 + L1 全列概览。
+			// 挂载齿轮可调 推运基点/输出层级/逐层钻取 → record.* → opts（未改时 undefined，builder 回默认 福点/L1全=现状）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (await buildZodialReleaseSnapshotText(chartObj, {
+				basePoint: record.basePoint,
+				aiMode: record.aiMode,
+				aiL1Idx: record.aiL1Idx,
+				aiL2Idx: record.aiL2Idx,
+				aiL3Idx: record.aiL3Idx,
+			}) || '') : '';
+		}
+		case 'decennials': {
+			// 十年大运：纯前端 buildDecennialTimeline（默认设置）+ L1 全列概览。
+			// 挂载齿轮可调 起运/次序/日限/历法/输出层级 → record.* → opts（未改时 undefined，builder 回默认=现状）。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildDecennialsSnapshotText(chartObj, {
+				startMode: record.startMode,
+				orderType: record.orderType,
+				dayMethod: record.dayMethod,
+				calendarType: record.calendarType,
+				aiMode: record.aiMode,
+				aiL1Idx: record.aiL1Idx,
+				aiL2Idx: record.aiL2Idx,
+				aiL3Idx: record.aiL3Idx,
+			}) || '') : '';
+		}
+		case 'guolao':
+			// 七政四余：命度/罗计沿用已保存设置，显示全部传统星曜。
+			return await buildGuolaoSnapshotForFields(buildFieldObject(record));
+		case 'suzhan': {
+			// 宿占：宿盘随标准西洋盘的二十八宿数据生成，显示全部传统星曜。
+			const chartObj = await fetchChartResultForRecord(record);
+			return chartObj ? (buildSuzhanSnapshotText(chartObj, buildFieldObject(record), null) || '') : '';
+		}
+		case 'germany':
+			// 量化盘（中点盘）。
+			return await buildGermanySnapshotForFields(buildFieldObject(record));
+		case 'canping':
+			// 邵子参评数（数算）：纯前端，按本盘出生四柱起本命 + 大运。
+			// 挂载齿轮可调 取法(明法/古法) → record.method → opts（未改时 undefined，builder 回默认 ming=现状）。
+			return await buildCanpingSnapshotForRecord(record, { method: record.method });
+		case 'heluo':
+			// 河洛理数（数算）：纯前端，按本盘出生四柱起先后天卦 + 大限 + 命运篇判断。
+			// 挂载齿轮可调 取化工法 → record.quHuaGong → opts（未改时 undefined，builder 走 st=null 月支近似=现状）。
+			return await buildHeluoSnapshotForRecord(record, { quHuaGong: record.quHuaGong });
+		case 'xianqin':
+			// 演禽（禽星）：经 ken 后端按出生数据起盘。
+			return await buildKinAstroSnapshotForFields(buildFieldObject(record), 'xianqin');
+		case 'cetian':
+			// 策天飞星：经 ken 后端按出生数据起盘。
+			return await buildKinAstroSnapshotForFields(buildFieldObject(record), 'cetian');
+		case 'huangji':
+			// 皇极经世：经 ken 后端起元会运世盘。
+			return await buildHuangJiSnapshotForFields(buildFieldObject(record));
+		default:
+			return '';
+		}
+	}catch(e){
+		return '';
+	}
+}
+
+function summarizeCasePayload(record, payload){
+	const lines = [];
+	const meta = getCaseTypeMeta(record.caseType);
+	lines.push(`案例名称：${record.event || '未命名案例'}`);
+	lines.push(`案例类型：${getCaseTypeLabel(record.caseType)}`);
+	lines.push(`所属模块：${record.sourceModule || meta.module || meta.value || ''}`);
+	if(record.divTime){
+		lines.push(`占断时间：${record.divTime}`);
+	}
+	if(record.zone){
+		lines.push(`时区：${record.zone}`);
+	}
+	if(record.pos){
+		lines.push(`地点：${record.pos}`);
+	}
+	const tags = normalizeTags(record.group);
+	if(tags.length){
+		lines.push(`标签：${tags.join('、')}`);
+	}
+	lines.push('');
+	lines.push('结构化案例数据：');
+	lines.push(JSON.stringify(payload || {}, null, 2));
+	return lines.join('\n').trim();
+}
+
+function summarizeCaseMeta(record){
+	const lines = [];
+	const meta = getCaseTypeMeta(record.caseType);
+	lines.push(`案例名称：${record.event || '未命名案例'}`);
+	lines.push(`案例类型：${getCaseTypeLabel(record.caseType)}`);
+	lines.push(`所属模块：${record.sourceModule || meta.module || meta.value || ''}`);
+	if(record.divTime){
+		lines.push(`占断时间：${record.divTime}`);
+	}
+	if(record.zone){
+		lines.push(`时区：${record.zone}`);
+	}
+	if(record.pos){
+		lines.push(`地点：${record.pos}`);
+	}
+	const tags = normalizeTags(record.group);
+	if(tags.length){
+		lines.push(`标签：${tags.join('、')}`);
+	}
+	return lines.join('\n').trim();
+}
+
+function extractCaseSnapshotText(record){
+	const payload = safeParseJson(record.payload, null);
+	if(!payload){
+		return {
+			content: summarizeCasePayload(record, null),
+			payload: null,
+			moduleName: record.sourceModule || getCaseTypeMeta(record.caseType).module,
+			snapshotStatus: 'generated',
+		};
+	}
+	// payload.snapshot 可能是对象 {content/text}（世俗/卜卦），也可能是纯字符串
+	// （kentang 报数法：五兆/皇极/太玄/荆诀/神易数 存 `snapshot: buildSnapshotText(...)`）。
+	// 用 extractSnapshotText 统一识别字符串/对象/嵌套 —— 旧式 `.content/.text` 对字符串取属性得 undefined，
+	// 会把真盘文本误判为空 → 退回 summarizeCasePayload 泛化摘要（源选择器看着「没接好」）。
+	const snapshot =
+		extractSnapshotText(payload.snapshot) ||
+		payload.aiExport ||
+		payload.aiSnapshot ||
+		(payload.result && payload.result.aiSnapshot) ||
+		(payload.result && payload.result.snapshotText) ||
+		'';
+	if(`${snapshot || ''}`.trim()){
+		return {
+			content: `${snapshot}`.trim(),
+			payload,
+			moduleName: payload.module || record.sourceModule || getCaseTypeMeta(record.caseType).module,
+			snapshotStatus: 'ready',
+		};
+	}
+	return {
+		content: summarizeCasePayload(record, payload),
+		payload,
+		moduleName: payload.module || record.sourceModule || getCaseTypeMeta(record.caseType).module,
+		snapshotStatus: 'generated',
+	};
+}
+
+export function listAnalysisSources(){
+	const charts = listLocalCharts({}).map((item)=>({
+		id: item.cid,
+		sourceType: 'chart',
+		title: item.name || '未命名命盘',
+		module: 'astrochart',
+		time: item.birth || item.updateTime || '',
+		zone: item.zone || '+08:00',
+		tags: normalizeTags(item.group),
+		snapshotStatus: 'lazy',
+		updatedAt: item.updateTime || '',
+		record: item,
+	}));
+	const cases = listLocalCases({}).map((item)=>{
+		const meta = getCaseTypeMeta(item.caseType);
+		const extracted = extractCaseSnapshotText(item);
+		return {
+			id: item.cid,
+			sourceType: 'case',
+			title: item.event || '未命名事盘',
+			module: item.sourceModule || extracted.moduleName || meta.module,
+			time: item.divTime || item.updateTime || '',
+			zone: item.zone || '+08:00',
+			tags: normalizeTags(item.group),
+			snapshotStatus: extracted.snapshotStatus,
+			updatedAt: item.updateTime || '',
+			record: item,
+		};
+	});
+	return charts.concat(cases).sort((a, b)=>{
+		const ta = Date.parse(a.updatedAt || a.time || '') || 0;
+		const tb = Date.parse(b.updatedAt || b.time || '') || 0;
+		return tb - ta;
+	});
+}
+
+function parseAstroSnapshotSignature(signature){
+	const raw = `${signature || ''}`.trim();
+	if(!raw){
+		return null;
+	}
+	const parts = raw.split('|');
+	return {
+		chartId: `${parts[0] || ''}`.trim(),
+		birth: `${parts[1] || ''}`.trim(),
+		zone: `${parts[2] || ''}`.trim(),
+		lon: `${parts[3] || ''}`.trim(),
+		lat: `${parts[4] || ''}`.trim(),
+		zodiacal: `${parts[5] || ''}`.trim(),
+		hsys: `${parts[6] || ''}`.trim(),
+		// parts[7]=isDiurnal、parts[8]=onlyRulerExalt（不参与匹配）；parts[9]=恒星黄道 ayanāṃśa（新增，旧签名缺→''）。
+		siderealAyanamsa: `${parts[9] || ''}`.trim(),
+	};
+}
+
+function normalizeSnapshotMatchText(value){
+	return `${value || ''}`.trim();
+}
+
+function hasMatchingSavedAstroSnapshot(record){
+	if(!record){
+		return null;
+	}
+	const snapshot = loadAstroAISnapshot();
+	if(!snapshot || !snapshot.content){
+		return null;
+	}
+	const parsed = parseAstroSnapshotSignature(snapshot.signature);
+	if(!parsed){
+		return null;
+	}
+	const birth = normalizeSnapshotMatchText(record.birth);
+	const zone = normalizeSnapshotMatchText(record.zone || '+08:00');
+	const lon = normalizeSnapshotMatchText(record.lon);
+	const lat = normalizeSnapshotMatchText(record.lat);
+	if(parsed.birth && birth && parsed.birth !== birth){
+		return null;
+	}
+	if(parsed.zone && zone && parsed.zone !== zone){
+		return null;
+	}
+	if(parsed.lon && lon && parsed.lon !== lon){
+		return null;
+	}
+	if(parsed.lat && lat && parsed.lat !== lat){
+		return null;
+	}
+	if(!(parsed.birth || parsed.zone || parsed.lon || parsed.lat)){
+		return null;
+	}
+	// 恒星黄道 ayanāṃśa 变更须使旧快照失效：两侧都有非空 ayanāṃśa 且不同 → 不复用（重新抓取）。
+	// 仅「都非空且不同」才拦截：旧签名/回归盘/默认恒星 ayanāṃśa 为空 → 跳过 → 向后兼容（最坏多抓一次，绝不误用旧盘）。
+	const recAyan = normalizeSnapshotMatchText(record.siderealAyanamsa);
+	if(parsed.siderealAyanamsa && recAyan && parsed.siderealAyanamsa !== recAyan){
+		return null;
+	}
+	return snapshot;
+}
+
+// 古典格局派生分析(analyze_chart)按需 fetch — 优雅降级(失败/异常返回 '',不影响 AI 主体)。
+// ~50ms 级(仅极区 heliacal 才慢),只在 AI 实际取数时拉,绝不进每盘预建快照 → 信息tab 不受拖累。
+async function fetchClassicalAnalysisSection(params){
+	// 守 (HIGH-5):缺 date/zone/lat/lon 任一都静默 skip,后端必校验,缺则 4xx 易经 silent 漏到顶栏。
+	if(!params || !params.date || !params.zone || params.lat === undefined || params.lat === null || params.lon === undefined || params.lon === null){
+		return '';
+	}
+	try{
+		const data = await request(`${Constants.ServerRoot}/astroextra/analysis`, {
+			body: JSON.stringify({ ...params, fixedStarOrb: 1 }),
+			silent: true,
+			timeoutMs: 20000,
+		});
+		const analysis = data && data.Result ? data.Result : data;
+		return buildClassicalAnalysisSection(analysis) || '';
+	}catch(e){
+		return '';
+	}
+}
+
+async function buildChartContext(source){
+	const record = source && source.record ? source.record : null;
+	if(!record){
+		throw new Error('chart.source.required');
+	}
+	const fields = buildFieldObject(record);
+	const params = fieldParams(fields);
+	let content;
+	let meta;
+	const saved = hasMatchingSavedAstroSnapshot(record);
+	if(saved){
+		content = `${saved.content || ''}`.trim();
+		meta = {
+			sourceType: 'chart',
+			sourceId: source.id,
+			birth: record.birth || '',
+			zone: record.zone || '',
+			reusedStoredSnapshot: true,
+		};
+	}else{
+		// 修(HIGH-6):fetchChart 失败时不再 throw(原代码 throw 上传至 AI 主流程 → 红屏「构造命盘上下文失败」)。
+		// 优雅退化:返回空 content + reused-snapshot-style meta,AI 可降级使用既有片段或提示用户。
+		let rsp = null;
+		try{
+			rsp = await fetchChart({ ...params, includePrimaryDirection: false }, { silent: true, timeoutMs: 20000 });
+		}catch(e){
+			rsp = null;
+		}
+		content = (rsp && rsp.Result) ? `${buildAstroSnapshotContent(rsp.Result, fields) || ''}`.trim() : '';
+		meta = {
+			sourceType: 'chart',
+			sourceId: source.id,
+			birth: record.birth || '',
+			zone: record.zone || '',
+			chartFetchFailed: !(rsp && rsp.Result),
+		};
+	}
+	// 古典格局派生分析(护卫/优势相位/相位动态/逐题主星/偶然尊贵/恒星/行星时/埃及历/巴比伦)按需拼入 → AI 挂载不遗漏。
+	const analysisSection = await fetchClassicalAnalysisSection(params);
+	if(analysisSection){
+		content = `${content}\n\n${analysisSection}`.trim();
+	}
+	return {
+		content,
+		title: source.title,
+		module: 'astrochart',
+		meta,
+	};
+}
+
+function buildChartMetaContext(source){
+	const record = source && source.record ? source.record : null;
+	if(!record){
+		throw new Error('chart.source.required');
+	}
+	const lines = [];
+	lines.push(`命盘名称：${source.title || record.name || '未命名命盘'}`);
+	lines.push('案例类型：命盘');
+	if(record.birth){
+		lines.push(`出生时间：${record.birth}`);
+	}
+	if(record.zone){
+		lines.push(`时区：${record.zone}`);
+	}
+	if(record.lon || record.lat){
+		lines.push(`经纬度：${record.lon || ''} ${record.lat || ''}`.trim());
+	}
+	if(record.pos){
+		lines.push(`地点：${record.pos}`);
+	}
+	const tags = normalizeTags(record.group);
+	if(tags.length){
+		lines.push(`标签：${tags.join('、')}`);
+	}
+	return {
+		content: lines.join('\n').trim(),
+		title: source.title,
+		module: 'chart_meta',
+		meta: {
+			sourceType: 'chart',
+			sourceId: source.id,
+			birth: record.birth || '',
+			zone: record.zone || '',
+			metaOnly: true,
+		},
+	};
+}
+
+async function buildCaseContext(source){
+	const record = source && source.record ? source.record : null;
+	if(!record){
+		throw new Error('case.source.required');
+	}
+	const extracted = extractCaseSnapshotText(record);
+	if(extracted.content && extracted.snapshotStatus === 'ready'){
+		return {
+			content: extracted.content,
+			title: source.title,
+			module: extracted.moduleName,
+			meta: {
+				sourceType: 'case',
+				sourceId: source.id,
+				caseType: record.caseType,
+				divTime: record.divTime,
+			},
+		};
+	}
+	// Part F：事盘只从自身 payload 重建文本（用起盘结果，不碰时间），不读全局模块缓存
+	// （那是「上次看过的某一卦」，会挂出与所选事盘对不上的内容），也不按时间重新起盘。
+	const generated = generateCaseTechniqueSnapshot(record, extracted.moduleName, extracted.payload);
+	if(generated){
+		saveGeneratedTechniqueSnapshot(extracted.moduleName, generated, record);
+		return {
+			content: generated,
+			title: source.title,
+			module: extracted.moduleName,
+			meta: {
+				sourceType: 'case',
+				sourceId: source.id,
+				caseType: record.caseType,
+				divTime: record.divTime,
+				generatedFromStoredCase: true,
+			},
+		};
+	}
+	return {
+		content: extracted.content,
+		title: source.title,
+		module: extracted.moduleName,
+		meta: {
+			sourceType: 'case',
+			sourceId: source.id,
+			caseType: record.caseType,
+			divTime: record.divTime,
+		},
+	};
+}
+
+function buildCaseMetaContext(source){
+	const record = source && source.record ? source.record : null;
+	if(!record){
+		throw new Error('case.source.required');
+	}
+	return {
+		content: summarizeCaseMeta(record),
+		title: source.title,
+		module: source.module || record.sourceModule || getCaseTypeMeta(record.caseType).module,
+		meta: {
+			sourceType: 'case',
+			sourceId: source.id,
+			caseType: record.caseType,
+			divTime: record.divTime,
+			metaOnly: true,
+		},
+	};
+}
+
+function normalizeTechniqueKey(key){
+	const text = `${key || ''}`.trim();
+	if(!text){
+		return '';
+	}
+	if(text === 'liuyao' || text === 'guazhan'){
+		return 'sixyao';
+	}
+	if(text === 'dunjia'){
+		return 'qimen';
+	}
+	if(text === 'germanytech'){
+		return 'germany';
+	}
+	if(text === 'hellenastro' || text === 'locastro'){
+		return 'astrochart_like';
+	}
+	if(text === 'relativechart'){
+		return 'relative';
+	}
+	if(text === 'jieqichart'){
+		return 'jieqi';
+	}
+	if(text === 'chart13'){
+		return 'astrochart_like';
+	}
+	return text;
+}
+
+function getTechniqueLabel(key){
+	return ANALYSIS_TECHNIQUE_LABELS[normalizeTechniqueKey(key)] || `${key || ''}`.trim();
+}
+
+function getTechniqueAliasList(moduleName){
+	const name = normalizeTechniqueKey(moduleName);
+	if(!name){
+		return [];
+	}
+	const set = new Set([name]);
+	if(name === 'sixyao'){
+		set.add('guazhan');
+		set.add('liuyao');
+	}
+	if(name === 'qimen'){
+		set.add('dunjia');
+	}
+	if(name === 'primarydirect' || name === 'primarydirchart'){
+		set.add('direction');
+		set.add('primarydirect');
+		set.add('primarydirchart');
+	}
+	if(name === 'zodialrelease'){
+		set.add('zodiacrelease');
+	}
+	if(name === 'decennials'){
+		set.add('decennial');
+	}
+	if(name === 'germany'){
+		set.add('germanytech');
+	}
+	if(name === 'relative'){
+		set.add('relativechart');
+	}
+	if(name === 'astrochart_like'){
+		set.add('hellenastro');
+		set.add('locastro');
+		set.add('chart13');
+	}
+	if(name === 'indiachart'){
+		set.add('indiachart_current');
+	}
+	if(name === 'jieqi'){
+		set.add('jieqi_current');
+		set.add('jieqi_meta');
+		set.add('jieqi_chunfen');
+		set.add('jieqi_xiazhi');
+		set.add('jieqi_qiufen');
+		set.add('jieqi_dongzhi');
+	}
+	return Array.from(set);
+}
+
+function normalizeDateText(value){
+	const raw = `${value || ''}`.trim();
+	if(!raw){
+		return '';
+	}
+	const matched = raw.match(/^(-?\d+)[-/](\d{1,2})[-/](\d{1,2})/);
+	if(!matched){
+		return raw.replace(/-/g, '/');
+	}
+	return `${matched[1]}/${matched[2].padStart(2, '0')}/${matched[3].padStart(2, '0')}`;
+}
+
+function normalizeMinuteTime(value){
+	const raw = `${value || ''}`.trim();
+	if(!raw){
+		return '';
+	}
+	const matched = raw.match(/^(\d{1,2}):(\d{2})/);
+	if(!matched){
+		return raw;
+	}
+	return `${matched[1].padStart(2, '0')}:${matched[2]}`;
+}
+
+function buildSourceSignature(source){
+	const record = source && source.record ? source.record : null;
+	if(!record){
+		return {
+			date: '',
+			time: '',
+			zone: '',
+			lon: '',
+			lat: '',
+		};
+	}
+	const rawTime = source.sourceType === 'chart' ? record.birth : (record.divTime || record.updateTime || '');
+	const matched = `${rawTime || ''}`.trim().match(/^(-?\d+)-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+	if(!matched){
+		return {
+			date: normalizeDateText(rawTime),
+			time: normalizeMinuteTime(rawTime),
+			zone: `${record.zone || ''}`.trim(),
+			lon: `${record.lon || ''}`.trim(),
+			lat: `${record.lat || ''}`.trim(),
+		};
+	}
+	return {
+		date: `${matched[1]}/${matched[2]}/${matched[3]}`,
+		time: normalizeMinuteTime(`${matched[4] || '00'}:${matched[5] || '00'}:${matched[6] || '00'}`),
+		zone: `${record.zone || ''}`.trim(),
+		lon: `${record.lon || ''}`.trim(),
+		lat: `${record.lat || ''}`.trim(),
+	};
+}
+
+function isSnapshotMetaCompatible(snapshotMeta, source){
+	if(!snapshotMeta || typeof snapshotMeta !== 'object'){
+		return true;
+	}
+	const current = buildSourceSignature(source);
+	const snapDate = normalizeDateText(snapshotMeta.date || snapshotMeta.birth || '');
+	if(current.date && snapDate && current.date !== snapDate){
+		return false;
+	}
+	const snapTime = normalizeMinuteTime(snapshotMeta.time || '');
+	if(current.time && snapTime && current.time !== snapTime){
+		return false;
+	}
+	const snapZone = `${snapshotMeta.zone || ''}`.trim();
+	if(current.zone && snapZone && current.zone !== snapZone){
+		return false;
+	}
+	const snapLon = `${snapshotMeta.lon || ''}`.trim();
+	if(current.lon && snapLon && current.lon !== snapLon){
+		return false;
+	}
+	const snapLat = `${snapshotMeta.lat || ''}`.trim();
+	if(current.lat && snapLat && current.lat !== snapLat){
+		return false;
+	}
+	return true;
+}
+
+function extractSnapshotText(raw){
+	if(raw === undefined || raw === null){
+		return '';
+	}
+	if(typeof raw === 'string'){
+		const txt = raw.trim();
+		if(!txt){
+			return '';
+		}
+		const parsed = safeParseJson(txt, null);
+		return parsed !== null ? extractSnapshotText(parsed) : txt;
+	}
+	if(Array.isArray(raw)){
+		for(let i = 0; i < raw.length; i += 1){
+			const txt = extractSnapshotText(raw[i]);
+			if(txt){
+				return txt;
+			}
+		}
+		return '';
+	}
+	if(typeof raw !== 'object'){
+		return '';
+	}
+	if(typeof raw.content === 'string' && raw.content.trim()){
+		return raw.content.trim();
+	}
+	if(typeof raw.text === 'string' && raw.text.trim()){
+		return raw.text.trim();
+	}
+	const likelyKeys = ['value', 'snapshot', 'payload', 'data', 'result', 'snapshotText', 'moduleSnapshots', 'snapshots', 'modules'];
+	for(let i = 0; i < likelyKeys.length; i += 1){
+		const key = likelyKeys[i];
+		if(raw[key] === undefined){
+			continue;
+		}
+		const txt = extractSnapshotText(raw[key]);
+		if(txt){
+			return txt;
+		}
+	}
+	return '';
+}
+
+function pickSnapshotCandidate(candidates){
+	// 拒绝与当前案例出生/起盘签名明确不匹配的候选，避免挂载到「上次看过的那张盘」。
+	// generated 候选恒为 compatible:true；payload/cache 候选由 isSnapshotMetaCompatible 判定（源签名为空时为 true，不误伤）。
+	const valid = (candidates || []).filter((item)=>item && item.content && item.compatible !== false);
+	if(!valid.length){
+		return null;
+	}
+	valid.sort((a, b)=>{
+		const sa = a.specificity || 0;
+		const sb = b.specificity || 0;
+		if(sa !== sb){
+			return sb - sa;
+		}
+		if(Boolean(a.compatible) !== Boolean(b.compatible)){
+			return a.compatible ? -1 : 1;
+		}
+		if(Boolean(a.fromPayload) !== Boolean(b.fromPayload)){
+			return a.fromPayload ? -1 : 1;
+		}
+		const ta = Date.parse(a.createdAt || '') || 0;
+		const tb = Date.parse(b.createdAt || '') || 0;
+		if(ta !== tb){
+			return tb - ta;
+		}
+		return `${b.content || ''}`.length - `${a.content || ''}`.length;
+	});
+	return valid[0];
+}
+
+function getTechniqueSnapshotFromPayload(payload, moduleName, source){
+	if(!payload || typeof payload !== 'object'){
+		return null;
+	}
+	const aliases = getTechniqueAliasList(moduleName);
+	const aliasSet = new Set(aliases);
+	const record = source && source.record ? source.record : null;
+	const primaryPayloadKey = normalizeTechniqueKey(
+		payload.module
+		|| payload.moduleName
+		|| payload.sourceModule
+		|| (record && (record.sourceModule || record.caseType || record.chartType))
+		|| ''
+	);
+	const genericSnapshotMatchesRequest = !primaryPayloadKey || aliasSet.has(primaryPayloadKey);
+	const candidates = [];
+	const pushCandidate = (raw, extra = {})=>{
+		const content = extractSnapshotText(raw);
+		if(!content){
+			return;
+		}
+		candidates.push({
+			content,
+			createdAt: extra.createdAt || '',
+			meta: extra.meta || {},
+			compatible: isSnapshotMetaCompatible(extra.meta, source),
+			fromPayload: true,
+			specificity: extra.specificity || 0,
+		});
+	};
+	if(genericSnapshotMatchesRequest){
+		pushCandidate(payload.snapshot, {
+			meta: payload.meta || {},
+			createdAt: payload.createdAt || '',
+			specificity: 0,
+		});
+	}
+	if(payload.module && aliasSet.has(normalizeTechniqueKey(payload.module))){
+		pushCandidate(payload.snapshot, {
+			meta: payload.meta || {},
+			createdAt: payload.createdAt || '',
+			specificity: 1,
+		});
+	}
+	aliases.forEach((alias, idx)=>{
+		const aliasSpecificity = Math.max(2, 40 - idx);
+		const moduleSpecificity = Math.max(3, 60 - idx);
+		if(payload[alias] !== undefined){
+			pushCandidate(payload[alias], {
+				meta: payload.meta || {},
+				createdAt: payload.createdAt || '',
+				specificity: aliasSpecificity,
+			});
+		}
+		const moduleSnapshots = payload.moduleSnapshots && typeof payload.moduleSnapshots === 'object' ? payload.moduleSnapshots : null;
+		if(moduleSnapshots && moduleSnapshots[alias] !== undefined){
+			pushCandidate(moduleSnapshots[alias], {
+				meta: moduleSnapshots[alias] && moduleSnapshots[alias].meta ? moduleSnapshots[alias].meta : payload.meta || {},
+				createdAt: moduleSnapshots[alias] && moduleSnapshots[alias].createdAt ? moduleSnapshots[alias].createdAt : payload.createdAt || '',
+				specificity: moduleSpecificity,
+			});
+		}
+		const modules = payload.modules && typeof payload.modules === 'object' ? payload.modules : null;
+		if(modules && modules[alias] !== undefined){
+			pushCandidate(modules[alias], {
+				meta: modules[alias] && modules[alias].meta ? modules[alias].meta : payload.meta || {},
+				createdAt: modules[alias] && modules[alias].createdAt ? modules[alias].createdAt : payload.createdAt || '',
+				specificity: moduleSpecificity,
+			});
+		}
+	});
+	const snapshots = payload.snapshots && typeof payload.snapshots === 'object' ? payload.snapshots : null;
+	if(snapshots){
+		Object.keys(snapshots).forEach((rawKey)=>{
+			const key = `${rawKey || ''}`.trim();
+			if(!key){
+				return;
+			}
+			const suffix = key.indexOf(MODULE_SNAPSHOT_PREFIX) === 0 ? key.substring(MODULE_SNAPSHOT_PREFIX.length) : key;
+			if(!aliasSet.has(normalizeTechniqueKey(suffix))){
+				return;
+			}
+			pushCandidate(snapshots[rawKey], {
+				meta: snapshots[rawKey] && snapshots[rawKey].meta ? snapshots[rawKey].meta : payload.meta || {},
+				createdAt: snapshots[rawKey] && snapshots[rawKey].createdAt ? snapshots[rawKey].createdAt : payload.createdAt || '',
+				specificity: 3,
+			});
+		});
+	}
+	return pickSnapshotCandidate(candidates);
+}
+
+// 全局模块缓存 `horosa.ai.snapshot.module.v1.<module>` 本质是「上次算过的某一张盘/卦」（key 不含出生时间）。
+// 复用它【只能在签名确凿匹配当前源时】，否则宁可回退按本盘出生数据重算，也绝不挂错盘。
+// 与宽松的 isSnapshotMetaCompatible 不同：这里要求 date 双方都有且相等（date 是最强身份位）；
+// 缺签名 / 单边为空一律判不确凿（false），交由 buildTechniqueContext 走重算分支。
+function isCacheSnapshotConfidentMatch(snapshotMeta, source){
+	if(!snapshotMeta || typeof snapshotMeta !== 'object'){
+		return false;
+	}
+	const current = buildSourceSignature(source);
+	const snapDate = normalizeDateText(snapshotMeta.date || snapshotMeta.birth || '');
+	if(!current.date || !snapDate || current.date !== snapDate){
+		return false;
+	}
+	const snapTime = normalizeMinuteTime(snapshotMeta.time || '');
+	if(current.time && snapTime && current.time !== snapTime){
+		return false;
+	}
+	const snapZone = `${snapshotMeta.zone || ''}`.trim();
+	if(current.zone && snapZone && current.zone !== snapZone){
+		return false;
+	}
+	const snapLon = `${snapshotMeta.lon || ''}`.trim();
+	if(current.lon && snapLon && current.lon !== snapLon){
+		return false;
+	}
+	const snapLat = `${snapshotMeta.lat || ''}`.trim();
+	if(current.lat && snapLat && current.lat !== snapLat){
+		return false;
+	}
+	return true;
+}
+
+function getTechniqueSnapshotFromCache(moduleName, source){
+	const aliases = getTechniqueAliasList(moduleName);
+	const candidates = aliases.map((alias, idx)=>{
+		const snapshot = loadModuleAISnapshot(alias);
+		if(!snapshot || !snapshot.content){
+			return null;
+		}
+		return {
+			content: snapshot.content,
+			createdAt: snapshot.createdAt || '',
+			meta: snapshot.meta || {},
+			compatible: isCacheSnapshotConfidentMatch(snapshot.meta, source),
+			fromPayload: false,
+			specificity: Math.max(2, 40 - idx),
+		};
+	}).filter(Boolean);
+	return pickSnapshotCandidate(candidates);
+}
+
+async function buildTechniqueContext(source, techniqueKey, baseSourceContext){
+	const key = normalizeTechniqueKey(techniqueKey);
+	if(!source || !key){
+		return null;
+	}
+	const label = getTechniqueLabel(key);
+	const canReuseBaseSourceContext = baseSourceContext
+		&& baseSourceContext.content
+		&& !(baseSourceContext.meta && baseSourceContext.meta.metaOnly);
+	if(source.sourceType === 'chart' && (key === 'astrochart' || key === 'astrochart_like')){
+		const ctx = canReuseBaseSourceContext ? baseSourceContext : await buildChartContext(source);
+		return {
+			key,
+			title: label,
+			module: key,
+			content: ctx && ctx.content ? ctx.content : '',
+			available: !!(ctx && ctx.content),
+			status: ctx && ctx.content ? 'ready' : 'missing',
+			meta: ctx && ctx.meta ? ctx.meta : {},
+		};
+	}
+	const record = source.record || null;
+	const payload = record && record.payload ? safeParseJson(record.payload, null) : null;
+	const fromPayload = getTechniqueSnapshotFromPayload(payload, key, source);
+	let generated = null;
+	if(source.sourceType === 'timepoint'){
+		// 「起课时间」入口：纯时间 + 地点，没有「已存的卦」→ 时间确定式法按默认设置即时起盘；
+		// 六爻在此入口走「时间起卦」(确定性，时间即输入)；统摄法等非纯时间可推的不在白名单。
+		let timeText = '';
+		if(TIMEPOINT_CASTABLE_SET.has(key)){
+			timeText = await regenerateCaseTechniqueSnapshot(record, key, payload);
+			if(timeText){
+				saveGeneratedTechniqueSnapshot(key, timeText, record, { generatedFromTimepoint: true });
+			}
+		}
+		return {
+			key,
+			title: label,
+			module: key,
+			content: timeText || '',
+			available: !!timeText,
+			status: timeText ? 'ready' : 'missing',
+			meta: timeText ? buildSnapshotMetaFromRecord(record, { generatedFromTimepoint: true }) : {},
+		};
+	}
+	if(source.sourceType === 'case'){
+		// 事盘：优先用本案例 payload 重建文本（不读全局模块缓存——那是「上次看过的某一卦」）。
+		// 若 payload 未存该技法：时间确定式法（六壬/金口诀/奇门/太乙/三式）按本案例起课时间 + 默认【即时补算】，
+		// 像命盘一样而非显示「未挂载」。六爻：已存 payload.gua 优先（generateCaseTechniqueSnapshot 读存卦、不被时间覆盖）；
+		// 无存卦时按本案例起课时间【时间起卦】补（用户拍板：时间起卦是六爻确定性合法起法、非伪造摇卦）——故 sixyao 显式纳入
+		// 补算条件，但**仍不进 TIME_CASTABLE_DIVINATION**（保 preflight[24] 护栏：防其它批量路径凭空补六爻）。
+		if(!(fromPayload && fromPayload.content)){
+			let generatedText = generateCaseTechniqueSnapshot(record, key, payload);
+			let genFlag = { generatedFromStoredCase: true };
+			if(!generatedText && (TIME_CASTABLE_SET.has(key) || key === 'sixyao')){
+				generatedText = await regenerateCaseTechniqueSnapshot(record, key, payload);
+				genFlag = { regeneratedFromCaseTime: true };
+			}
+			if(generatedText){
+				saveGeneratedTechniqueSnapshot(key, generatedText, record, genFlag);
+				generated = {
+					content: generatedText,
+					createdAt: new Date().toISOString(),
+					meta: buildSnapshotMetaFromRecord(record, genFlag),
+					compatible: true,
+					fromPayload: false,
+					specificity: 4,
+				};
+			}
+		}
+		const pickedCase = pickSnapshotCandidate([fromPayload, generated]);
+		return {
+			key,
+			title: label,
+			module: key,
+			content: pickedCase && pickedCase.content ? pickedCase.content : '',
+			available: !!(pickedCase && pickedCase.content),
+			status: pickedCase && pickedCase.content ? 'ready' : 'missing',
+			meta: pickedCase && pickedCase.meta ? pickedCase.meta : {},
+		};
+	}
+	// 命盘（chart）：payload 命中优先；否则查兼容缓存（A1 已过滤掉不匹配的盘）；
+	// 仍无则按本盘出生数据无头复算（Part A）。
+	const fromCache = getTechniqueSnapshotFromCache(key, source);
+	if(!(fromPayload && fromPayload.content) && !(fromCache && fromCache.content)){
+		const generatedText = await regenerateChartTechniqueSnapshot(record, key);
+		if(generatedText){
+			saveGeneratedTechniqueSnapshot(key, generatedText, record, {
+				generatedFromChart: true,
+			});
+			generated = {
+				content: generatedText,
+				createdAt: new Date().toISOString(),
+				meta: buildSnapshotMetaFromRecord(record, {
+					generatedFromChart: true,
+				}),
+				compatible: true,
+				fromPayload: false,
+				specificity: 5,
+			};
+		}
+	}
+	const picked = pickSnapshotCandidate([fromPayload, fromCache, generated]);
+	return {
+		key,
+		title: label,
+		module: key,
+		content: picked && picked.content ? picked.content : '',
+		available: !!(picked && picked.content),
+		status: picked && picked.content ? 'ready' : 'missing',
+		meta: picked && picked.meta ? picked.meta : {},
+	};
+}
+
+function isChartTechnique(key){
+	return ANALYSIS_CHART_TECHNIQUES.indexOf(normalizeTechniqueKey(key)) >= 0;
+}
+
+// 命盘星盘(astrochart / astrochart_like)按 record(含挂载覆盖字段)强制重起西洋盘 → 出快照正文。
+// 不走 buildChartContext 的「已存快照复用」(那会无视新设置)，与 buildChartContext 同一 fetch+build 口径。
+async function regenerateAstroChartSnapshot(record){
+	const fields = buildFieldObject(record);
+	const rsp = await fetchChart({
+		...fieldParams(fields),
+		includePrimaryDirection: false,
+	}, {
+		silent: true,
+		timeoutMs: 20000,
+	});
+	if(!rsp || !rsp.Result){
+		return '';
+	}
+	return `${buildAstroSnapshotContent(rsp.Result, fields) || ''}`.trim();
+}
+
+// AI 挂载「每技法设置」核心入口（方案 §2.2）。
+// options 非空 → 强制按新设置重算该技法快照（绕过 payload/cache 命中），返回 status='regenerated' 的技法上下文；
+// options 为空 → 直接走原 buildTechniqueContext（默认即现状，一行不改默认路径，守「默认即现状」铁律）。
+export async function getAnalysisTechniqueContextWithOptions(source, techniqueKey, options, baseSourceContext){
+	const key = normalizeTechniqueKey(techniqueKey);
+	if(!source || !key){
+		return null;
+	}
+	// 仅保留与默认不同的项；为空 → 视作无覆盖。
+	const opts = pruneOptionsToNonDefault(key, options || {});
+	const hasOverride = opts && Object.keys(opts).length > 0;
+	const schema = getTechniqueSettingsSchema(key);
+	if(!hasOverride || !schema || schema.kind === 'sectionsOnly'){
+		return buildTechniqueContext(source, key, baseSourceContext); // 默认路径,零行为变化
+	}
+	const label = getTechniqueLabel(key);
+	const record = source.record || {};
+	let text = '';
+	try{
+		if(schema.kind === 'localStorage'){
+			// C 类:临时写全局显示选项(builder 自读)强制重算,用毕 finally 还原现值——
+			// 与紫微流派「临时切换 + 用毕还原」同口径;否则一次挂载覆盖会永久改写
+			// 用户的七政全局设置(命度/罗计/宿度制),且渗入 doubingSu28 共享请求。
+			const prior = snapshotLocalStorageSettings(key);
+			try{
+				applyLocalStorageSettings(key, opts);
+				text = await regenerateChartTechniqueSnapshot(mergeOptionsIntoRecord(record, key, opts), key);
+			}finally{
+				restoreLocalStorageSettings(prior);
+			}
+		}else if(isChartTechnique(key)){
+			// A 类:把 options merge 进 record.*(buildFieldObject 读)，强制重算。
+			const mergedRecord = mergeOptionsIntoRecord(record, key, opts);
+			if(key === 'astrochart' || key === 'astrochart_like'){
+				text = await regenerateAstroChartSnapshot(mergedRecord);
+			}else{
+				text = await regenerateChartTechniqueSnapshot(mergedRecord, key);
+			}
+		}else{
+			// B 类:把 options 叠进 payload，强制走 regenerateCaseTechniqueSnapshot。
+			const payload = record && record.payload ? safeParseJson(record.payload, null) : null;
+			const mergedPayload = mergeOptionsIntoPayload(payload || {}, key, opts);
+			text = await regenerateCaseTechniqueSnapshot(record, key, mergedPayload);
+		}
+	}catch(e){
+		text = '';
+	}
+	// 🔒 覆盖结果只回传、绝不写共享模块缓存（saveGeneratedTechniqueSnapshot）：否则会污染该技法槽，命盘默认路径
+	// buildTechniqueContext(读 getTechniqueSnapshotFromCache，isCacheSnapshotConfidentMatch 只比生辰、不看 mountOverride)
+	// 会读到这条旧覆盖、跳过默认重算 → 用户「恢复默认/清除覆盖」后卡片不回退、且连带污染 AI 导出/储存读到的"最近快照"。
+	// 覆盖本就每次按 options 无条件重算（上方），不需缓存；与事盘路径"不读全局缓存"口径一致。「设为同类默认」的持久化
+	// 走 saveMountTechniqueDefaults(settings) 而非此缓存。改动前先读本注释——别把 save 加回来。
+	return {
+		key,
+		title: label,
+		module: key,
+		content: text || '',
+		available: !!text,
+		status: text ? 'regenerated' : 'missing',
+		meta: text ? buildSnapshotMetaFromRecord(record, { mountOverride: true }) : {},
+	};
+}
+
+export function listAnalysisTechniqueOptions(source){
+	let keys;
+	if(source && source.sourceType === 'timepoint'){
+		// 起课时间源:与上方 TIMEPOINT_CASTABLE_SET 保持一致 —— 时间确定式法 + 六爻(时间起卦) + 皇极经世 +
+		// 报数/起例类(太玄/荆诀 seed 由时间派 / 五兆干支起例 / 神易数 hourSource=auto seasonSource=auto)。
+		keys = [...TIME_CASTABLE_DIVINATION, 'sixyao', 'huangji', 'taixuan', 'jingjue', 'wuzhao', 'shenyishu'];
+	}else if(source && source.sourceType === 'case'){
+		keys = ANALYSIS_CASE_TECHNIQUES;
+	}else{
+		keys = ANALYSIS_CHART_TECHNIQUES;
+	}
+	return keys.map((key)=>({
+		value: key,
+		label: getTechniqueLabel(key),
+	}));
+}
+
+// 组合包用：与 source 无关的「全技法」选项（命盘类 + 事盘类去重），供组合编辑时预选默认挂载技法。
+export function listAllAnalysisTechniqueOptions(){
+	const seen = new Set();
+	const out = [];
+	[...ANALYSIS_CHART_TECHNIQUES, ...ANALYSIS_CASE_TECHNIQUES].forEach((key)=>{
+		if(seen.has(key)){
+			return;
+		}
+		seen.add(key);
+		out.push({ value: key, label: getTechniqueLabel(key) });
+	});
+	return out;
+}
+
+export async function getAnalysisTechniqueContexts(source, techniqueKeys, options = {}){
+	if(!source){
+		return [];
+	}
+	const keys = Array.from(new Set((techniqueKeys || []).map((item)=>normalizeTechniqueKey(item)).filter(Boolean)));
+	if(!keys.length){
+		return [];
+	}
+	const baseSourceContext = options.sourceContext || null;
+	// 「每技法设置」覆盖映射 {[key]:optionsObj}。某技法有非默认覆盖 → 走强制重算入口；否则走默认 buildTechniqueContext。
+	const techniqueOptions = options.techniqueOptions && typeof options.techniqueOptions === 'object'
+		? options.techniqueOptions : null;
+	const results = [];
+	for(let i = 0; i < keys.length; i += 1){
+		const k = keys[i];
+		const overrideOpts = techniqueOptions && techniqueOptions[k] && typeof techniqueOptions[k] === 'object'
+			? techniqueOptions[k] : null;
+		// eslint-disable-next-line no-await-in-loop
+		const context = overrideOpts
+			? await getAnalysisTechniqueContextWithOptions(source, k, overrideOpts, baseSourceContext)
+			: await buildTechniqueContext(source, k, baseSourceContext);
+		if(context){
+			// AI 挂载复用「AI导出设置」的按技法选段（达成四同步）。仅当用户显式自定义该技法段时才过滤，否则原样（默认即现状）。
+			if(context.content){
+				try{ context.content = applyAIExportSectionFilterToSnapshot(context.key || k, context.content); }catch(e){ /* 过滤失败保持原文 */ }
+			}
+			results.push(context);
+		}
+	}
+	return results;
+}
+
+// 「起课时间」源的前提上下文：纯时间 + 地点的简短说明（技法快照各自携带正文）。
+function buildTimepointContext(source){
+	const record = source && source.record ? source.record : {};
+	const lines = ['起课时间盘（按所选时间 + 默认设置即时起盘）'];
+	if(record.divTime){ lines.push(`起课时间：${record.divTime}`); }
+	if(record.zone){ lines.push(`时区：${record.zone}`); }
+	if(record.lon || record.lat){ lines.push(`地点：经 ${record.lon || '—'} / 纬 ${record.lat || '—'}`); }
+	return {
+		content: lines.join('\n').trim(),
+		title: source.title,
+		module: 'timepoint',
+		meta: buildSnapshotMetaFromRecord(record, { sourceType: 'timepoint', sourceId: source.id }),
+	};
+}
+
+export async function getAnalysisSourceContext(source, options = {}){
+	if(!source){
+		return null;
+	}
+	const mode = options.mode === 'meta' ? 'meta' : 'full';
+	const cacheId = `${source.sourceType}:${source.id}:${mode}`;
+	const preferCache = options.preferCache !== false;
+	const shouldPreferCache = preferCache
+		&& source.sourceType !== 'timepoint'
+		&& !(source.sourceType === 'case' && source.snapshotStatus !== 'ready');
+	if(shouldPreferCache){
+		const cached = await getStoreRecord(AI_ANALYSIS_STORES.contextCache, cacheId);
+		if(cached && cached.sourceUpdatedAt === source.updatedAt && cached.content){
+			return cached;
+		}
+	}
+	let built;
+	if(source.sourceType === 'timepoint'){
+		built = buildTimepointContext(source);
+	}else if(mode === 'meta'){
+		built = source.sourceType === 'chart' ? buildChartMetaContext(source) : buildCaseMetaContext(source);
+	}else{
+		built = source.sourceType === 'chart' ? await buildChartContext(source) : await buildCaseContext(source);
+	}
+	const next = {
+		id: cacheId,
+		sourceId: source.id,
+		sourceType: source.sourceType,
+		title: source.title,
+		module: built.module,
+		content: built.content,
+		meta: built.meta || {},
+		sourceUpdatedAt: source.updatedAt || '',
+		createdAt: new Date().toISOString(),
+		updatedAt: new Date().toISOString(),
+	};
+	await putStoreRecord(AI_ANALYSIS_STORES.contextCache, next, 'ctx');
+	return next;
+}
+
+export function estimateTextTokens(text){
+	const raw = `${text || ''}`.trim();
+	return Math.ceil(raw.length / 4);
+}
+
+export function buildContextLayers({
+	sourceContext,
+	techniqueContexts,
+	materials,
+	bundles,
+	templates,
+	retrievedChunks,
+	conversationMessages,
+	systemPrompt,
+}) {
+	const layers = [];
+	layers.push({
+		key: 'system',
+		title: '系统提示',
+		priority: 100,
+		content: systemPrompt || '你是星阙的 AI 分析助手。请严格依据当前案例上下文、参考资料与回复模版作答。',
+	});
+	if(sourceContext && sourceContext.content){
+		layers.push({
+			key: 'source',
+			title: `案例前提：${sourceContext.title || ''}`,
+			priority: 95,
+			content: sourceContext.content,
+		});
+	}
+	// v2.2.1:把「日界点·晚子时」排盘规则作为 first-class 上下文稳定挂载,
+	// 让 AI 知道四柱按哪种换日/起时干规则计算,不会误读 23:00–23:59 的日柱/时柱。
+	// 优先用案例自带的开关值(命盘 fields / 事盘 payload),否则回退全局设置。
+	{
+		const a23 = sourceContext && sourceContext.after23NewDay !== undefined
+			? sourceContext.after23NewDay : defaultAfter23NewDay();
+		const lzh = sourceContext && sourceContext.lateZiHourUseNextDay !== undefined
+			? sourceContext.lateZiHourUseNextDay : defaultLateZiHourUseNextDay();
+		const meta = buildDayBoundaryMeta(a23, lzh);
+		layers.push({
+			key: 'dayBoundaryRule',
+			title: '排盘规则（日界点·晚子时）',
+			priority: 94,
+			content: meta.note,
+		});
+	}
+	(techniqueContexts || []).forEach((item, idx)=>{
+		if(!item || !item.content){
+			return;
+		}
+		if(sourceContext && sourceContext.content && item.content === sourceContext.content){
+			return;
+		}
+		layers.push({
+			key: `technique:${item.key || idx}`,
+			title: `使用技法：${item.title || item.key || `技法 ${idx + 1}`}`,
+			priority: 93 - idx,
+			content: item.content,
+		});
+	});
+	(bundles || []).forEach((bundle)=>{
+		if(bundle.defaultSystemPrompt){
+			layers.push({
+				key: `bundle-system:${bundle.id}`,
+				title: `组合系统提示：${bundle.name || ''}`,
+				priority: 92,
+				content: bundle.defaultSystemPrompt,
+			});
+		}
+	});
+	(templates || []).forEach((template)=>{
+		const text = template && template.format === 'json'
+			? [template.instructionText, template.jsonSchema && `JSON Schema：\n${template.jsonSchema}`].filter(Boolean).join('\n\n')
+			: (template && (template.instructionText || template.content));
+		if(text){
+			layers.push({
+				key: `template:${template.id}`,
+				title: `模版约束：${template.name || ''}`,
+				priority: 90,
+				content: text,
+			});
+		}
+	});
+	const directMaterials = (materials || []).filter((item)=>!item.retrievedOnly);
+	directMaterials.forEach((item, idx)=>{
+		if(item.extractedText){
+			layers.push({
+				key: `material:${item.id}`,
+				title: `参考资料 ${idx + 1}：${item.name || '未命名资料'}`,
+				priority: 70,
+				content: item.extractedText,
+			});
+		}
+	});
+	if(Array.isArray(retrievedChunks) && retrievedChunks.length){
+		const retrievedText = buildRetrievedContextText(retrievedChunks);
+		if(retrievedText){
+			layers.push({
+				key: 'retrieved-context',
+				title: '检索资料片段',
+				priority: 80,
+				content: retrievedText,
+			});
+		}
+	}
+	const visibleHistory = (conversationMessages || []).filter((item)=>item && item.role !== 'system_hidden').slice(-10);
+	if(visibleHistory.length){
+		layers.push({
+			key: 'recent-history',
+			title: '最近对话',
+			priority: 60,
+			content: visibleHistory.map((item)=>`[${item.role}] ${item.content || ''}`).join('\n\n'),
+		});
+	}
+	return layers.map((item)=>({
+		...item,
+		tokenEstimate: estimateTextTokens(item.content),
+	}));
+}
+
+export function clipContextLayers(layers, options = {}){
+	const maxChars = options.maxChars || DEFAULT_CONTEXT_CHAR_LIMIT;
+	const sorted = (layers || []).slice(0).sort((a, b)=>b.priority - a.priority);
+	const kept = [];
+	let totalChars = 0;
+	sorted.forEach((item)=>{
+		const content = `${item.content || ''}`.trim();
+		if(!content){
+			return;
+		}
+		const nextChars = totalChars + content.length;
+		if(nextChars <= maxChars){
+			kept.push({
+				...item,
+				content,
+				clipped: false,
+			});
+			totalChars = nextChars;
+			return;
+		}
+		if(kept.length === 0 || item.priority >= 90){
+			const remain = Math.max(0, maxChars - totalChars);
+			if(remain > 120){
+				kept.push({
+					...item,
+					content: `${content.slice(0, remain)}\n...[已裁剪]`,
+					clipped: true,
+				});
+				totalChars = maxChars;
+			}
+		}
+	});
+	return kept;
+}
+
+export function buildPromptContext({
+	sourceContext,
+	techniqueContexts,
+	materials,
+	bundles,
+	templates,
+	retrievedChunks,
+	conversationMessages,
+	systemPrompt,
+	maxChars,
+}) {
+	const layers = buildContextLayers({
+		sourceContext,
+		techniqueContexts,
+		materials,
+		bundles,
+		templates,
+		retrievedChunks,
+		conversationMessages,
+		systemPrompt,
+	});
+	const clippedLayers = clipContextLayers(layers, { maxChars });
+	return clippedLayers.map((item)=>`${item.title}\n${item.content}`).join('\n\n').trim();
+}

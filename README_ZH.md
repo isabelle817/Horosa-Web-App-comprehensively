@@ -2,7 +2,7 @@
 
 简体中文 · [English](README_EN.md)
 
-<img src="desktop_installer_bundle/assets/horosa_setup_badge.png" alt="星阙 Horosa" width="128" />
+<img src="assets/horosa_setup_badge.png" alt="星阙 Horosa" width="128" />
 
 # 星阙 Horosa
 
@@ -49,13 +49,13 @@
 ## 截图
 
 <div align="center">
-<img src="docs/assets/screenshots/horosa-2.0-main-workspace.png" alt="占星工作区" width="900" />
+<img src="assets/screenshots/horosa-2.0-main-workspace.png" alt="占星工作区" width="900" />
 <p><em>占星工作区 —— 左侧起盘参数，中间图盘画布，右侧信息 / 相位 / 行星 / 古典 / 格局页签。</em></p>
 
-<img src="docs/assets/screenshots/horosa-2.0-sanshi-workspace.png" alt="三式工作区" width="900" />
+<img src="assets/screenshots/horosa-2.0-sanshi-workspace.png" alt="三式工作区" width="900" />
 <p><em>三式工作区 —— 起盘参数、九宫盘面、概览 / 太乙 / 神煞 / 六壬 / 八宫页签同屏呈现。</em></p>
 
-<img src="docs/assets/screenshots/horosa-2.0-module-navigator.png" alt="导航弹层" width="900" />
+<img src="assets/screenshots/horosa-2.0-module-navigator.png" alt="导航弹层" width="900" />
 <p><em>导航弹层 —— 命盘推运、易与三式、工具工作台分组，支持搜索与最近使用。</em></p>
 </div>
 
@@ -142,7 +142,7 @@
 
 **v2.6.1 = AI 挂载全选项打磨 + 多时段 / 区间扫描输出 + 风水八卦阳宅法 v2（倪海厦，纯前端）+ 一批跨模块修复**；唯一后端改动 = `ChartController.getParams()` 转发 `pdYears`（挂载主限法年数生效的真因）→ 已重建 `astrostudyboot.jar`。
 
-完整改动见 [v2.6.7 Beta Release](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases/tag/v2.6.7) 与 [本地发布说明](docs/releases/2.6.7.md)（v2.6.6 见 [docs/releases/2.6.6.md](docs/releases/2.6.6.md), v2.6.5 见 [docs/releases/2.6.5.md](docs/releases/2.6.5.md), v2.6.4 见 [docs/releases/2.6.4.md](docs/releases/2.6.4.md), v2.6.3 见 [docs/releases/2.6.3.md](docs/releases/2.6.3.md), v2.6.2 安装器补丁见 [docs/releases/2.6.2.md](docs/releases/2.6.2.md), v2.6.1 功能见 [docs/releases/2.6.1.md](docs/releases/2.6.1.md)）；上一版 v2.6.0（六壬毕法100法 + 紫微 P0–P2 + 奇门法奇门 + 占星 buildout + #16/#17/#18 修复）详见 [docs/releases/2.6.0.md](docs/releases/2.6.0.md)。
+完整改动与历史发布说明见 [GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)（每个版本的 Release 页面附完整 changelog 与资产）。
 
 ## 技术构成
 
@@ -175,10 +175,10 @@
 
 - 想理解产品首页与用户入口：[README.md](README.md)
 - 想看英文完整说明：[README_EN.md](README_EN.md)
-- 想理解桌面打包与安装器：[desktop_installer_bundle/README.md](desktop_installer_bundle/README.md)
-- 想理解项目结构：[docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
-- 想了解干净机器运行时修复与发布注意点：[docs/CLEAN_MACHINE_NATIVE_RUNTIME_FIX.md](docs/CLEAN_MACHINE_NATIVE_RUNTIME_FIX.md)
-- 应用源码：`local/workspace/Horosa-Web-*/` —— 前端 `astrostudyui`，后端 `astrostudysrv` / `astropy`，引擎 `vendor`
+- 产品源码：[`local/workspace/Horosa-Web-…/`](local/workspace/Horosa-Web-55c75c5b088252fbd718afeffa6d5bcb59254a0c/) —— 前端 `astrostudyui`，后端 `astrostudysrv` / `astropy`，引擎 `vendor`，星历 `flatlib-ctrad2`
+- 运行时准备脚本（含随包 VC++ 运行时）：[`prepareruntime/`](prepareruntime/)
+- Windows 适配层（上游同步后的 Windows 专属补丁）：[`windows-adaptations/`](windows-adaptations/)
+- 历史版本与完整发布说明：[GitHub Releases](https://github.com/Horace-Maxwell/Horosa-Web-App-comprehensively-improved-Windows/releases)
 
 ## 致谢
 
