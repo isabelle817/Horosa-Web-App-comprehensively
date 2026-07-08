@@ -1,0 +1,58 @@
+diff --git a/astropy/astrostudy/xuanshi/__init__.py b/astropy/astrostudy/xuanshi/__init__.py
+index 8a4e010..aa76076 100644
+--- a/astropy/astrostudy/xuanshi/__init__.py
++++ b/astropy/astrostudy/xuanshi/__init__.py
+@@ -15,9 +15,40 @@
+ 
+ from __future__ import annotations
+ 
++import importlib
+ from typing import Any
+ 
+-from . import db, period, omen, fmt, queries, celestial, editorial
++# v3.0.1 perf ROUND-3 R3 (xuanshi.lazyImport): the original top-level
++# `from . import db, period, omen, fmt, queries, celestial, editorial` was eagerly loaded when
++# webxuanshisrv (mounted by kentang.registry at server start) merely imported this package —
++# forcing 7 heavy submodules + the SQLite driver + 99MB of read-only data bundles into the
++# Python startup path even for users who never opened the 玄学史 tab. That added 5-10s of cold
++# import to Windows warm-start (v2.6.9 didn't have this path). Solution: PEP 562 module-level
++# __getattr__ — attribute names in _LAZY_SUBS are imported on first access and memoized into
++# module globals. Semantics unchanged for callers: `xuanshi.queries.load_events()`,
++# `from astrostudy.xuanshi import db`, etc. all still work; they now pay their import cost
++# only when actually touched. Kill-switch HOROSA_XUANSHI_LAZY_IMPORT=0 forces the old eager
++# load (belt + suspenders alongside the kentang registry LazyMountedService wrap).
++_LAZY_SUBS = frozenset({"db", "period", "omen", "fmt", "queries", "celestial", "editorial"})
++
++
++def _resolve_lazy_sub(name: str):
++    mod = importlib.import_module(f".{name}", __name__)
++    globals()[name] = mod
++    return mod
++
++
++def __getattr__(name: str):
++    if name in _LAZY_SUBS:
++        return _resolve_lazy_sub(name)
++    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
++
++
++import os as _os
++if _os.environ.get("HOROSA_XUANSHI_LAZY_IMPORT", "1").lower() in ("0", "false", "no", "off"):
++    # kill-switch: restore v3.0.0/v3.0.1 pre-round-3 eager behavior
++    from . import db, period, omen, fmt, queries, celestial, editorial  # noqa: F401
++
+ 
+ __all__ = [
+     "db", "period", "omen", "fmt", "queries", "celestial", "editorial",
+@@ -40,6 +71,11 @@ def global_summary() -> dict[str, Any]:
+ 
+     全部计数走内核函数，单一真值源，绝不硬编码行数常量。
+     """
++    # Function-local imports so the ROUND-3 R3 lazy pattern in this package's top-level actually
++    # bites — bare-name lookups inside a module do NOT go through PEP 562 __getattr__, so the
++    # submodules need to be pulled into local scope explicitly on first call.
++    from . import db, period, omen, queries, celestial, editorial
++
+     xx_events = queries.load_events()
+     ce_events = celestial.load_events()
+ 

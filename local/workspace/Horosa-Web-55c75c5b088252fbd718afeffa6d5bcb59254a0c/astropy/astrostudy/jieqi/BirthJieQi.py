@@ -1,11 +1,19 @@
+import os
 import flatlib
 from flatlib.datetime import Datetime
 from flatlib.geopos import GeoPos
 from flatlib.chart import Chart
 from flatlib import const
+from flatlib.ephem import swe
 
 from astrostudy.helper import distance
 from . import jieqiconst
+
+# v3.0.1 perf ROUND-3 R1 (HOROSA_JIEQI_FAST_APPROACH): same fix as YearJieQi.approach — the Chart-per-iteration
+# pattern wastes ~100 swe calls each iteration just to read Sun.lon+lonspeed. Replaced with direct
+# swe.sweObject(SUN, jd, SEDEFAULT_FLAG). Convergence and result byte-identical. Kill-switch:
+# HOROSA_JIEQI_FAST_APPROACH=0 → fall back to the original Chart-based loop.
+_JIEQI_FAST_APPROACH = os.environ.get('HOROSA_JIEQI_FAST_APPROACH', '1').lower() not in ('0', 'false', 'no', 'off')
 
 
 def takeTime(obj):
@@ -53,6 +61,20 @@ class BirthJieQi:
                 self.byLon = 1
 
     def approach(self, dt, jieqiLon):
+        if _JIEQI_FAST_APPROACH:
+            sun = swe.sweObject(const.SUN, dt.jd, swe.SEDEFAULT_FLAG)
+            delta = distance(jieqiLon, sun['lon']) + 1/7200
+            deltatm = delta / sun['lonspeed']
+            newjd = dt.jd + deltatm
+            newtm = Datetime.fromJD(newjd, self.zone)
+            while abs(delta) > 0.0003:
+                sun = swe.sweObject(const.SUN, newtm.jd, swe.SEDEFAULT_FLAG)
+                delta = distance(jieqiLon, sun['lon']) + 1/7200
+                deltatm = delta / sun['lonspeed']
+                newjd = newtm.jd + deltatm
+                newtm = Datetime.fromJD(newjd, self.zone)
+            return newtm
+        # kill-switch fallback (HOROSA_JIEQI_FAST_APPROACH=0): original Chart-based loop
         chart = Chart(dt, self.pos, const.TROPICAL, hsys=const.HOUSES_WHOLE_SIGN)
         sun = chart.getObject(const.SUN)
         delta = distance(jieqiLon, sun.lon) + 1/7200

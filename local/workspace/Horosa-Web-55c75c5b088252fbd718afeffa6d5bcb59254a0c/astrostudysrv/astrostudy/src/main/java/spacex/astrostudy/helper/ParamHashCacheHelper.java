@@ -198,6 +198,18 @@ public class ParamHashCacheHelper {
 
 				obj = fun.apply(new HashMap<String, Object>(req));
 				if(isCacheable(obj)) {
+					// v3.0.1 perf ROUND-3 R2 (PARAMHASH_PERSISTABLE_REV): promote what used to be
+					// ChartController.toPlainMap into the central cache path. Prior behavior:
+					// canPersistLocal() saw any Java Enum / POJO inside `obj` (e.g. JieQiController.getYearParams
+					// puts TimeZiAlg + PhaseType Enum instances into the response), returned false, and
+					// saveToLocal silently no-op'd — so /jieqi/year and other Enum-carrying endpoints never
+					// wrote a single cache file on disk. Fix: JSON round-trip once here so BOTH the returned
+					// value AND the cache are pure Maps/Numbers/Strings/Collections; every controller that
+					// uses ParamHashCacheHelper.get/getAnnual is now Enum-safe by construction, no matter
+					// what a future handler stuffs into its response. Cold vs warm now return the same
+					// (plain) shape, eliminating type drift between paths. Idempotent for pure Maps.
+					// Failure: fall back to the original raw obj so we're never worse than before.
+					obj = persistable(obj);
 					saveToRedis(cacheKey, obj, expInSec);
 					saveToLocal(cleanScope, hash, obj, expInSec);
 				}
@@ -477,6 +489,29 @@ public class ParamHashCacheHelper {
 			return !((Collection<?>) obj).isEmpty();
 		}
 		return true;
+	}
+
+	// v3.0.1 perf ROUND-3 R2 (PARAMHASH_PERSISTABLE_REV): JSON round-trip an arbitrary POJO/Map/Enum
+	// tree into a pure Map/List/Number/String/Boolean tree that canPersistLocal() will accept.
+	// Serializes via the same Jackson jsonMapper as the response JsonConverter (JsonUtility.encode);
+	// deserializes back to Object.class → LinkedHashMap preserves key order. Idempotent on already-plain
+	// trees. On any failure returns the raw value unchanged (fail-safe: caller path still functions,
+	// just misses the disk-cache tier — never worse than before). This centralizes what used to be
+	// ChartController.toPlainMap so every controller using ParamHashCacheHelper.get/getAnnual gets
+	// Enum-safe caching automatically; a future controller cannot accidentally re-introduce the
+	// silent-no-op bug that broke /jieqi/year for months.
+	public static Object persistable(Object value) {
+		if(value == null) {
+			return null;
+		}
+		if(canPersistLocal(value)) {
+			return value;
+		}
+		try {
+			return JsonUtility.decode(JsonUtility.encode(value), Object.class);
+		}catch(Exception e) {
+			return value;
+		}
 	}
 
 	private static boolean canPersistLocal(Object obj) {
