@@ -44,6 +44,7 @@ FILES = {
     "desktop_installer_bundle/scripts/write-app-update-yml.cjs": "app-update.yml generator (updater feed)",
     "desktop_installer_bundle/scripts/delta-report.py": "DELTA-V2: blockmap differential estimator + payload-manifest diff (powers the differential-efficiency release gate)",
     "desktop_installer_bundle/scripts/hostile_env_smoke.ps1": "PERF-R6 B-1: hostile-env packaged-app smoke (poisoned PYTHON*/JAVA*/proxy/GBK -> ready + /chart 200 + clean logs)",
+    "desktop_installer_bundle/scripts/verify_kentang_services.py": "institutional gate: every kentang technique backend (KENTANG_SERVICE_SPECS) imports+resolves+instantiates in the packaged runtime (guards the v3.2.0 太乙/三式合一 kintaiyi_unavailable 404 class); wired into release_selfcheck.py",
     "desktop_installer_bundle/assets/installer.nsh": "NSIS hooks: disk-space gate, uninstall cleanup, OS gate",
     ".claude/skills/horosa-dev/SKILL.md": "the dev/sync/release runbook (sync playbook, jar rebuild, gotchas)",
 }

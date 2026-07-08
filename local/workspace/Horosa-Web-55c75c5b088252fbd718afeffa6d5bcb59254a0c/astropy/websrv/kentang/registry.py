@@ -138,7 +138,52 @@ KENTANG_SERVICE_SPECS = [
 
 
 import os
+import sys
 import threading
+
+
+def _import_kentang_service_module(spec):
+    """KENTANG_LAZY_MOUNT_SELF_HEAL — import a kentang service adapter module, self-healing a
+    poisoned ``sys.modules`` cache.
+
+    Root cause this guards (三式合一 太乙 ``sanshi.taiyi.kintaiyi_unavailable``): the background
+    services warmup swallows import errors (daemon + try/except), and a first-launch payload
+    materialization race (or any transient import hiccup) can leave the adapter module — or its
+    vendored engine package (e.g. ``kintaiyi``) — cached in ``sys.modules`` WITHOUT the expected
+    service class defined. A plain ``__import__`` then returns that partial cached module; the
+    subsequent ``getattr(module, class_name)`` raises ``AttributeError``; and because CherryPy
+    resolves mounted handlers via ``getattr`` on the lazy-mount proxy, that route then returns
+    **404 for the entire life of the process** — the warm dispatch never recovers on its own.
+
+    Guard: after importing, if the module is missing its service class, purge the adapter module
+    AND its vendor engine package (plus any partial submodules) from ``sys.modules`` and re-import
+    once from clean state. If it is still incomplete, raise a real ``ImportError`` so the failure
+    surfaces as a diagnosable 500 rather than a silent, permanent 404."""
+    module_name = spec["module"]
+    class_name = spec["class_name"]
+    engine = spec.get("engine")
+    try:
+        module = __import__(module_name, fromlist=[class_name])
+        if getattr(module, class_name, None) is not None:
+            return module
+    except Exception:
+        pass  # a poisoned engine submodule can make the first import raise — purge + retry below
+    # Poisoned / partial cache (classless adapter module, or a half-imported vendor engine such
+    # as kintaiyi): purge the adapter module AND its engine package (+ any partial submodules)
+    # from sys.modules, then re-import once from a clean state.
+    prefixes = [module_name]
+    if engine:
+        prefixes.append(engine)
+    for key in list(sys.modules):
+        if any(key == p or key.startswith(p + ".") for p in prefixes):
+            sys.modules.pop(key, None)
+    module = __import__(module_name, fromlist=[class_name])
+    if getattr(module, class_name, None) is None:
+        raise ImportError(
+            "kentang service module %r imported without class %r after self-heal purge "
+            "(engine=%r)" % (module_name, class_name, engine)
+        )
+    return module
 
 
 # v3.0.1 perf ROUND-3 R3 (HOROSA_KENTANG_LAZY_MOUNT): the original _load_service +
@@ -180,7 +225,7 @@ class _LazyMountedService(object):
             if impl is not None:
                 return impl
             spec = object.__getattribute__(self, "_spec")
-            module = __import__(spec["module"], fromlist=[spec["class_name"]])
+            module = _import_kentang_service_module(spec)
             service_cls = getattr(module, spec["class_name"])
             impl = service_cls()
             object.__setattr__(self, "_impl", impl)
@@ -198,7 +243,7 @@ class _LazyMountedService(object):
 
 
 def _load_service(spec):
-    module = __import__(spec["module"], fromlist=[spec["class_name"]])
+    module = _import_kentang_service_module(spec)
     service_cls = getattr(module, spec["class_name"])
     return service_cls()
 
