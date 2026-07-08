@@ -1,6 +1,6 @@
 import React from 'react';
 import { Spin, Empty, Pagination, Select, Input, InputNumber } from 'antd';
-import * as echarts from 'echarts';
+import echarts from './echartsCore';
 import { fetchCelestial, fetchMicrochronology, fetchDecadeOmens, fetchCelestialEvent } from '../../services/xuanshi';
 import { marked } from 'marked';
 import { resolveChartDate, collapseSoftBreaks } from './xuanshiDate';

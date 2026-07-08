@@ -1,6 +1,6 @@
 import React from 'react';
 import { Spin, Empty } from 'antd';
-import * as echarts from 'echarts';
+import echarts from './echartsCore';
 import chinaGeo from '../../assets/china.geo.json';
 import { fetchMap } from '../../services/xuanshi';
 

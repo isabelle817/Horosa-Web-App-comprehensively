@@ -65,4 +65,13 @@ echo "      boundless install -> astrostudy install -> astrostudycn install -> a
 echo "      then copy target/astrostudyboot.jar to local/workspace/runtime/windows/bundle/. apply.sh does NOT rebuild it,"
 echo "      and prepare:runtime's auto-build pulls boundless from .m2 (stale) — so the manual rebuild is mandatory."
 
-echo "== done. Verify: npm run selfcheck (windows-ahead sentinels must be 40/40). =="
+echo "== 7. performance overlays (天文馆渲染门控 + echarts 模块化;纯前端、只动时机/打包、可一键回退) =="
+# net-new:玄学史 echarts 模块化注册(整包 -> 按需 use())。
+cp "$OV/files/astrostudyui/src/components/xuanshi/echartsCore.js" "$WS/astrostudyui/src/components/xuanshi/echartsCore.js" && ok "echartsCore.js"
+# marker-guarded:Mac 若已合入同款优化,marker 命中即跳过 -> apply.sh 变 no-op(isLoopbackTarget 先例)。
+apply_patch planetariumRenderGatingEnabled astrostudyui/src/utils/perfFlags.js                          src__utils__perfFlags.js.patch
+apply_patch "perf:planetariumRenderGating" astrostudyui/src/components/planetarium/PlanetariumBabylon.js src__components__planetarium__PlanetariumBabylon.js.patch
+apply_patch "./echartsCore"                astrostudyui/src/components/xuanshi/XuanShiCelestial.js       src__components__xuanshi__XuanShiCelestial.js.patch
+apply_patch "./echartsCore"                astrostudyui/src/components/xuanshi/XuanShiMap.js             src__components__xuanshi__XuanShiMap.js.patch
+
+echo "== done. Verify: npm run selfcheck (windows-ahead / perf sentinels must all pass). =="
