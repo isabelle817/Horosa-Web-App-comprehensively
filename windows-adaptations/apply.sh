@@ -114,25 +114,22 @@ apply_patch PARAMHASH_PERSISTABLE_REV      astrostudysrv/astrostudy/src/main/jav
 echo "   ^^ astrostudy is BACKEND Java (base of astrostudycn+astrostudyboot). After this patch rebuild astrostudyboot.jar (SKILL gotcha #5):"
 echo "      astrostudy install -> astrostudycn install -> astrostudyboot clean package, then copy to bundle."
 
-echo "== 14. v3.0.1 perf ROUND-3 R3 (Python 冷启 -5-10s:kentang 全 17 service 惰性 mount + xuanshi idle 预热) =="
-# webchartsrv.py 里 mount_kentang_services() 原本同步 __import__ 17 个 spec,其中 webxuanshisrv 递归拉起 xuanshi
-# 整棵树(db + queries + celestial + editorial + 99MB SQLite bundles)。v3.0.0 新增,v2.6.9 无此路径 → 就是「同机器 v2.6.9 快 v3.0.0 慢」的元凶。
-# 根治式泛化:全 17 service 一律走 _LazyMountedService(CherryPy 挂载对象、method 触发时 importlib.import_module 一次并 memoize),
-# 未来任何新增大模块也不再引入启动 regression;另加 background daemon thread 睡 5s 后预热 webxuanshisrv,让第一次点玄学史 tab 也秒开。
-# 自证:mount_call_ms=12,018ms → 0.2ms(60,000× 加速),webxuanshisrv + 7 个 xuanshi 子模块从启动 tree 完全消失。
-# kill-switch HOROSA_KENTANG_LAZY_MOUNT=0(回退)、HOROSA_XUANSHI_WARMUP=0(关预热)、HOROSA_XUANSHI_LAZY_IMPORT=0(关 xuanshi 包 PEP 562 lazy)。
-# v3.2.1 追加(太乙事故第二层):_LazyMountedService 加载失败一律转 KentangServiceLoadError
-# (RuntimeError 子类)+ stderr 完整 traceback —— CherryPy dispatcher 用 getattr(node,name,None)
-# 走路由树,AttributeError 会被吞成「无此路由」永久静默 404(v3.2.0 太乙正是这么消失的)。
-# 守卫 marker 用最新的 KENTANG_LOUD_LOAD_FAIL:pristine/旧版文件必缺它 → patch 全量重放。
-apply_patch KENTANG_LOUD_LOAD_FAIL         astropy/websrv/kentang/registry.py            astropy__kentang__registry.lazyMountAll.py.patch
+echo "== 14. kentang 惰性挂载/自愈/响亮失败 —— v3.2.2 起全量上游化,registry 补丁退役 =="
+# 历史:惰性挂载(_LazyMountedService)/自愈(_import_kentang_service_module)/响亮失败
+# (KentangServiceLoadError)最初都是 Windows overlay(v3.0.1 R3 → v3.2.0 热修 → v3.2.1 根治)。
+# Mac v3.2.2 将同一架构原样上游化并强化(净化白名单 _PURGE_PROTECT_PREFIXES、HOROSA_KENTANG_LAZY
+# 回退旗、显式 prewarm_kentang_services 预热函数),registry.py 从此与 Mac 逐字节一致,补丁删除
+# (isLoopbackTarget #8 同款收敛)。selfcheck 哨兵改守 Mac 版 marker:KENTANG_LAZY_MOUNT_SELF_HEAL /
+# KentangServiceLoadError / _PURGE_PROTECT_PREFIXES / prewarm_kentang_services。
 apply_patch "xuanshi.lazyImport"           astropy/astrostudy/xuanshi/__init__.py        astropy__xuanshi__init.lazyImport.py.patch
-# ROUND-4 追加：该 patch 现同时携带 玄学史 global_summary 预热(首点数据物化)、七政 streamlit 错峰预热
-# (HOROSA_QIZHENG_WARMUP)、以及全技法泛化预热 _horosa_services_warmup(HOROSA_SERVICES_WARMUP，9s 起
-# 错峰逐个预导入其余 16 个懒挂载服务模块)。v3.2.1 追加 kentang_astropy_preimport_v1:预热线程最先
-# 缓存真 astropy 库(kintaiyi 重依赖),深度防御导入顺序类污染 + 太乙首点最大一次性成本挪进空闲期。
-# 守卫 marker 用最新的 kentang_astropy_preimport_v1：pristine/旧版文件必缺它 → patch 全量重放。
-apply_patch kentang_astropy_preimport_v1   astropy/websrv/webchartsrv.py                 astropy__webchartsrv.xuanshiWarmup.py.patch
+# webchartsrv 存活的唯一 Windows 增强(v3.2.2 收敛后):xuanshi_summary_warmup_v1 ——
+# kentang prewarm(Mac 版,盖住服务类加载)之后、STARTUP_GATE 打开之后,再物化一次
+# global_summary()(全表 SELECT + 译名 join + celestial,冷 ~2.3s):玄学史首点即秒开。
+# 旧 overlay 的 astropy 预导入(→ Mac _warm_real_astropy)、qizheng/16 服务错峰预热
+# (→ Mac prewarm_kentang_services)、/chart 三段计时(→ Mac _PY_CHART_TIMING 账本版)
+# 均已被 Mac v3.2.2 上游实现取代;HOROSA_CETIAN_LAZY 退役(v3.1.0 streamlit 桩使 cetian
+# 饿加载已廉价,收敛 Mac 语义)。守卫 marker 用 xuanshi_summary_warmup_v1。
+apply_patch xuanshi_summary_warmup_v1      astropy/websrv/webchartsrv.py                 astropy__webchartsrv.xuanshiWarmup.py.patch
 
 echo "== 14b. v3.2.1 太乙事故根因修复(streamlit 桩 dunder 守卫)=="
 # 根因:kinastro_common 的 _StubModule.__getattr__ 对任意属性(含 __file__)返回 _noop 函数;
@@ -181,20 +178,17 @@ apply_patch _JIEQI_FAST_APPROACH           astropy/astrostudy/jieqi/NongLi.py   
 # BirthJieQi(R3 patch 已重生成,现同时携带 R5 _ascChart):卯时/上升求解只读 ASC → 瘦 Chart(仅太阳、
 # needpars=False);3 个代表日期 golden 全等,398-490ms → 30-36ms。guard 沿用 HOROSA_JIEQI_FAST_APPROACH(§12 已应用则跳过)。
 
-echo "== 19. v3.0.1 perf ROUND-5 (webchartsrv 追加:cetian 懒挂载 + /chart 三段计时;patch 已并入 §14 同一文件) =="
-# §14 的 webchartsrv patch 已于 v3.1.0 基线重生成,现同时携带:HOROSA_CETIAN_LAZY(cetian 懒挂载;历史上
-# webcetiansrv 拖 streamlit=启动导入墙 49%,v3.1.0 上游 stub 后仍省引擎冷导入)、HOROSA_PY_CHART_TIMING
-# (=1 时打 CHART_PY_PERF init/build/encode 三段,纯观测)。
-# 注:Windows ROUND-5 的 HOROSA_PY_WARMUP_BLOCKING/_run_startup_warmups 已被 v3.1.0 上游「启动就绪门」
-# (STARTUP_GATE + HOROSA_PY_WARMUP_SYNC,warmup 后台线程 + 业务 POST 门闸)取代收编,不再由本 overlay 携带。
-# guard 沿用 §14 的 HOROSA_SERVICES_WARMUP(pristine 必缺 → 全量重放,patch 含全部追加)。
+echo "== 19. (退役归档) webchartsrv cetian 懒挂载 + /chart 三段计时 —— v3.2.2 收敛 =="
+# HOROSA_CETIAN_LAZY:v3.1.0 上游 streamlit 桩后 cetian 饿加载已廉价,Mac 实测保持饿加载 → 收敛
+# Mac 语义,退役。HOROSA_PY_CHART_TIMING:Mac v3.2.2 上游化为账本版(_PY_CHART_TIMING → py.chart_req
+# 三段写 HOROSA_LEDGER_FILE;壳层 pythonEnv 仍注 HOROSA_PY_CHART_TIMING=1 + 账本 env)。零补丁残留。
 
 echo "== 20. v3.0.1 perf ROUND-5 B-F3 (农历「日级」外部缓存读写桌面版停用;年表持久化不动) — REQUIRES a jar rebuild =="
 # NongliHelper:每个未见过的日期一读一写外部缓存(读基本必 miss)。日行是内存月表的纯推导,重算逐字节
 # 一致 → env HOROSA_NONGLI_DAY_PERSIST=0(桌面壳注入)跳过日级读写;env 缺省=原行为(Mac/服务器零变化)。
 apply_patch nongli_day_persist_v1          astrostudysrv/astrostudy/src/main/java/spacex/astrostudy/helper/NongliHelper.java astrostudy__NongliHelper.dayPersist.java.patch
-# OnlyFourColumns.forwardDirect:流水 println(每盘一行 stdout 管道噪音,零响应字节)删除。
-apply_patch quiet_println_v1               astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java astrostudycn__OnlyFourColumns.quietPrintln.java.patch
+# OnlyFourColumns.forwardDirect 流水 println 删除:Mac v3.2.2 上游化(WS-3b 注释版),补丁退役,
+# 文件与 Mac 逐字节一致;selfcheck 哨兵改守「WS-3b」注释 marker(println 不回归)。
 echo "   ^^ astrostudy+astrostudycn are BACKEND Java. After these patches rebuild astrostudyboot.jar (SKILL gotcha #5):"
 echo "      astrostudy install -> astrostudycn install -> astrostudyboot clean package, then copy to bundle."
 

@@ -8,7 +8,7 @@ additionally reconstructible from session records. See windows-adaptations/READM
 
 | file | sha256 | bytes | git | purpose |
 |---|---|---|---|---|
-| `.claude/skills/horosa-dev/SKILL.md` | `95ce7eb26d8b50ade9b788cfbf89c70a499b8b128e91d08962e1b9e7eb8f9c6a` | 169912 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
+| `.claude/skills/horosa-dev/SKILL.md` | `b2be64fec93dce9dddd4bc4b25750059335b4fc9b035d9888e54a306de4051f2` | 173175 | gitignored | the dev/sync/release runbook (sync playbook, jar rebuild, gotchas) |
 | `desktop_installer_bundle/assets/installer.nsh` | `ada65772c603799a9a280807aa31ad4ce9f076ebbb3f8beba4fbf8df082975f6` | 57741 | gitignored | NSIS hooks: disk-space gate, uninstall cleanup, OS gate, details-visible install log + phase banners |
 | `desktop_installer_bundle/electron/build-uber-jar.py` | `350016fb4d41b2f60644737e37cf7e3e7a698849efd1d4824cdfefe177e7f9cc` | 19280 | gitignored | fat-jar -> single uber jar merge (classpath.idx first-wins + SPI union + dir entries) enabling fast static CDS |
 | `desktop_installer_bundle/electron/defender-exclusion.js` | `c9630a39c99e1abde7f5c5a847bfe7c2af8a9cfa5fb27dc979ba48048197c651` | 7369 | gitignored | consented Windows Defender exclusion of the app runtime (~500x on-access I/O tax fix) |
@@ -16,7 +16,7 @@ additionally reconstructible from session records. See windows-adaptations/READM
 | `desktop_installer_bundle/electron/logger.js` | `4d4863ef4451d498d9593ab650ec6ab6cfd77df1e1a4e7acd1356805fd5e46a8` | 3627 | gitignored | shell logger + rotation |
 | `desktop_installer_bundle/electron/main.js` | `f45c93a5f689641cbdd2748f245e92c93117aad6d011d847c8f3a85e866966f3` | 97940 | gitignored | Electron main process (bootstrap, updater, windows, Defender-exclusion hook) |
 | `desktop_installer_bundle/electron/preload.js` | `3e509d2fb94771909d73d48855f25d031e50abc262aa408a666a5f5bf6cb7bde` | 3391 | gitignored | renderer bridge (window.horosaDesktop) |
-| `desktop_installer_bundle/electron/service-manager.js` | `1dc0e8b2ef0104a95a82e55eb19b3c2104a8a41659f2152ffbbfc6bbaa18c980` | 164311 | gitignored | runtime manager: python/java spawn, readiness gate, uber-jar build, static+dynamic layered CDS, port retry |
+| `desktop_installer_bundle/electron/service-manager.js` | `78dc5af410bfd5bcf8f0b9c33c6b3a56c408d4bd60e14645f6a5aeb3eaaaf0a2` | 166185 | gitignored | runtime manager: python/java spawn, readiness gate, uber-jar build, static+dynamic layered CDS, port retry |
 | `desktop_installer_bundle/electron/service-manager.test.js` | `5a6f622b1c871632712ddf19dcf8f3a3e6fcc3b14dfa2fbe71c76ac8ab807f2b` | 58340 | gitignored | node:test suite for the runtime manager |
 | `desktop_installer_bundle/electron/update-flow.js` | `ea1164a13fdf91c4c71565813ea4f37d467f207066c7cad2718b46e59ab3f597` | 3630 | gitignored | auto-update flow (sidecar-stop-before-install, progress window) |
 | `desktop_installer_bundle/electron/update-flow.test.js` | `d4ef0ee099429329fae93b5f958817f777f55b2c1cb9d24c6a6ecec1233109d3` | 3189 | gitignored | node:test suite for the update flow |
@@ -29,7 +29,7 @@ additionally reconstructible from session records. See windows-adaptations/READM
 | `desktop_installer_bundle/scripts/hostile_env_smoke.ps1` | `a3d1323f1236868907352caea4078552ca67932ce692c6135dd440b950096da5` | 9359 | gitignored | PERF-R6 B-1: hostile-env packaged-app smoke (poisoned PYTHON*/JAVA*/proxy/GBK -> ready + /chart 200 + clean logs) |
 | `desktop_installer_bundle/scripts/patch-nsis-template.cjs` | `e58c0c01cbbcc4de184998768a012aa122dc875dc877faa997c454d0433847e2` | 4439 | gitignored | PERF-R7 I-1 install-speed: build-time controlled patch of app-builder-lib extractAppPackage.nsh (same-volume move-first instead of the second full-tree copy; version-pinned, exact-anchor, idempotent) |
 | `desktop_installer_bundle/scripts/release_preflight.py` | `574d5b2264f57e76f4ff541efa3f8cb46b8e668707e74b51f74158aa26b26d50` | 4840 | gitignored | pre-release env checks |
-| `desktop_installer_bundle/scripts/release_selfcheck.py` | `2682bfb32af5163a91dcad8bf48579c61b7a6f25c8d57de536432302c114d757` | 84129 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
+| `desktop_installer_bundle/scripts/release_selfcheck.py` | `74284a3cf1c179803cdd82dc9033937e9460aa62e0108759b36f0437eed5d18f` | 85185 | gitignored | release gate: sentinels, hashes, feed, signature, THIS manifest |
 | `desktop_installer_bundle/scripts/sign-update.cjs` | `4359ec4d95fc9fb801c997f793fed3fde528691de5f3dc89633fb2c5edc60317` | 5887 | gitignored | Ed25519 signing of release assets |
 | `desktop_installer_bundle/scripts/stage-runtime.cjs` | `e892e5465df1cbed27e8d5aef20cca8126e28b98676dcff479fa5376cb0809e6` | 31150 | gitignored | stages local/workspace/runtime -> build/app-runtime payload |
 | `desktop_installer_bundle/scripts/verify_all_services.py` | `8bc1f3ea37939dd3f89681229a290a722d319b59f925fc089bbcb8f78da73713` | 16228 | gitignored | institutional gate: launches the packaged chart service and POSTs a REAL request to EVERY mounted python route (eager + kentang) in the post-warmup production state, with a mount-drift check (new service without a probe row = release FAIL); wired into release_selfcheck.py |

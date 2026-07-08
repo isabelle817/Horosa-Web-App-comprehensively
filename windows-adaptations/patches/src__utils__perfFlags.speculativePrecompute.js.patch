@@ -1,10 +1,10 @@
 diff --git a/astrostudyui/src/utils/perfFlags.js b/astrostudyui/src/utils/perfFlags.js
-index d81da82..cca39cb 100644
+index a344fe4..b16ec72 100644
 --- a/astrostudyui/src/utils/perfFlags.js
 +++ b/astrostudyui/src/utils/perfFlags.js
-@@ -49,3 +49,49 @@ export function freezeInactiveTabsEnabled(){
- export function requestDedupeEnabled(){
- 	return flagEnabled('horosa.perf.requestDedupe');
+@@ -59,3 +59,49 @@ export function techniqueCacheEnabled(){
+ export function idleWarmQueueEnabled(){
+ 	return flagEnabled('horosa.perf.idleWarmQueue');
  }
 +
 +// 天文馆性能门控(只动渲染时机,不动任何排盘/外推内容):
@@ -52,3 +52,4 @@ index d81da82..cca39cb 100644
 +export function speculativePrecomputeEnabled(){
 +	return flagEnabled('horosa.perf.speculativePrecompute');
 +}
+
