@@ -1,0 +1,23 @@
+diff --git a/astrostudyui/src/utils/perfFlags.js b/astrostudyui/src/utils/perfFlags.js
+index cd7397c..0465917 100644
+--- a/astrostudyui/src/utils/perfFlags.js
++++ b/astrostudyui/src/utils/perfFlags.js
+@@ -13,6 +13,7 @@
+ //   localStorage.setItem('horosa.perf.planetariumIdleHeartbeat','0')// 天文馆:按需渲染的 1fps 兜底心跳
+ //   localStorage.setItem('horosa.perf.planetariumMetricsThrottle','0')// 天文馆:FPS/网格读数节流到 ~2Hz
+ //   localStorage.setItem('horosa.perf.planetariumTimeEditDebounce','0')// 天文馆:可编辑时间的后端重算去抖
++//   localStorage.setItem('horosa.perf.techniqueResultCache','0')// 技法结果:确定性技法(紫微/七政…)同参复用
+ // 恢复:对应 key removeItem 或设 '1'。
+ 
+ function flagEnabled(key){
+@@ -74,3 +75,10 @@ export function planetariumMetricsThrottleEnabled(){
+ export function planetariumTimeEditDebounceEnabled(){
+ 	return flagEnabled('horosa.perf.planetariumTimeEditDebounce');
+ }
++
++// 技法结果缓存:对**确定性纯计算**技法(紫微本盘/七政等,同 birth+设置必产同结果、无随机、无「现在时刻」依赖)
++// 做「同参复用 + 在途合并」,让切换/来回访问命中即秒回(返回同一结果深拷贝,与直连逐值等价、只更快)。
++// 关掉即回到每次直连后端。严禁用于卜卦随机起卦/塔罗/AI 等(见 _requestCache.js 头部约束)。
++export function techniqueResultCacheEnabled(){
++	return flagEnabled('horosa.perf.techniqueResultCache');
++}
