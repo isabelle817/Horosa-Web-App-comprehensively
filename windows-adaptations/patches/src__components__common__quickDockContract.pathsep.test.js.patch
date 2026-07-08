@@ -1,0 +1,40 @@
+diff --git a/astrostudyui/src/components/common/__tests__/quickDockContract.test.js b/astrostudyui/src/components/common/__tests__/quickDockContract.test.js
+index 60fb52e..57fed28 100644
+--- a/astrostudyui/src/components/common/__tests__/quickDockContract.test.js
++++ b/astrostudyui/src/components/common/__tests__/quickDockContract.test.js
+@@ -97,12 +97,16 @@ describe('QuickDockBar 组件契约', () => {
+ describe('全站快捷栏静态契约(源码扫描)', () => {
+ 	const files = listMainFiles();
+ 	const read = (f)=>fs.readFileSync(f, 'utf8');
++	// horosa_win_pathsep_posix_v1:path.relative 在 Windows 返回反斜杠分隔,与下方
++	// WHITELIST/EXEMPT 的正斜杠字面量不匹配 → 白名单页被误判为 offender、契约测试假红。
++	// 归一到 POSIX 分隔符再比对(macOS path.sep='/' 时为 no-op,行为逐字节不变;跨平台 bug,建议上游化 Mac)。
++	const relPosix = (f)=>path.relative(COMPONENTS_DIR, f).split(path.sep).join('/');
+ 
+ 	test('裸 dock 标记只允许出现在保形白名单(其余页必须走 QuickDockBar)', () => {
+ 		// kinastro/astro 为用户认可的保形页(动态数据门控),finance 未落地跳过
+ 		const WHITELIST = ['common/QuickDockBar.js', 'astro/AstroChartMain.js', 'kinastro/KinAstroMain.js'];
+ 		const offenders = files.filter((f)=>read(f).includes('horosa-bottom-quick-title'))
+-			.map((f)=>path.relative(COMPONENTS_DIR, f))
++			.map((f)=>relPosix(f))
+ 			.filter((rel)=>!WHITELIST.includes(rel));
+ 		expect(offenders).toEqual([]);
+ 	});
+@@ -125,7 +129,7 @@ describe('全站快捷栏静态契约(源码扫描)', () => {
+ 		};
+ 		const hits = [];
+ 		files.forEach((f)=>{
+-			const rel = path.relative(COMPONENTS_DIR, f);
++			const rel = relPosix(f);
+ 			if(EXEMPT.includes(rel)){ return; }
+ 			dockSpans(read(f)).forEach((span)=>{
+ 				FORBIDDEN.forEach((label)=>{
+@@ -144,7 +148,7 @@ describe('全站快捷栏静态契约(源码扫描)', () => {
+ 		const offenders = files.filter((f)=>{
+ 			const src = read(f);
+ 			return src.includes('QuickDockBar') && (/\blookup=\{/.test(src) || /\blookup:\s*\{/.test(src));
+-		}).map((f)=>path.relative(COMPONENTS_DIR, f));
++		}).map((f)=>relPosix(f));
+ 		expect(offenders).toEqual([]);
+ 	});
+ 

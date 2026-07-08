@@ -1,8 +1,8 @@
 diff --git a/astrostudysrv/astrostudy/src/main/java/spacex/astrostudy/helper/ParamHashCacheHelper.java b/astrostudysrv/astrostudy/src/main/java/spacex/astrostudy/helper/ParamHashCacheHelper.java
-index 566bcc6..7ae08b5 100644
+index d51715a..a47d80e 100644
 --- a/astrostudysrv/astrostudy/src/main/java/spacex/astrostudy/helper/ParamHashCacheHelper.java
 +++ b/astrostudysrv/astrostudy/src/main/java/spacex/astrostudy/helper/ParamHashCacheHelper.java
-@@ -198,6 +198,18 @@ public class ParamHashCacheHelper {
+@@ -208,6 +208,18 @@ public class ParamHashCacheHelper {
  
  				obj = fun.apply(new HashMap<String, Object>(req));
  				if(isCacheable(obj)) {
@@ -21,7 +21,7 @@ index 566bcc6..7ae08b5 100644
  					saveToRedis(cacheKey, obj, expInSec);
  					saveToLocal(cleanScope, hash, obj, expInSec);
  				}
-@@ -479,6 +491,29 @@ public class ParamHashCacheHelper {
+@@ -504,6 +516,29 @@ public class ParamHashCacheHelper {
  		return true;
  	}
  

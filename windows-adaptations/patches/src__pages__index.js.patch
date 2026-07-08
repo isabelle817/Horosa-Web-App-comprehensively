@@ -1,5 +1,5 @@
 diff --git a/astrostudyui/src/pages/index.js b/astrostudyui/src/pages/index.js
-index 034ccd8..090faed 100644
+index dddf321..ce2ac84 100644
 --- a/astrostudyui/src/pages/index.js
 +++ b/astrostudyui/src/pages/index.js
 @@ -340,7 +340,50 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
@@ -64,7 +64,7 @@ index 034ccd8..090faed 100644
              setTimeout(()=>{
                  if(!(predictHook[key] && predictHook[key].fun)){ return; }
                  if(key === 'indiachart' || key === 'cntradition' || key === 'jieqichart'
-@@ -463,10 +509,18 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
+@@ -469,10 +515,18 @@ function AstroIndex({dispatch, astro, app, user, rules, }){
          if(values.southchart !== undefined && values.southchart !== null){
              flds.southchart.value = values.southchart;
          }
