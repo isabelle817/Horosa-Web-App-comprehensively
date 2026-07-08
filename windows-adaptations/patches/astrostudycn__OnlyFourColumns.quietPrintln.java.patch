@@ -1,0 +1,14 @@
+diff --git a/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java b/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java
+index 6e6f42b..d0cb1fc 100644
+--- a/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java
++++ b/astrostudysrv/astrostudycn/src/main/java/spacex/astrostudycn/model/OnlyFourColumns.java
+@@ -79,7 +79,8 @@ public class OnlyFourColumns extends BaZi {
+ 	private void forwardDirect(PhaseType phaseType) {
+ 		String monthGanzi = this.fourColumns.month.ganzi;
+ 		int monthIdx = StemBranch.JiaZiIndex.get(monthGanzi);
+-		System.out.println(this.nextJieSeconds/(24 * 3600));
++		// HOROSA_BAZI_DIRECT_QUIET quiet_println_v1 — stray debug println removed (stdout pipe noise,
++		// zero response bytes; value was never part of any API payload)
+ 		this.directAge = this.nextJieSeconds * DirectTimeFactor / (365.25 * 24 * 3600);
+ 		int sec = ConvertUtility.getValueAsInt(this.nextJieSeconds * DirectTimeFactor);
+ 		

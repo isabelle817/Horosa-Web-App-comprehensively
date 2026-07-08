@@ -726,6 +726,14 @@ class PerChart:
     def reinit(self):
         self.orientOccident = None
         self.orientOccidentHouses = None
+        # v3.0.1 perf ROUND-5 请求内 memo:同一 /chart 请求内被重复计算的纯函数结果(重复调用逐字节
+        # 等值已实测证明;各访问器处有防坑注释)。与 orientOccident 同生命周期,reinit 即全部失效。
+        self._fixedStars67Cache = None
+        self._adjustSu28Cache = None
+        self._rawSu28Cache = None
+        self._sunRiseCache = None
+        self._surroundAttacksCache = None
+        self._mutualsCache = None
         self.dynchart = ChartDynamics(self.chart)
         self.dynchart.simpleAsp = self.simpleAsp
         self.applyOrbOverrides()
@@ -1248,7 +1256,14 @@ class PerChart:
 
         return res
 
+    # v3.0.1 perf ROUND-5:besiegementDetail 会再次调用本方法(10×10 inDignities 对),同一响应的
+    # mutuals 键已算过。memo;只读互容判定,无状态变异。重复调用逐字节等值已实测。
     def getMutuals(self):
+        if self._mutualsCache is None:
+            self._mutualsCache = self._computeMutuals()
+        return self._mutualsCache
+
+    def _computeMutuals(self):
         res = []
         planets = const.LIST_SEVEN_PLANETS.copy()
         if self.tradition == False:
@@ -1499,8 +1514,7 @@ class PerChart:
             planets = self.objlists
         planets = planets.copy()
         planets.extend(const.LIST_ANGLES)
-        stars = self.chart.getFixedStars()
-        self.relocateSouthObjects(stars)
+        stars = self._getFixedStars67Cached()
         for planet in planets:
             fixstars = {
                 'id': planet,
@@ -1692,7 +1706,15 @@ class PerChart:
             'MinDelta': [] if len(alltmp) == 0 else alltmp[0]
         }
 
+    # v3.0.1 perf ROUND-5:besiegementDetail 会再次调用本方法,而 webchartsrv 同一响应里已在
+    # surround.attacks 键算过一遍(4 层 7×8×6×8 相位点循环 ×7 目标)。memo;相位数学只读不可变的
+    # lon/sign 状态(getAspects 的 sunPos 变异不进本函数)。重复调用逐字节等值已实测。
     def surroundAttacks(self):
+        if self._surroundAttacksCache is None:
+            self._surroundAttacksCache = self._computeSurroundAttacks()
+        return self._surroundAttacksCache
+
+    def _computeSurroundAttacks(self):
         res = {}
         planets = const.LIST_SEVEN_PLANETS.copy()
         # if self.tradition == False:
@@ -2191,7 +2213,24 @@ class PerChart:
                 continue
 
 
+    # v3.0.1 perf ROUND-5:同一请求 'fixedStarSu28' 与 'su28Adjust' 两个键各调一次本方法,每次都从
+    # swisseph 重取 28 星再重做同一套 ra 调整(单次 ~50ms)。memo **成品列表**(★方法会原地改 star.ra,
+    # 缓存成品保证调整恰好执行一次);消费者只读。重复调用逐字节等值已实测证明。
     def getAdjustFixedStarSu28(self):
+        if self._adjustSu28Cache is None:
+            self._adjustSu28Cache = self._computeAdjustFixedStarSu28()
+        return self._adjustSu28Cache
+
+    # v3.0.1 perf ROUND-5:guo74.virtualSu28 原本逐星 chart.getFixedStar()×28 只为读 decl —— 同一请求
+    # 对同一批 28 星的第三次取数。这里缓存一次**原始批**(未 relocate、未调 ra,与逐星取值同源同值:
+    # 同 (star, jd, flags) 的 decl 确定性,重复取数逐字节等值已实测)。与上面的成品缓存严格分离:
+    # 成品路径自己另取一批再变异,绝不共享对象,防变异串染。消费者(guo74)只读 decl。
+    def getRawFixedStarSu28Cached(self):
+        if self._rawSu28Cache is None:
+            self._rawSu28Cache = self.chart.getFixedStartsSu28()
+        return self._rawSu28Cache
+
+    def _computeAdjustFixedStarSu28(self):
         stars = self.chart.getFixedStartsSu28()
         self.relocateSouthObjects(stars)
         res = []
@@ -2238,9 +2277,19 @@ class PerChart:
         self.fillPlanetSu28(res)
         return res
 
+    # v3.0.1 perf ROUND-5:67 恒星表在同一请求被 getStars 与 getFixedStars 各全量重算一次(flatlib 每次
+    # 从 swisseph 重取 67 星,swisseph 逐星重扫 sefstars.txt,单次 ~130ms)。取一次 + relocate 一次后共享;
+    # 两个消费者均只读。★防坑:relocateSouthObjects 是 +180° 原地变换,必须缓存在 relocate **之后**,
+    # 否则南盘(lat<0)跑两次会把变换抵消。重复调用 jsonpickle 输出逐字节等值已实测证明。
+    def _getFixedStars67Cached(self):
+        if self._fixedStars67Cache is None:
+            stars = self.chart.getFixedStars()
+            self.relocateSouthObjects(stars)
+            self._fixedStars67Cache = stars
+        return self._fixedStars67Cache
+
     def getFixedStars(self):
-        stars = self.chart.getFixedStars()
-        self.relocateSouthObjects(stars)
+        stars = self._getFixedStars67Cached()
         res = []
         for id in const.LIST_FIXED_STARS:
             obj = stars.content[id]
@@ -2335,7 +2384,15 @@ class PerChart:
         daystar = dayerStar[day]
         return daystar
 
+    # v3.0.1 perf ROUND-5:日出求解(最多 50 次迭代建瘦 Chart)同一请求跑 2-3 次('sunRiseTime' 键 +
+    # getTimerStar 内 + guolao yumao 模式再一次)。memo 结果 dict;消费者只读 timeStr/datetime.jd,
+    # 从不改写(已核)。重复调用逐字节等值已实测。
     def getSunRiseTime(self):
+        if self._sunRiseCache is None:
+            self._sunRiseCache = self._computeSunRiseTime()
+        return self._sunRiseCache
+
+    def _computeSunRiseTime(self):
         dt = Datetime(self.date, "05:00:00", self.zone)
         dist = 99
         speed = 1 / (4 / 60 / 24)
