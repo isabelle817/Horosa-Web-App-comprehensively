@@ -120,13 +120,27 @@ echo "== 14. v3.0.1 perf ROUND-3 R3 (Python 冷启 -5-10s:kentang 全 17 service
 # 未来任何新增大模块也不再引入启动 regression;另加 background daemon thread 睡 5s 后预热 webxuanshisrv,让第一次点玄学史 tab 也秒开。
 # 自证:mount_call_ms=12,018ms → 0.2ms(60,000× 加速),webxuanshisrv + 7 个 xuanshi 子模块从启动 tree 完全消失。
 # kill-switch HOROSA_KENTANG_LAZY_MOUNT=0(回退)、HOROSA_XUANSHI_WARMUP=0(关预热)、HOROSA_XUANSHI_LAZY_IMPORT=0(关 xuanshi 包 PEP 562 lazy)。
-apply_patch HOROSA_KENTANG_LAZY_MOUNT      astropy/websrv/kentang/registry.py            astropy__kentang__registry.lazyMountAll.py.patch
+# v3.2.1 追加(太乙事故第二层):_LazyMountedService 加载失败一律转 KentangServiceLoadError
+# (RuntimeError 子类)+ stderr 完整 traceback —— CherryPy dispatcher 用 getattr(node,name,None)
+# 走路由树,AttributeError 会被吞成「无此路由」永久静默 404(v3.2.0 太乙正是这么消失的)。
+# 守卫 marker 用最新的 KENTANG_LOUD_LOAD_FAIL:pristine/旧版文件必缺它 → patch 全量重放。
+apply_patch KENTANG_LOUD_LOAD_FAIL         astropy/websrv/kentang/registry.py            astropy__kentang__registry.lazyMountAll.py.patch
 apply_patch "xuanshi.lazyImport"           astropy/astrostudy/xuanshi/__init__.py        astropy__xuanshi__init.lazyImport.py.patch
 # ROUND-4 追加：该 patch 现同时携带 玄学史 global_summary 预热(首点数据物化)、七政 streamlit 错峰预热
 # (HOROSA_QIZHENG_WARMUP)、以及全技法泛化预热 _horosa_services_warmup(HOROSA_SERVICES_WARMUP，9s 起
-# 错峰逐个预导入其余 16 个懒挂载服务模块)。守卫 marker 用最新的 HOROSA_SERVICES_WARMUP：同步后的
-# pristine 文件必缺它 → patch 全量重放；patch 内含全部预热(R3 xuanshi + R4 三项)。
-apply_patch HOROSA_SERVICES_WARMUP         astropy/websrv/webchartsrv.py                 astropy__webchartsrv.xuanshiWarmup.py.patch
+# 错峰逐个预导入其余 16 个懒挂载服务模块)。v3.2.1 追加 kentang_astropy_preimport_v1:预热线程最先
+# 缓存真 astropy 库(kintaiyi 重依赖),深度防御导入顺序类污染 + 太乙首点最大一次性成本挪进空闲期。
+# 守卫 marker 用最新的 kentang_astropy_preimport_v1：pristine/旧版文件必缺它 → patch 全量重放。
+apply_patch kentang_astropy_preimport_v1   astropy/websrv/webchartsrv.py                 astropy__webchartsrv.xuanshiWarmup.py.patch
+
+echo "== 14b. v3.2.1 太乙事故根因修复(streamlit 桩 dunder 守卫)=="
+# 根因:kinastro_common 的 _StubModule.__getattr__ 对任意属性(含 __file__)返回 _noop 函数;
+# 真 astropy 库(kintaiyi/太乙的依赖)导入期 inspect.getmodule() 遍历 sys.modules 读每个模块的
+# __file__(期望 str)→ 函数.endswith 炸 AttributeError → kintaiyi 导入永久失败 → CherryPy 吞成
+# 静默 404。七政/玄学史预热(+10/14s)先注入桩、用户首点太乙必在其后 → Windows 必现。
+# 修:dunder 探测一律 AttributeError 拒答(hasattr(stub,'__file__')=False,标准内省安全跳过);
+# 具名属性语义不变。跨平台 bug(Mac 用户先开七政再开太乙同样触发)→ 建议上游化到 Mac。
+apply_patch stub_dunder_guard_v1           astropy/websrv/kentang/kinastro_common.py     astropy__kentang__kinastro_common.stubDunderGuard.py.patch
 
 echo "== 15. v3.0.1 perf ROUND-4 P0 (log4j Windows 缺陷：6 个程序化 appender 以字面 env:HOME 模板建文件, NTFS 拒绝 → 启动报错刷屏 + perf/错误日志静默丢失) — REQUIRES a jar rebuild =="
 # 根因：AppLoggers.createLog/changeLogFile/getBaseDir 用 getStrSubstitutor().getVariableResolver().lookup("basedir")

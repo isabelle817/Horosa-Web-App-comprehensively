@@ -28,7 +28,11 @@ if _ASTRO not in sys.path:
 
 import pytest  # noqa: E402
 
-from websrv.kentang.registry import _import_kentang_service_module  # noqa: E402
+from websrv.kentang.registry import (  # noqa: E402
+    KentangServiceLoadError,
+    _LazyMountedService,
+    _import_kentang_service_module,
+)
 
 
 _PROBE_NAME = "horosa_kentang_selfheal_probe_srv"
@@ -110,3 +114,47 @@ def test_genuinely_missing_service_raises_not_silent():
     spec = {"module": "horosa_kentang_definitely_absent_zzz", "class_name": "Nope", "engine": None}
     with pytest.raises(Exception):
         _import_kentang_service_module(spec)
+
+
+def test_lazy_proxy_load_failure_is_never_attributeerror():
+    """KENTANG_LOUD_LOAD_FAIL — the v3.2.1 hardening.
+
+    CherryPy's dispatcher walks the tree with ``getattr(node, name, None)``, which swallows
+    AttributeError as "no such route". The v3.2.0 太乙 outage escaped as AttributeError (the
+    streamlit stub returned a function for ``__file__`` and the real astropy library's
+    import-time inspect walk died) → permanent silent 404. The lazy proxy must therefore wrap
+    ANY load failure — AttributeError included — into KentangServiceLoadError (a RuntimeError
+    subclass) so it surfaces as a diagnosable 5xx.
+    """
+    tmpdir = tempfile.mkdtemp()
+    sys.path.insert(0, tmpdir)
+    mod_name = "horosa_kentang_attrerr_probe_srv"
+    try:
+        # adapter whose import dies with AttributeError — the exact poison shape of v3.2.0
+        with open(os.path.join(tmpdir, mod_name + ".py"), "w", encoding="utf-8") as fh:
+            fh.write("raise AttributeError(\"'function' object has no attribute 'endswith'\")\n")
+        importlib.invalidate_caches()
+        proxy = _LazyMountedService({"module": mod_name, "class_name": "ProbeSrv", "engine": None})
+
+        with pytest.raises(KentangServiceLoadError) as exc_info:
+            proxy.pan  # what CherryPy dispatch does for /<mount>/pan
+
+        assert not isinstance(exc_info.value, AttributeError), \
+            "load failure escaped as AttributeError - CherryPy would silently 404 the route"
+        assert isinstance(exc_info.value, RuntimeError)
+        # and getattr-with-default (the dispatcher idiom) must NOT swallow it either
+        with pytest.raises(KentangServiceLoadError):
+            getattr(proxy, "pan", None)
+    finally:
+        sys.modules.pop(mod_name, None)
+        if tmpdir in sys.path:
+            sys.path.remove(tmpdir)
+
+
+def test_lazy_proxy_dunder_probe_stays_cheap_attributeerror():
+    """Dunder probes on the proxy must stay AttributeError (no load, no wrap) — repr/type/hasattr
+    introspection on an unloaded mount must not pull the implementation or turn into a 500."""
+    proxy = _LazyMountedService({"module": "horosa_kentang_never_loaded_zzz", "class_name": "X", "engine": None})
+    with pytest.raises(AttributeError):
+        proxy.__wrapped__  # noqa: B018
+    assert getattr(proxy, "__wrapped__", None) is None

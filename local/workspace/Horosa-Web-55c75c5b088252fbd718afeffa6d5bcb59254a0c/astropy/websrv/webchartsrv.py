@@ -642,6 +642,16 @@ if __name__ == '__main__':
         if _os_sw.environ.get('HOROSA_SERVICES_WARMUP', '1').lower() in ('0', 'false', 'no', 'off'):
             return
         def _run():
+            # kentang_astropy_preimport_v1:真 astropy(PyPI 天文库,kintaiyi 太乙引擎的重依赖,
+            # 冷导入 ~1-2s)在任何技法预热/桩注入之前先行缓存进 sys.modules。双重收益:
+            # ① 深度防御——astropy 导入期会 inspect.getmodule() 遍历 sys.modules 做内省,
+            #    任何后来者(桩/劣质模块)都无法再影响它(v3.2.0 太乙 404 的导入顺序类根因,
+            #    根修在 kinastro_common 的 stub_dunder_guard_v1,这里把整类顺序依赖归零);
+            # ② 太乙首点最大的一次性导入成本挪进启动后空闲期。失败静默(首点自付,与现状一致)。
+            try:
+                import astropy.units  # noqa: F401
+            except Exception:
+                pass
             _time_sw.sleep(18.0)  # PERF-R6:28s→18s(排在 xuanshi/qizheng 之后,0.8s 间距不变)
             for _mod in (
                 # cetian 置首:历史上它拖 streamlit(启动导入墙的 49%,ROUND-5 起改为懒挂载;
