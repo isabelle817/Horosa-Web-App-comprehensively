@@ -2,19 +2,23 @@ import { Component } from 'react';
 import { Row, Col, InputNumber } from 'antd';
 import * as AstroConst from '../../constants/AstroConst';
 import { saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
-import { buildTriplicityPeriods, buildTriplicityRulersSnapshotText, TRIPLICITY_DIVISIONS, TRIPLICITY_HOUSE_SIGS, TRIPLICITY_DEFAULT_OPTS, PLANETARY_PERIOD_YEARS } from '../../utils/triplicityRulers';
+import { buildTriplicityPeriods, buildTriplicityRulersSnapshotText, TRIPLICITY_DIVISIONS, TRIPLICITY_SYSTEMS, TRIPLICITY_SYSTEM_HINTS, TRIPLICITY_HOUSE_SIGS, TRIPLICITY_DEFAULT_OPTS, PLANETARY_PERIOD_YEARS } from '../../utils/triplicityRulers';
 import { symbolWithMeaning } from './AstroExtraCommon';
-import { XQSelect as Select } from '../xq-ui';
+import { XQSelect as Select, XQSegmented } from '../xq-ui';
 import styles from '../../css/styles.less';
 
 const Option = Select.Option;
+// 三分体系切换项（默认多罗特＝现状）。
+const TRIP_SYSTEM_OPTIONS = Object.keys(TRIPLICITY_SYSTEMS).map((k) => ({ value: k, label: TRIPLICITY_SYSTEMS[k] }));
 const ANGULARITY_COLOR = { angular: 'var(--horosa-direction-level-1, #2e7d32)', succedent: 'var(--horosa-direction-level-3, #b8860b)', cadent: 'var(--horosa-cinnabar, #b71c1c)' };
 const ANGULARITY_CN = { angular: '角宫·旺', succedent: '续宫·中', cadent: '果宫·衰' };
 
 class AstroTriplicityRulers extends Component{
 	constructor(props){
 		super(props);
-		this.state = { opts: { ...TRIPLICITY_DEFAULT_OPTS }, data: null };
+		// 三分体系初值优先取流派预设(props.tripSystem)；未传或无效则用现状默认 Dorothean(零回归)。
+		const initSystem = (props.tripSystem && TRIPLICITY_SYSTEMS[props.tripSystem]) ? props.tripSystem : TRIPLICITY_DEFAULT_OPTS.system;
+		this.state = { opts: { ...TRIPLICITY_DEFAULT_OPTS, system: initSystem }, data: null };
 		this.rebuild = this.rebuild.bind(this);
 		this.changeOpt = this.changeOpt.bind(this);
 		this.saveAISnapshot = this.saveAISnapshot.bind(this);
@@ -28,6 +32,11 @@ class AstroTriplicityRulers extends Component{
 	}
 
 	componentDidUpdate(prevProps){
+		// 流派预设切换 → 联动三分体系(用户随后仍可用下方分段控件本地覆盖)。
+		if(prevProps.tripSystem !== this.props.tripSystem && this.props.tripSystem && TRIPLICITY_SYSTEMS[this.props.tripSystem] && this.props.tripSystem !== this.state.opts.system){
+			const opts = { ...this.state.opts, system: this.props.tripSystem };
+			this.setState({ opts }, () => { this.rebuild(); this.saveAISnapshot(); });
+		}
 		if(prevProps.value !== this.props.value || prevProps.showAstroMeaning !== this.props.showAstroMeaning){
 			this.rebuild();
 			if(prevProps.value !== this.props.value){ this.saveAISnapshot(); }
@@ -91,6 +100,11 @@ class AstroTriplicityRulers extends Component{
 			<div className={`${styles.scrollbar}`} style={{ height: `${height - 20}px`, overflowY: 'auto', overflowX: 'hidden', padding: '4px 8px 12px' }}>
 				<div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>三分主星推运<span style={{ fontSize: 12, opacity: 0.55, marginLeft: 8, fontWeight: 400 }}>区间光体三分主星 · 人生阶段</span></div>
 				<div style={{ fontSize: 11.5, opacity: 0.6, lineHeight: '17px', marginBottom: 10 }}>昼生看太阳所在座、夜生看月亮所在座，取该座三颗三分主星按昼夜换序分掌人生各阶段；落角宫主鼎盛、果宫主衰减。</div>
+				<div style={{ marginBottom: 12 }}>
+					<div style={{ fontSize: 11.5, opacity: 0.6, marginBottom: 4 }}>三分体系</div>
+					<XQSegmented value={opts.system} options={TRIP_SYSTEM_OPTIONS} onChange={(e) => this.changeOpt('system', e && e.target ? e.target.value : e)} />
+					<div style={{ fontSize: 11, opacity: 0.55, lineHeight: '16px', marginTop: 6 }}>{TRIPLICITY_SYSTEM_HINTS[opts.system] || TRIPLICITY_SYSTEM_HINTS.Dorothean}</div>
+				</div>
 				<Row gutter={12} style={{ marginBottom: 12 }}>
 					<Col span={14}>
 						<div style={{ fontSize: 11.5, opacity: 0.6, marginBottom: 4 }}>划分法</div>

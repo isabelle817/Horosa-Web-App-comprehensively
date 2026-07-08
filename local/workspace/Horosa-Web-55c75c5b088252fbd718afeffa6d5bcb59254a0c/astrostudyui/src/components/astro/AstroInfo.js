@@ -13,7 +13,15 @@ import { buildPatternOverview, toOverviewRows, connectionPurityById } from '../.
 import { buildMeaningTipByCategory, } from './AstroMeaningData';
 import { isMeaningEnabled, wrapWithMeaning, } from './AstroMeaningPopover';
 import * as Constants from '../../utils/constants';
+import { XQSegmented } from '../xq-ui';
+import { monomoiriaTriplicity } from '../../divination/data/monomoiriaTriplicity';
 import styles from '../../css/styles.less';
+
+// G16 单度主星体系:迦勒底连续序(默认,后端算)/ 三分序(保罗式,前端派生)。
+const MONOMOIRIA_SYSTEM_OPTIONS = [
+	{ value: 'chaldean', label: '迦勒底序' },
+	{ value: 'triplicity', label: '三分序' },
+];
 
 // WI-02 偕日相 / WI-04 宗派 中文口径(中性词)。
 const PHASE_LABEL = { cazimi: '核心', combust: '焦伤', underBeams: '日光束下', free: '自由光' };
@@ -49,6 +57,7 @@ class AstroInfo extends Component{
 
 		this.planetSet = new Set();
 		this.state = {
+			monomoiriaSystem: 'chaldean',   // 单度主星体系:默认迦勒底序(与后端字节一致)
 		};
 
 		this.fieldsToParams = this.fieldsToParams.bind(this);
@@ -66,6 +75,7 @@ class AstroInfo extends Component{
 		this.genMansionDom = this.genMansionDom.bind(this);
 		this.genDegreeGenderDom = this.genDegreeGenderDom.bind(this);
 		this.genDegreeLordsDom = this.genDegreeLordsDom.bind(this);
+		this.handleMonomoiriaSystemChange = this.handleMonomoiriaSystemChange.bind(this);
 		this.genFeralDom = this.genFeralDom.bind(this);
 		this.canDisplayPlanet = this.canDisplayPlanet.bind(this);
 		this.genDeclParallelDom = this.genDeclParallelDom.bind(this);
@@ -347,7 +357,7 @@ class AstroInfo extends Component{
 		const objs = (this.props.value && this.props.value.chart && this.props.value.chart.objects) || [];
 		const p = connectionPurityById(idA, idB, objs);
 		if(!p){ return null; }
-		const col = p.pure ? 'var(--horosa-jade, #3a9a6a)' : 'var(--horosa-muted, #999)';
+		const col = p.pure ? 'var(--horosa-jade, #3a9a6a)' : 'var(--horosa-danger, #cf1322)';
 		return <span style={{ fontFamily: AstroConst.NormalFont, color: col }}>&nbsp;{p.label}{p.swap ? '·互换' : ''}</span>;
 	}
 
@@ -861,11 +871,25 @@ class AstroInfo extends Component{
 		return rows.length ? rows : null;
 	}
 
-	// WI-14/15/17 度数主星:单度主星(连续迦勒底)/ 九分 / 面 / Darijan,逐星一行。
+	handleMonomoiriaSystemChange(e){
+		const v = e && e.target ? e.target.value : e;
+		this.setState({ monomoiriaSystem: v });
+	}
+
+	// WI-14/15/17 度数主星:单度主星(迦勒底序/三分序可切)/ 九分 / 面 / Darijan,逐星一行。
 	genDegreeLordsDom(perchart){
 		let objs = (perchart && perchart.objects) || [];
 		let g = (id) => id ? <span style={{fontFamily: AstroConst.AstroFont}}>{AstroText.AstroMsg[id] || id}</span> : <span>—</span>;
 		let m = { color: 'var(--horosa-muted, #999)' };
+		// 单度主星体系:默认迦勒底序直接用后端算好的 o.monomoiria(字节不变);三分序则前端按昼/夜派生。
+		let useTriplicity = this.state.monomoiriaSystem === 'triplicity';
+		let isDiurnal = !!(perchart && perchart.isDiurnal);
+		let monoOf = (o) => {
+			if(useTriplicity && typeof o.lon === 'number'){
+				return monomoiriaTriplicity(o.lon, isDiurnal);
+			}
+			return o.monomoiria;
+		};
 		let rows = [];
 		STATUS_PLANET_IDS.forEach((id)=>{
 			let o = objs.find((x)=> x && x.id === id);
@@ -873,7 +897,7 @@ class AstroInfo extends Component{
 			rows.push(
 				<div key={randomStr(8)} className="horosa-classical-line">
 					{this.planetLabel(id, this.props.value)}&emsp;
-					<span style={m}>单度</span>&nbsp;{g(o.monomoiria)}&ensp;
+					<span style={m}>单度</span>&nbsp;{g(monoOf(o))}&ensp;
 					<span style={m}>九分</span>&nbsp;{g(o.ninthPart)}&ensp;
 					<span style={m}>面</span>&nbsp;{g(o.dignities && o.dignities.face)}&ensp;
 					<span style={m}>Darijan</span>&nbsp;{g(o.darijan)}
@@ -1056,14 +1080,16 @@ class AstroInfo extends Component{
 			const besg = (chart.surround && chart.surround.besiegement) ? chart.surround.besiegement : [];
 			const KIND_COL = { '围攻': 'var(--horosa-danger, #cf1322)', '围荣': 'var(--horosa-gold, #b8860b)', '围耀': 'var(--horosa-accent, #6c5ce7)' };
 			// 互容/接纳/先验权力/龙脉/孤月/心性智识/职业/强吉木/主宰循环/后天凶星 —— 均出自 buildPatternOverview(单字符雕文)。
-			const ovRows = toOverviewRows(buildPatternOverview(perchart, chart));
+			const ovRows = toOverviewRows(buildPatternOverview(perchart, chart, { onlyRulExalt: this.getOnlyRulerExaltReceptionEnabled() }));
 			const TONE_COL = { good: 'var(--horosa-jade, #3a9a6a)', bad: 'var(--horosa-danger, #cf1322)' };
 			// 每条目=不折行整体单元;flex-wrap 容器按列间距对齐(消「长接纳串乱折」)。note 按吉凶染色。
 			const ovValStyle = { display: 'flex', flexWrap: 'wrap', gap: '3px 13px', fontWeight: 'normal', alignItems: 'baseline' };
+			// 一条目=glyph 簇(不折)+ note(长可折):整体 maxWidth 100% + 内部 flex-wrap,长接纳串(如「庙·拒绝·有情·
+			// 玄谋世俗·互换」)超出值列时 note 折到下一行,绝不溢出卡片遮挡相邻内容。
 			const renderOvItem = (it, i)=> (
-				<span key={`ovi-${i}`} style={{ whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'baseline' }}>
-					{(it.parts || []).map((p, j)=> p.g ? <span key={j}>{astroSymbol(p.g)}</span> : <span key={j} style={{ fontFamily: AstroConst.NormalFont, margin: '0 1px' }}>{p.t}</span>)}
-					{it.note ? <span style={{ fontFamily: AstroConst.NormalFont, color: TONE_COL[it.tone] || 'var(--horosa-muted, #999)', marginLeft: 3, fontSize: 11 }}>{it.note}</span> : null}
+				<span key={`ovi-${i}`} style={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'baseline', maxWidth: '100%' }}>
+					<span style={{ whiteSpace: 'nowrap' }}>{(it.parts || []).map((p, j)=> p.g ? <span key={j}>{astroSymbol(p.g)}</span> : <span key={j} style={{ fontFamily: AstroConst.NormalFont, margin: '0 1px' }}>{p.t}</span>)}</span>
+					{it.note ? <span style={{ fontFamily: AstroConst.NormalFont, color: TONE_COL[it.tone] || 'var(--horosa-muted, #999)', marginLeft: 3, fontSize: 11, overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{it.note}</span> : null}
 				</span>
 			);
 			const ovEmpty = (txt)=> <span style={{ fontFamily: AstroConst.NormalFont, opacity: 0.5 }}>{txt}</span>;
@@ -1152,7 +1178,21 @@ class AstroInfo extends Component{
 			const mansionDom = this.genMansionDom(perchart);
 			const degreeQualityDom = this.genDegreeQualityDom(perchart);
 			const specialDegreeDom = this.genSpecialDegreeDom(perchart);
-			const degreeLordsDom = this.genDegreeLordsDom(perchart);
+			const degreeLordsRows = this.genDegreeLordsDom(perchart);
+			// 单度体系切换器 + 逐星行:切换器常驻(便于空数据时也能切),三分序为前端按昼/夜派生。
+			const degreeLordsDom = (
+				<div>
+					<div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+						<span style={{ color: 'var(--horosa-muted, #999)', marginRight: 6 }}>单度体系</span>
+						<XQSegmented
+							value={this.state.monomoiriaSystem}
+							options={MONOMOIRIA_SYSTEM_OPTIONS}
+							onChange={this.handleMonomoiriaSystemChange}
+						/>
+					</div>
+					{degreeLordsRows || <div className="horosa-empty-line">暂无</div>}
+				</div>
+			);
 			const melothesiaDom = this.genMelothesiaDom(perchart);
 			// 不自带滚动:由外层 AstroChartMain 古典 TabPane 的单一滚动容器统管(避免双层滚动条),
 			// 古典卡片与下方寿命/十二分部/定位星同处一条滚动栏。
@@ -1191,7 +1231,7 @@ class AstroInfo extends Component{
 					{section('医疗', 'Medical')}
 					{card('身体部位', 'Melothesia', melothesiaDom, !!melothesiaDom, '暂无')}
 					{section('寿命', 'Lifespan')}
-					<AstroLifespan value={this.props.value} parts={['method', 'life', 'medical']} />
+					<AstroLifespan value={this.props.value} parts={['method', 'life', 'medical', 'timeline']} />
 				</div>
 			);
 		}

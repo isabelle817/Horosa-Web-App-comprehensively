@@ -5,6 +5,7 @@ import { drawTextH, } from '../graph/GraphHelper';
 import Gua from '../gua/Gua';
 import TextTable from '../graph/TextTable';
 import { randYao, setupYao, ZiList, HourZi, getXunEmpty} from '../gua/GuaConst';
+import { LIUYAO_PRESETS } from '../gua/liuyaoSchools';
 
 class GZChart {
 	constructor(options){
@@ -13,6 +14,7 @@ class GZChart {
 		this.fields = options.fields;
 		this.tooltipId = options.tooltipId;
 		this.nongli = options.nongli;
+		this.analysis = options.analysis; // 六爻断盘(伏神/流派)
 
 		this.margin = 20;
 		this.svgTopgroup = null;
@@ -90,7 +92,7 @@ class GZChart {
 			.attr('y', this.margin)
 			.attr('width', realW).attr('height', realH);
 
-		let titleH = 50;
+		let titleH = this.analysis ? 76 : 50; // 有断盘多留一行画「流派/卦序/用神/卦身」
 		let w = realW/2;
 		let h = (realH-titleH)/2;
 		let cords = [];
@@ -106,10 +108,11 @@ class GZChart {
 			this.showYaoName = false;
 		}
 
-		this.drawGua1(cords[0]);
-		this.drawGua2(cords[1]);
-		this.drawGua3(cords[2]);
-		this.drawGua4(cords[3]);
+		this.drawGua1(cords[0]); // 本卦(左上)
+		this.drawGua2(cords[1]); // 之卦(右上)
+		this.drawFushen(cords[2]); // 伏神=本宫首卦(左下,第二行第一列)
+		this.drawGua3(cords[3]); // 互卦(右下)
+		// 旬空已移至右栏「装卦」页;此处不再画
 
 		this.drawTitle(titleords);
 	}
@@ -304,6 +307,56 @@ class GZChart {
 
 	}
 
+	drawFushen(cord){
+		// 伏神 = 本宫首卦(八纯卦)同位爻:house.value 重复成6位,六亲按本宫(=自身)
+		let benGua = (this.guas[0] && this.guas[0].getGua()) ? this.guas[0].getGua() : null;
+		if(!benGua || !benGua.house || !benGua.house.value){
+			return;
+		}
+		let house = benGua.house;
+		let w = cord.w/2;
+		let h = cord.h/2;
+		let x = cord.x + w/2;
+		let y = cord.y + h/2;
+		if(this.showYaoName){
+			w = cord.w*2/3;
+			x = cord.x + w/6;
+		}
+		let hv = house.value.concat(house.value);
+		let yao = hv.map((v)=>({ value: v, change: false }));
+		setupYao(yao, house);
+
+		let opt = {
+			x: x,
+			y: y,
+			width: w,
+			height: h,
+			owner: this.svgTopgroup,
+			yao: yao,
+			showName: this.showYaoName,
+		};
+		let guasvg = new Gua(opt);
+		this.guas[4] = guasvg;
+		guasvg.draw();
+
+		let gua = guasvg.getGua();
+		if(gua){
+			let marg = 3;
+			let len = gua.name.length * (this.fontSize + marg);
+			let orgx = guasvg.yaoX;
+			x = orgx + guasvg.yaoWidth/2 - len/2;
+			y = y + h + this.margin/2;
+			let data = gua.name.split('');
+			drawTextH(this.svgTopgroup, data, x, y, len, this.fontSize+marg, marg, this.color);
+
+			len = 2 * (this.fontSize + marg);
+			x = orgx + guasvg.yaoWidth/2 - len/2 + marg;
+			y = cord.y + cord.h/4 - this.fontSize*2;
+			data = ['伏', '神'];
+			drawTextH(this.svgTopgroup, data, x, y, len, this.fontSize+marg, marg, this.color);
+		}
+	}
+
 	drawGua4(cord){
 		if(this.nongli === undefined || this.nongli === null){
 			return;
@@ -382,6 +435,28 @@ class GZChart {
 			y = y + h + marg;
 			data = [bztxt];
 			drawTextH(this.svgTopgroup, data, x, y, len, h, marg, this.color);
+		}
+
+		// 流派 / 卦序 / 用神 / 卦身(盘内一行,随设置变)
+		let a = this.analysis;
+		if(a){
+			let parts = [];
+			let sc = a.settings && a.settings.school;
+			let lbl = (LIUYAO_PRESETS[sc] && LIUYAO_PRESETS[sc].label) || (sc === 'custom' ? '自定义' : sc) || '';
+			if(lbl){ parts.push('流派:' + lbl); }
+			if(a.palaceType){ parts.push(a.palaceType.palace + '宫·' + a.palaceType.type); }
+			if(a.yongShen){
+				let yloc = (a.yongShen.located && a.yongShen.located.yong && a.yongShen.located.yong.candidates && a.yongShen.located.yong.candidates.length)
+					? a.yongShen.located.yong.candidates.map((c)=>c.pos + '爻').join('/') : '不上卦';
+				parts.push('用神:' + a.yongShen.yong + '(' + yloc + ')');
+			}
+			if(a.guaShen){ parts.push('卦身:' + a.guaShen.body + (a.guaShen.onChart ? '' : '伏')); }
+			if(parts.length){
+				y = y + h + marg;
+				let str = parts.join('  ');
+				let slen = cord.w;
+				drawTextH(this.svgTopgroup, [str], cord.x + cord.w/2 - slen/2, y, slen, h, marg, this.color);
+			}
 		}
 	}
 

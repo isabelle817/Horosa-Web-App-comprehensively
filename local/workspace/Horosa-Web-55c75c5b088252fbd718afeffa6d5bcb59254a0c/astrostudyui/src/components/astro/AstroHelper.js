@@ -2,6 +2,7 @@ import * as d3 from 'd3';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import {detectOS, distanceInCircleAbs} from '../../utils/helper';
+import { termsTableForVariant } from '../../divination/data/hellenisticData';
 
 const ChartMargin = 20;
 const ChartMarginDelta = 55;
@@ -16,8 +17,10 @@ if(osFlag === 'Mac'){
 	TxtOffsetTop = 2;
 }
 
-export function whichTerm(sign, deg){
-	let ary = AstroConst.EGYPTIAN_TERMS[sign];
+// 取某座某度的界主 glyph,按所选界系表(termsTable,含迦勒底昼/夜);缺省=埃及(零回归)。
+export function whichTerm(sign, deg, termsTable){
+	let ary = (termsTable || AstroConst.EGYPTIAN_TERMS)[sign];
+	if(!ary){ return '未知'; }
 	for(let i=0; i<ary.length; i++){
 		let term = ary[i];
 		if(term[1] <= deg && term[2] > deg){
@@ -367,16 +370,17 @@ export function signsBand(svg, r, rStep, flags, isDiurnal, house1Ang){
 	return signs;
 }
 
-export function termBand(svg, r, rStep, flags){
+export function termBand(svg, r, rStep, flags, termsTable){
 	let samecolorwithsign = (flags & AstroConst.CHART_PLANETCOLORWITHSIGN) === 0 ? false : true;
 	let innerR = r - rStep;
 	let txtPosR = r - rStep / 2 - TxtOffsetTop;
 
 	let terms = svg.append('g');
 	const signStep = 30;
+	const _terms = termsTable || AstroConst.EGYPTIAN_TERMS;   // 按所选界系实绘(含迦勒底);缺省=埃及零回归
 	for(let i=0; i<12; i++){
 		let sig = AstroConst.LIST_SIGNS[i];
-		let sigterm = AstroConst.EGYPTIAN_TERMS[sig];
+		let sigterm = _terms[sig];
 		let sigstart = signStep * i;
 		for(let j=0; j<sigterm.length; j++){
 			let term = sigterm[j];	
@@ -1207,7 +1211,10 @@ export function drawOuterSigns(chartObj, topgroup, radius, rStep, flags, isDiurn
 	if(needTerm){
 		let termR = radius - rStep;
 		let termStep = 20;
-		let terms = termBand(topgroup, termR, termStep, flags);
+		// 界限环按所选界系(含迦勒底界,按昼夜取昼/夜表)实绘;推运/返照/主限盘同主盘口径。默认埃及=现状。
+		let _tv = (chartObj && chartObj.params && chartObj.params.termsVariant) || 0;
+		let _termsTable = termsTableForVariant(_tv, isDiurnal, AstroConst.TERMS_TABLES_BY_VARIANT, AstroConst.EGYPTIAN_TERMS);
+		let terms = termBand(topgroup, termR, termStep, flags, _termsTable);
 	
 		let houseR = termR - termStep;
 		return houseR;	

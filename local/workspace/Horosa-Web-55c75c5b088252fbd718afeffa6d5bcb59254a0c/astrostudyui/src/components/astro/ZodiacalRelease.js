@@ -23,15 +23,18 @@ class ZodiacalRelease extends Component{
 		];
 
 		this.genZRSubLevelDom = this.genZRSubLevelDom.bind(this);
+		this.handleSelect = this.handleSelect.bind(this);
 	}
 
-	genZRSubLevelDom(list, parentSignIdx){
+	genZRSubLevelDom(list, parentSignIdx, pathKey){
 		let cnt = 0;
 		let spans = list.map((item, idx)=>{
 			let subdom = null;
 			let sigIdx = AstroConst.LIST_SIGNS.indexOf(item.sign);
+			const nodeKey = `${pathKey || 'zr'}-${idx}`;
+			if(this._keySign){ this._keySign[nodeKey] = item.sign; }
 			if(item.sublevel && item.sublevel.length){
-				subdom = this.genZRSubLevelDom(item.sublevel, sigIdx);
+				subdom = this.genZRSubLevelDom(item.sublevel, sigIdx, nodeKey);
 			}
 
 			let divstyle = {};
@@ -52,8 +55,11 @@ class ZodiacalRelease extends Component{
 				}
 			}
 
+			// 点运高亮只在星盘呈现(本座+4/7/10);树里只保留 antd 单块选中(被点那一个),
+			// 不按同座给散落多节点上色——否则点一个运,树里所有同座的运四处一起变色,反而干扰阅读。
 			let titledom = (
-				<div style={divstyle}>
+				<div style={{ ...divstyle, cursor: 'pointer', borderRadius: 4, padding: '0 4px' }}
+					title="点击高亮该运星座(本座 + 第4/7/10座)">
 					<span style={{fontFamily: AstroConst.NormalFont}}>{'L' + item.level}&nbsp;</span>
 					<span style={{fontFamily: AstroConst.AstroFont}}>{AstroText.AstroMsg[item.sign]}&nbsp;</span>
 					<span style={{fontFamily: AstroConst.NormalFont}}>{item.date}&nbsp;</span>
@@ -61,13 +67,19 @@ class ZodiacalRelease extends Component{
 			);
 
 			return (
-				<TreeNode key={randomStr(8)} title={titledom}>
+				<TreeNode key={nodeKey} title={titledom}>
 					{subdom}
 				</TreeNode>
 			);
 		});
 
 		return spans;
+	}
+
+	handleSelect(keys){
+		const sign = (this._keySign && keys && keys.length) ? this._keySign[keys[0]] : null;
+		if(!this.props.onSignClick || !sign){ return; }
+		this.props.onSignClick(sign);
 	}
 
 
@@ -90,11 +102,12 @@ class ZodiacalRelease extends Component{
 
 		let dom = null;
 		if(this.props.value){
-			dom = this.genZRSubLevelDom(this.props.value, -1);
+			this._keySign = {};
+			dom = this.genZRSubLevelDom(this.props.value, -1, 'zr');
 		}
 		return (
 			<div className={`${styles.scrollbar} horosa-direction-tree-scroll horosa-zodiacal-release-tree-scroll`} style={style}>
-				<Tree className="horosa-direction-tree horosa-zodiacal-release-tree">
+				<Tree className="horosa-direction-tree horosa-zodiacal-release-tree" onSelect={this.handleSelect}>
 					{dom}
 				</Tree>
 			</div>

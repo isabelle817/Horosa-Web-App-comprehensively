@@ -107,3 +107,23 @@ describe('八字挂载 round-trip：多运限', () => {
 		});
 	});
 });
+
+// 断命流派挂载 round-trip（BUG-1 守）：params.school → 快照「当前主用流派」标注随所选派变，非恒「传统综合」。
+// 对称紫微 sihuaSchool round-trip；缺省 school → 传统综合 = 现状字节级一致。
+describe('八字挂载 round-trip：断命流派', () => {
+	test('默认（无 school）：当前主用流派=传统综合（守「默认即现状」）', async () => {
+		const text = await buildBaziSnapshotForParams({ ...BASE_PARAMS });
+		expect(text).toContain('当前主用流派：传统综合');
+	});
+
+	test('school=fuyi：当前主用流派=扶抑派（随所选派，非恒综合）', async () => {
+		const text = await buildBaziSnapshotForParams({ ...BASE_PARAMS, school: 'fuyi' });
+		expect(text).toContain('当前主用流派：扶抑派');
+		expect(text).not.toContain('当前主用流派：传统综合');
+	});
+
+	test('school=mangpai：当前主用流派=盲派', async () => {
+		const text = await buildBaziSnapshotForParams({ ...BASE_PARAMS, school: 'mangpai' });
+		expect(text).toContain('当前主用流派：盲派');
+	});
+});

@@ -32,8 +32,10 @@ import {
 	ZHISHI_OPTIONS as QIMEN_ZHISHI_OPTIONS,
 	YUEJIA_QIJU_OPTIONS as QIMEN_YUEJIA_QIJU_OPTIONS,
 	QIJU_METHOD_OPTIONS as QIMEN_QIJU_METHOD_OPTIONS,
+	SCHOOL_OPTIONS as QIMEN_SCHOOL_OPTIONS,
 	KONG_MODE_OPTIONS as QIMEN_KONG_MODE_OPTIONS,
 	MA_MODE_OPTIONS as QIMEN_MA_MODE_OPTIONS,
+	ZHIRUN_LEAP_OPTIONS as QIMEN_ZHIRUN_LEAP_OPTIONS,
 } from '../components/dunjia/DunJiaCalc';
 import {
 	STYLE_OPTIONS as TAIYI_STYLE_OPTIONS,
@@ -42,7 +44,7 @@ import {
 	GAME_THEORY_OPTIONS as TAIYI_GAME_THEORY_OPTIONS,
 } from '../components/taiyi/TaiYiCalc';
 // 推运 builder 的官方选项常量 + 默认 opts（三分主星 / Balbillus / 关键点）——纯 util，无循环，直接复用。
-import { TRIPLICITY_DIVISIONS, TRIPLICITY_DEFAULT_OPTS } from './triplicityRulers';
+import { TRIPLICITY_DIVISIONS, TRIPLICITY_SYSTEMS, TRIPLICITY_DEFAULT_OPTS } from './triplicityRulers';
 import { BALBILLUS_YEAR_TYPES, BALBILLUS_MODES, BALBILLUS_DEFAULT_OPTS } from './balbillus';
 import { RELEASE_MODES, KEYPOINTS_DEFAULT_OPTS } from './keypoints120';
 // 批3 推运 builder 导出的官方选项常量（黄道星释 / 十年大运 / 行星弧 / 波斯向运）。
@@ -55,6 +57,15 @@ import {
 } from '../components/astro/AstroDecennials';
 import { ARC_SOURCES } from '../components/astro/AstroPlanetaryArc';
 import { RATE_LABEL as PERSIAN_RATE_LABEL } from '../components/astro/AstroPersianDirected';
+// 紫微「传本/排盘」开关选项(纯常量叶子模块,无循环导入风险)。挂载侧据此把传本设置进 record →
+// buildChartZiweiParams 透传 → buildZiweiSnapshotForParams 临时覆盖 ZWEngineOptions(用毕还原),与 sihuaSchool 同范式。
+import {
+	DAXIAN_SPAN_OPTIONS as ZW_DAXIAN_SPAN_OPTIONS, TIANMA_BASIS_OPTIONS as ZW_TIANMA_BASIS_OPTIONS,
+	STAR_SET_OPTIONS as ZW_STAR_SET_OPTIONS, SANPAN_OPTIONS as ZW_SANPAN_OPTIONS,
+	SHANGSHI_OPTIONS as ZW_SHANGSHI_OPTIONS, LEAP_MONTH_OPTIONS as ZW_LEAP_MONTH_OPTIONS,
+	LATE_ZI_OPTIONS as ZW_LATE_ZI_OPTIONS, YEAR_BOUNDARY_OPTIONS as ZW_YEAR_BOUNDARY_OPTIONS,
+	HUOLING_OPTIONS as ZW_HUOLING_OPTIONS, KONG_NAMING_OPTIONS as ZW_KONG_NAMING_OPTIONS,
+} from '../components/ziwei/ziweiOptions';
 // 注：卜卦/择日/六壬起课的选项常量定义在「大组件」(HoraryMain/ElectionMain/LiuRengMain) 内，它们与 aiAnalysisContext
 // 形成循环导入（aiAnalysisContext→techniqueMountSettings→大组件→…→aiAnalysisContext）；当 aiAnalysisContext 为入口时
 // init 顺序会让这些常量在 .map 时为 undefined（抛错）。故此处「内联镜像」其值断开循环，并由 techniqueMountSettings.test.js
@@ -154,7 +165,8 @@ const LIUREN_QI_METHODS = [
 	{ key: 'alyr', name: '月日对齐·催迫事' },
 	{ key: 'alys', name: '月时对齐·灵活事' },
 	{ key: 'xuanshi', name: '选时·事发之时' },
-	{ key: 'yanshu', name: '演数·随感之数' },
+	{ key: 'yanshu', name: '演数·随感之数(加时)' },
+	{ key: 'baoshu', name: '报数/端法·活时(÷12定支)' },
 ];
 // 镜像 HoraryMain.HORARY_CATEGORIES（14 类，value/label 一致）。
 const HORARY_CATEGORIES = [
@@ -202,9 +214,12 @@ const ELECTION_TOPICS = [
 const QIMEN_FIELDS = [
 	{ name: 'paiPanType', label: '排盘体例', type: 'select', default: 3, group: '排盘', options: QIMEN_PAIPAN_OPTIONS },
 	{ name: 'qijuMethod', label: '起局法', type: 'select', default: 'zhirun', group: '排盘', options: QIMEN_QIJU_METHOD_OPTIONS },
+	{ name: 'school', label: '盘式', type: 'select', default: '转盘', group: '排盘', options: QIMEN_SCHOOL_OPTIONS },
+	{ name: 'shuziReportNumber', label: '报数（阴盘）', type: 'text', default: '', group: '排盘' },
+	{ name: 'zhirunLeapDays', label: '置闰天数（传本）', type: 'select', default: 9, group: '排盘', options: QIMEN_ZHIRUN_LEAP_OPTIONS },
 	{ name: 'jieQiType', label: '节气取法', type: 'select', default: 1, group: '排盘', options: QIMEN_JIEQI_OPTIONS },
 	{ name: 'zhiShiType', label: '值使取法', type: 'select', default: 0, group: '排盘', options: QIMEN_ZHISHI_OPTIONS },
-	{ name: 'yueJiaQiJuType', label: '月家起局', type: 'select', default: 1, group: '排盘', options: QIMEN_YUEJIA_QIJU_OPTIONS },
+	{ name: 'yueJiaQiJuType', label: '月家起局', type: 'select', default: 0, group: '排盘', options: QIMEN_YUEJIA_QIJU_OPTIONS },
 	{ name: 'kongMode', label: '空亡基准', type: 'select', default: 'day', group: '排盘', options: QIMEN_KONG_MODE_OPTIONS },
 	{ name: 'yimaMode', label: '驿马基准', type: 'select', default: 'day', group: '排盘', options: QIMEN_MA_MODE_OPTIONS },
 	{ name: 'shiftPalace', label: '移宫（拆补转盘）', type: 'switch', options: ON_OFF, default: 0, group: '排盘' },
@@ -219,6 +234,11 @@ const TAIYI_FIELDS = [
 	{ name: 'tn', label: '古法公式', type: 'select', default: 0, group: '盘式', options: TAIYI_METHOD_OPTIONS },
 	{ name: 'timeBasis', label: '时间基准', type: 'select', default: 'direct', group: '盘式', options: TAIYI_TIME_BASIS_OPTIONS },
 	{ name: 'gameTheory', label: '博弈分析', type: 'select', default: 0, group: '盘式', options: TAIYI_GAME_THEORY_OPTIONS },
+	// 命法盘性别:仅盘式=太乙命法(style=5)时,fetchTaiyiPan→后端 webtaiyisrv:401/521 消费 sex 改命法盘 → showWhen 条件揭示,默认男 prune 零回归。
+	{ name: 'sex', label: '命法盘性别（盘式=太乙命法时）', type: 'select', default: '男', group: '盘式', showWhen: (d)=>Number(d.style) === 5, options: [
+		{ value: '男', label: '男' },
+		{ value: '女', label: '女' },
+	] },
 	// 太乙也吃日界/晚子时：fetchTaiyiPan(TaiYiCalc:275/277) 透传到 buildLocalBaziResult 算四柱/时柱。
 	// 默认对齐 fetchTaiyiPan 兜底（after23NewDay→0 / lateZi→default）=== 现状（未改时 prune 丢弃→走兜底，输出不变）。
 	{ name: 'after23NewDay', label: '日界（日柱换日）', type: 'select', options: DAY_BOUNDARY_OPTIONS, default: 0, group: '时间换算' },
@@ -245,6 +265,11 @@ const WUZHAO_FIELDS = [
 	]},
 	{ name: 'number', label: '报数 (mode=报数类时使用)', type: 'number', default: 0, group: '起例' },
 	{ name: 'manual', label: '手动分爻', type: 'switch', options: ON_OFF, default: 0, group: '起例', normalize: (v)=>(v === true || v === 1 || v === '1') },
+	// 手动六数:仅 manual=开 时生效。WuZhaoMain:156 builder 读 opts.manualSplits(6 数组)进重算请求,入口:986 已传,
+	//   但 schema 此前漏字段 → manual 开关形同虚设(恒走 DEFAULT_SPLITS)。text 逗号输入 normalize 成 6 数组;留空=默认零回归。
+	{ name: 'manualSplits', label: '手动六数 (逗号分隔,如 18,8,5,2,1,1;留空=默认)', type: 'text', default: '', group: '起例',
+		showWhen: (d)=>(d.manual === 1 || d.manual === true || d.manual === '1'),
+		normalize: (v)=>{ if(Array.isArray(v)){ return v.length === 6 ? v.map(Number) : undefined; } const a = `${v == null ? '' : v}`.split(/[,，\s]+/).map((x)=>Number(x)).filter((n)=>!Number.isNaN(n)); return a.length === 6 ? a : undefined; } },
 ];
 
 // 神易数:ShenYiShuMain.state 默认 hourSource='auto' manualHour=0 seasonSource='auto' manualSeason='夏'。
@@ -275,22 +300,52 @@ const LIURENG_FIELDS = [
 	{ name: 'xuanShiZhi', label: '选时·事发支', type: 'select', default: '', group: '起课',
 		showWhen: (d)=>d && d.castMethod === 'xuanshi',
 		options: [{ value: '', label: '默认（用占时支）' }, ...DIZHI_12.map((zi)=>({ value: zi, label: `${zi}时` }))] },
-	// 演数：仅 castMethod='yanshu' 时有效。默认 ''=引擎兜底（现状）。text 型保留空串语义（引擎 parseInt）。
-	{ name: 'yanShuNum', label: '演数·随感之数', type: 'text', default: '', group: '起课',
-		showWhen: (d)=>d && d.castMethod === 'yanshu' },
+	// 演数/报数：castMethod='yanshu'(加时) 或 'baoshu'(÷12定支) 时有效。默认 ''=引擎兜底（现状）。
+	{ name: 'yanShuNum', label: '演数/报数', type: 'text', default: '', group: '起课',
+		showWhen: (d)=>d && (d.castMethod === 'yanshu' || d.castMethod === 'baoshu') },
 	{ name: 'yueJiangMethod', label: '换将', type: 'select', default: 'zhongqi', group: '起课', options: [
 		{ value: 'zhongqi', label: '中气过宫（默认）' },
 		{ value: 'jieqi', label: '节气换将' },
+		{ value: 'richan', label: '太阳过宫·日躔（含岁差）' },
 	] },
 	{ name: 'fenZhouYe', label: '分昼夜', type: 'select', default: 'chenhun', group: '起课', options: [
 		{ value: 'chenhun', label: '晨昏分昼夜（默认）' },
 		{ value: 'maoyou', label: '卯酉分昼夜' },
 		{ value: 'yinshen', label: '寅申分昼夜' },
 	] },
+	// 涉害取舍流派(默认 app=仅下贼上,已固定)。snapshot 仅非默认时记。
+	{ name: 'seHaiMethod', label: '涉害取舍', type: 'select', default: 'app', group: '起课', options: [
+		{ value: 'app', label: '仅下贼上(默认)' },
+		{ value: 'standard', label: '标准深浅两向' },
+		{ value: 'mengzhongji', label: '直取孟仲季' },
+	] },
+	{ name: 'seHaiBoundary', label: '涉害起讫', type: 'select', default: 'app', group: '起课', options: [
+		{ value: 'app', label: '计起点不计本家(默认)' },
+		{ value: 'both', label: '两端皆计' },
+		{ value: 'neither', label: '皆不计' },
+	] },
+	{ name: 'shiRuKe', label: '始入课', type: 'select', default: false, group: '起课', options: [
+		{ value: false, label: '并入重审(默认)' },
+		{ value: true, label: '单列·九法变十法' },
+	] },
+	{ name: 'yearShenShaSort', label: '年神排序', type: 'select', default: 'sanyuan', group: '取神', options: [
+		{ value: 'sanyuan', label: '四利三元序(默认)' },
+		{ value: 'suigui', label: '太岁排轮(太阴异)' },
+	] },
+	{ name: 'yinyangSystem', label: '昼夜阳阴归属', type: 'select', default: 'danmu', group: '取神', options: [
+		{ value: 'danmu', label: '旦暮系(默认)' },
+		{ value: 'yinyang', label: '星历阳阴系' },
+	] },
+	{ name: 'tuWangShuai', label: '土旺衰', type: 'select', default: 'siji', group: '取神', options: [
+		{ value: 'siji', label: '四季月土旺(默认)' },
+		{ value: 'huotu', label: '火土同宫(土随火)' },
+	] },
 	{ name: 'guireng', label: '贵人体系', type: 'select', default: 2, group: '取神', options: [
 		{ value: 2, label: '星占法贵人（默认）' },
 		{ value: 0, label: '六壬法贵人' },
 		{ value: 1, label: '遁甲法贵人' },
+		{ value: 3, label: '甲戊兼牛羊' },
+		{ value: 4, label: '干合阳阴贵' },
 	] },
 	{ name: 'wuxing', label: '十二长生五行', type: 'select', default: '土', group: '取神', options: [
 		{ value: '土', label: '土（默认）' },
@@ -334,6 +389,23 @@ const JINKOU_FIELDS = [
 		{ value: 'auto', label: '自动取时支（默认）' },
 		...DIZHI_12.map((zi)=>({ value: zi, label: `占时：${zi}` })),
 	] },
+	// 流派 / 盘法（J2）：regenerateJinkouSnapshot 已透传 payload.{schoolYueJiang,schoolGuiTable,schoolGuiPan,panShi}
+	// 给 buildJinKouData（缺省 undefined → 内部默认派 = 现状,零回归）。默认值 === JinKouMain state，缺省经 prune 丢弃 → 字节级一致。
+	{ name: 'schoolYueJiang', label: '月将换将', type: 'select', default: 'zhongqi', group: '流派', options: [
+		{ value: 'zhongqi', label: '中气换将（默认）' },
+		{ value: 'jiaojie', label: '交节即换' },
+	] },
+	{ name: 'schoolGuiTable', label: '贵人昼夜表', type: 'select', default: 'shiwu', group: '流派', options: [
+		{ value: 'shiwu', label: '实务派（默认）' },
+		{ value: 'liuren', label: '大六壬古法' },
+	] },
+	{ name: 'schoolGuiPan', label: '起贵神盘', type: 'select', default: 'di', group: '流派', options: [
+		{ value: 'di', label: '地盘法（默认）' },
+		{ value: 'tian', label: '天盘法' },
+	] },
+	{ name: 'panShi', label: '盘式', type: 'select', default: 'yang', group: '流派', options: [
+		{ value: 'yang', label: '传统阳盘（默认）' },
+	] },
 	// 注：timeBasis(直接时间/真太阳时)只在后端 fetchJinKouPan 重算四柱时生效；本无头快照走本地 buildJinKouData
 	// （从已定四柱的 liureng 起盘，不重算时间），timeBasis 改不动输出 → 按铁律「不放无效选项」不入 schema（降级,见回报）。
 ];
@@ -350,6 +422,28 @@ const ELECTION_FIELDS = [
 
 // 命盘星盘系（占星本命/十三分盘/宿占等跟随 fields）：把更多排盘选项从 record 读出。
 // 默认全部 === buildFieldObject 现状（hsys 0 / zodiacal 0 / 各择宫开关 0 / doubingSu28 0 / timeAlg 0）。
+// 界系(bounds/terms)：0 埃及(默认,与现状一致)/1 托勒密 Tetrabiblos/2 莉莉。三套表后端 flatlib 内已有。
+const BOUNDS_SYSTEM_OPTIONS = [
+	{ value: 0, label: '埃及界（默认）' },
+	{ value: 1, label: '托勒密界（Tetrabiblos）' },
+	{ value: 2, label: '莉莉界' },
+	{ value: 3, label: '迦勒底界（推演慎用）' },
+];
+// 占星(希腊化)G12/G13/G20-P2 挂载可配项选项。
+const WEST_NODE_OPTIONS_M = [
+	{ value: 'mean', label: '平交点（默认）' },
+	{ value: 'true', label: '真交点' },
+];
+const SECT_BUFFER_OPTIONS_M = [
+	{ value: 'geo', label: '几何地平（默认）' },
+	{ value: 'ptolemy5', label: 'Ptolemy 5°缓冲' },
+];
+const TRIPLICITY_OPTIONS_M = [
+	{ value: 'Dorothean', label: '多罗特三主（默认）' },
+	{ value: 'Ptolemaic', label: '托勒密二主' },
+	{ value: 'PtolemaicWaterVariant', label: '托勒密·水象变体' },
+];
+
 const ASTRO_CHART_FIELDS = [
 	{ name: 'hsys', label: '宫制', type: 'select', options: HSYS_OPTIONS, default: 0, group: '排盘' },
 	{ name: 'zodiacal', label: '黄道', type: 'select', options: ZODIACAL_OPTIONS, default: 0, group: '排盘' },
@@ -358,6 +452,16 @@ const ASTRO_CHART_FIELDS = [
 	{ name: 'siderealAyanamsa', label: '岁差制（黄道=恒星时生效）', type: 'select', options: [{ value: '', label: '默认（随盘 / Lahiri）' }, ...AstroConst.INDIA_AYANAMSA_OPTIONS], default: '', group: '排盘' },
 	{ name: 'doubingSu28', label: '斗柄二十八宿', type: 'switch', options: ON_OFF, default: 0, group: '排盘' },
 	{ name: 'tradition', label: '传统择宫（界/外观）', type: 'switch', options: ON_OFF, default: 0, group: '择宫' },
+	// 界系（bounds）：选哪套界主表（埃及/托勒密/莉莉），影响星体「界」尊贵与界主。默认埃及=现状，prune 丢弃零回归。
+	{ name: 'termsVariant', label: '界系（bounds）', type: 'select', options: BOUNDS_SYSTEM_OPTIONS, default: 0, group: '择宫' },
+	// 占星(希腊化)G12/G13/G15/G20-P2:月交点真平 / 区分缓冲 / 狮子土星优先 / 三分集 / 福点反转。
+	// 默认=现状零回归(平/几何/关/Dorothean/反转ON),prune 丢弃默认值 → 不调任何项与现状逐字一致;
+	// 调整后经 buildFieldObject→fieldsToParams→/chart 复算,AI 快照尊贵/界主/福点与所选口径一致。
+	{ name: 'westNodeType', label: '月交点（真/平）', type: 'select', options: WEST_NODE_OPTIONS_M, default: 'mean', group: '择宫' },
+	{ name: 'sectBuffer', label: '区分判定（昼/夜）', type: 'select', options: SECT_BUFFER_OPTIONS_M, default: 'geo', group: '择宫' },
+	{ name: 'leoBoundFirst', label: '托勒密界·狮子土星优先', type: 'switch', options: ON_OFF, default: 0, group: '择宫' },
+	{ name: 'triplicity', label: '三分集', type: 'select', options: TRIPLICITY_OPTIONS_M, default: 'Dorothean', group: '择宫' },
+	{ name: 'lotReversal', label: '福点按昼夜反转', type: 'switch', options: ON_OFF, default: 1, group: '择宫' },
 	{ name: 'strongRecption', label: '强互容', type: 'switch', options: ON_OFF, default: 0, group: '择宫' },
 	{ name: 'simpleAsp', label: '简化相位', type: 'switch', options: ON_OFF, default: 0, group: '择宫' },
 	{ name: 'virtualPointReceiveAsp', label: '虚点接纳相位', type: 'switch', options: ON_OFF, default: 0, group: '择宫' },
@@ -371,12 +475,38 @@ const ASTRO_CHART_FIELDS = [
 	{ name: 'useStoredOrbs', label: '沿用本盘自定义容许度', type: 'switch', options: ON_OFF, default: 0, group: '容许度' },
 ];
 
-// 印度占星：岁差制(indiaAyanamsa 47 制) + 分宫制(indiaHsys)。已接入挂载设置(2026-06-08 Batch D)：
-// buildFieldObject 读 record.indiaAyanamsa/indiaHsys → IndiaChart.fieldsToParams 重算。
-// timeAlg/doubingSu28 对印度盘 inert（fieldsToParams 不引用）故不列，守"不放无效选项"。
+// 印度占星：岁差制(indiaAyanamsa 47 制) + 分宫制(indiaHsys) + 交点(nodeType 平/真)。已接入挂载设置：
+// buildFieldObject 读 record.indiaAyanamsa/indiaHsys/indiaNodeType → IndiaChart.fieldsToParams 重算。
+// nodeType 影响罗睺/计都真实位置(平/真交点),故纳入挂载;timeAlg/doubingSu28/盘式(纯显示) 对印度盘数据 inert 故不列。
+// Sthira 起座(座运 Sthira 固定大运起点):lagna 命宫(默认,BPHS 通行)/brahma(BPHS §10.5)。
+// IndiaChart.fieldsToParams 读 fields.indiaSthiraStart→仅非默认 'lagna' 才下发 → 默认 prune 后丢弃,后端缺键即 lagna,
+// 与现状字节一致;选 brahma 经 buildFieldObject→snapshot fieldsToParams 重算 Sthira 座运,AI 与盘面同口径。标签对齐 IndiaChartMain.renderSthiraStartToggle。
+const INDIA_STHIRA_START_OPTIONS_M = [
+	{ value: 'lagna', label: '命宫（默认）' },
+	{ value: 'brahma', label: 'Brahma' },
+];
+// 大运起点 seed:内联镜像 IndiaChartMain.DASHA_SEED_OPTIONS(展平 21 值,断循环导入;techniqueMountSettings.test 断言 === 源防漂移)。
+// IndiaChart.fieldsToParams 仅 seed!=='moon' 才下发 → 默认 moon prune 后丢弃零回归;选他星则 AI 大运快照与盘一致。
+const INDIA_DASHA_SEED_OPTIONS_M = [
+	{ value: 'moon', label: '月亮 Moon · 标准' }, { value: 'sun', label: '太阳 Sun' }, { value: 'mars', label: '火星 Mars' },
+	{ value: 'mercury', label: '水星 Mercury' }, { value: 'jupiter', label: '木星 Jupiter' }, { value: 'venus', label: '金星 Venus' },
+	{ value: 'saturn', label: '土星 Saturn' }, { value: 'rahu', label: '罗睺 Rahu' }, { value: 'ketu', label: '计都 Ketu' },
+	{ value: 'asc', label: '上升 Lagna' }, { value: 'bhavaLagna', label: 'Bhava Lagna 命运上升' }, { value: 'horaLagna', label: 'Hora Lagna 时上升' },
+	{ value: 'ghatikaLagna', label: 'Ghati Lagna 漏刻上升' }, { value: 'sreeLagna', label: 'Sree Lagna 吉祥上升' }, { value: 'gulika', label: 'Gulika 土曜子' },
+	{ value: 'maandi', label: 'Maandi 摩底' }, { value: 'dhuma', label: 'Dhuma 烟' }, { value: 'vyatipata', label: 'Vyatipata' },
+	{ value: 'parivesha', label: 'Parivesha 晕' }, { value: 'indrachapa', label: 'Indrachapa 虹' }, { value: 'upaketu', label: 'Upaketu' },
+];
 const INDIA_CHART_FIELDS = [
 	{ name: 'indiaAyanamsa', label: '岁差制', type: 'select', options: AstroConst.INDIA_AYANAMSA_OPTIONS, default: AstroConst.INDIA_AYANAMSA_DEFAULT, group: '排盘' },
 	{ name: 'indiaHsys', label: '分宫制', type: 'select', options: AstroConst.INDIA_HOUSE_SYSTEM_OPTIONS, default: AstroConst.INDIA_HOUSE_SYSTEM_DEFAULT, group: '排盘' },
+	{ name: 'indiaNodeType', label: '交点', type: 'select', options: AstroConst.INDIA_NODE_TYPE_OPTIONS, default: AstroConst.INDIA_NODE_TYPE_DEFAULT, group: '排盘' },
+	{ name: 'indiaDashaSystem', label: '大运体系', type: 'select', options: AstroConst.INDIA_DASHA_SYSTEM_OPTIONS, default: AstroConst.INDIA_DASHA_SYSTEM_DEFAULT, group: '大运' },
+	{ name: 'indiaSthiraStart', label: 'Sthira 座运起座', type: 'select', options: INDIA_STHIRA_START_OPTIONS_M, default: 'lagna', group: '大运' },
+	// 大运起点 / 过运日期 / 年度盘年份:buildFieldObject 已读 record.india{DashaSeed,TransitDate,TajakaYear}、IndiaChart.fieldsToParams 已透传,
+	// 仅 mount schema 此前没暴露 → 用户调不到。默认 moon/空/空 经 prune 丢弃(后端回退 moon/今日/当前年)= 现状零回归;调整则 AI 大运/行运/年度盘快照与盘一致。
+	{ name: 'indiaDashaSeed', label: '大运起点（Daśā seed）', type: 'select', options: INDIA_DASHA_SEED_OPTIONS_M, default: 'moon', group: '大运' },
+	{ name: 'indiaTransitDate', label: '过运日期（空=今日）', type: 'date', default: '', group: '行运/年度' },
+	{ name: 'indiaTajakaYear', label: '年度盘年份（空=当前年）', type: 'number', default: '', group: '行运/年度' },
 ];
 
 // 主限法·表格（primarydirect）：列未来 pdYears 年全部 direction 行。方位法 + 时间换算 + 顺逆 + 映点/界 + pdYears
@@ -415,22 +545,60 @@ const PRIMARY_DIRECT_CHART_FIELDS = [
 // C 类语义（2026-06 修正）：挂载覆盖只「临时」写这些全局 key 供 builder 重算自读，调用方
 // （aiAnalysisContext）必须先 snapshotLocalStorageSettings 再在 finally restoreLocalStorageSettings——
 // 否则一次挂载覆盖会永久改写用户的全局显示设置。想真正改默认走「设为同类默认」（saveMountTechniqueDefaults）。
+const GUOLAO_DIZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 const GUOLAO_FIELDS = [
 	{ name: 'lifeMode', label: '七政命度', type: 'select', default: 'asc', group: '命度', storageKey: 'horosaGuolaoLifeMode', options: [
 		{ value: 'asc', label: '占星上升（默认）' },
-		{ value: 'yumao', label: '遇卯安命' },
+		{ value: 'yumao', label: '日出安命' },
+		{ value: 'gumao', label: '遇卯安命(古法)' },
 		{ value: 'cotrans', label: '赤黄转换' },
+		...GUOLAO_DIZHI.map((z)=>({ value: z, label: `自定命宫·${z}` })),
+	] },
+	{ name: 'bodyMode', label: '身宫法', type: 'select', default: 'taiyin', group: '命度', storageKey: 'horosaGuolaoBodyMode', options: [
+		{ value: 'taiyin', label: '太阴落宫(果老,默认)' },
+		{ value: 'youjin', label: '逢酉(琴堂)' },
+		...GUOLAO_DIZHI.map((z)=>({ value: z, label: `自定身宫·${z}` })),
 	] },
 	{ name: 'nodeMode', label: '罗计', type: 'select', default: 'northKetuSouthRahu', group: '命度', storageKey: 'horosaGuolaoNodeMode', options: [
 		{ value: 'northKetuSouthRahu', label: '北计南罗（默认）' },
 		{ value: 'northRahuSouthKetu', label: '北罗南计' },
 	] },
 	{ name: 'su28Mode', label: '宿度制', type: 'select', default: 2, group: '命度', storageKey: 'horosaGuolaoSu28Mode', options: [
-		{ value: 2, label: '回归今制（默认）' },
-		{ value: 3, label: '回归开禧（开禧历）' },
-		{ value: 4, label: '恒星制（郑式）' },
-		{ value: 0, label: '荀爽19年测量' },
+		{ value: 2, label: '回归今宿（默认）' },
+		{ value: 3, label: '回归古制开禧' },
+		{ value: 4, label: '恒星制（黄道）' },
+		{ value: 6, label: '授时历古法' },
+		{ value: 0, label: '荀爽距星(19年测)' },
 		{ value: 1, label: '斗柄定房法' },
+		{ value: 5, label: '恒星制·现代天赤' },
+		{ value: 7, label: '赤道回归' },
+	] },
+	// 宿度制条件子选项(WP-D/赤道回归):仅特定宿度制下后端生效,showWhen 条件揭示(对齐 GuoLaoInput doubingSu28===4/6/7)。
+	// GuoLaoChartMain.fieldsToParams:1888/1908-1915 读 fields.guolao{Ayanamsa,TuibianMethod,GufaPrecess,EqTropicalAnchor}(C 类 storageKey 回退 getStored)→ /chart 重排盘。默认即现状零回归。
+	{ name: 'guolaoAyanamsa', label: '恒星岁差（宿度制=恒星制黄道）', type: 'select', default: '', group: '命度', storageKey: 'horosaGuolaoAyanamsa',
+		showWhen: (d)=>Number(d.su28Mode) === 4,
+		options: [{ value: '', label: '郑式（默认）' }, ...AstroConst.INDIA_AYANAMSA_OPTIONS] },
+	{ name: 'guolaoTuibianMethod', label: '推变法（宿度制=授时历古法）', type: 'select', default: 'jiyuan', group: '命度', storageKey: 'horosaGuolaoTuibianMethod',
+		showWhen: (d)=>Number(d.su28Mode) === 6,
+		options: [{ value: 'jiyuan', label: '纪元闭式（默认）' }, { value: 'jintui', label: '进退法（大衍）' }, { value: 'huiyuan', label: '会圆术（授时）' }] },
+	{ name: 'guolaoGufaPrecess', label: '古宿岁差（宿度制=授时历古法）', type: 'select', default: 0, group: '命度', storageKey: 'horosaGuolaoGufaPrecess',
+		showWhen: (d)=>Number(d.su28Mode) === 6,
+		options: [{ value: 0, label: '钉死元时（默认）' }, { value: 1, label: '随岁差东移' }] },
+	{ name: 'guolaoEqTropicalAnchor', label: '回归锚点（宿度制=赤道回归）', type: 'select', default: 'dongzhi', group: '命度', storageKey: 'horosaGuolaoEqTropicalAnchor',
+		showWhen: (d)=>Number(d.su28Mode) === 7,
+		options: [{ value: 'dongzhi', label: '牛前·冬至270°（默认）' }, { value: 'chunfen', label: '春分·壁2.3°' }] },
+	{ name: 'trueSolarTime', label: '报时星太阳时', type: 'select', default: 'true', group: '四余/时间', storageKey: 'horosaGuolaoTrueSolarTime', options: [
+		{ value: 'true', label: '真太阳时（经度+均时差，默认）' },
+		{ value: 'mean', label: '平太阳时（仅经度）' },
+		{ value: 'off', label: '钟表时' },
+	] },
+	{ name: 'nodeType', label: '罗计取法', type: 'select', default: 'mean', group: '四余/时间', storageKey: 'horosaGuolaoNodeType', options: [
+		{ value: 'mean', label: '平交点（默认）' },
+		{ value: 'true', label: '真交点' },
+	] },
+	{ name: 'lilithType', label: '月孛取法', type: 'select', default: 'mean', group: '四余/时间', storageKey: 'horosaGuolaoLilithType', options: [
+		{ value: 'mean', label: '平远地点（默认）' },
+		{ value: 'true', label: '真远地点' },
 	] },
 ];
 
@@ -444,6 +612,8 @@ const GERMANY_FIELDS = ASTRO_CHART_FIELDS.filter((f)=>['hsys', 'zodiacal'].inclu
 
 // 推运·三分主星：区间光体三分主星分掌人生阶段。builder buildTriplicityRulersSnapshotText(chartObj,opts) 已收 opts。
 const TRIPLICITY_FIELDS = [
+	{ name: 'system', label: '三分体系', type: 'select', default: TRIPLICITY_DEFAULT_OPTS.system, group: '划分',
+		options: Object.keys(TRIPLICITY_SYSTEMS).map((k)=>({ value: k, label: TRIPLICITY_SYSTEMS[k] })) },
 	{ name: 'division', label: '划分法', type: 'select', default: TRIPLICITY_DEFAULT_OPTS.division, group: '划分',
 		options: Object.keys(TRIPLICITY_DIVISIONS).map((k)=>({ value: k, label: TRIPLICITY_DIVISIONS[k] })) },
 	{ name: 'lifespan', label: '寿命基准（年龄上限）', type: 'number', default: TRIPLICITY_DEFAULT_OPTS.lifespan, min: 30, max: 120, group: '划分' },
@@ -531,6 +701,13 @@ const PROG_TARGET_FIELDS = [
 	// P4：目标日期/时刻改 date/time picker（空显示「今日/此刻」但 default 恒 ''，不破 prune）。
 	{ name: 'targetDate', label: '目标日期(空=今日)', type: 'date', default: '', group: '目标' },
 	{ name: 'targetTime', label: '目标时刻(空=12:00:00)', type: 'time', default: '', group: '目标' },
+	// 小推运月长(vedicprog/jaynesprog 共用):AstroVedic/JaynesProgressions:32 读 opts.minorVariant 进重算请求,改推运盘月长换算口径(引擎原值/朔望月/恒星月)。
+	//   默认 engine(=组件 state 初值)prune 后丢弃零回归;regen makeOpts 同补 minorVariant 透传。内联镜像 AstroProgChart.MINOR_VARIANT_OPTIONS(test 断言防漂移)。
+	{ name: 'minorVariant', label: '小推运月长', type: 'select', default: 'engine', group: '目标', options: [
+		{ value: 'engine', label: '引擎原值（现状）' },
+		{ value: 'synodic', label: '朔望月每年（标准）' },
+		{ value: 'sidereal', label: '恒星月每年' },
+	] },
 	// P4 区间扫描：以 targetDate 为起点、datetimeEnd 为终点，按 step 循环多段（每段一个目标日期，时刻沿用 targetTime）。
 	...scanRangeDateFields('区间扫描'),
 ];
@@ -555,6 +732,9 @@ const PREDICTIVE_PERIOD_BASE_FIELDS = [
 const PREDICTIVE_RETURN_DIR_FIELDS = [
 	{ name: 'dirLat', label: '返照地·纬度(空=本命)', type: 'text', default: '', group: '异地' },
 	{ name: 'dirLon', label: '返照地·经度(空=本命)', type: 'text', default: '', group: '异地' },
+	// dirZone(返照地时区):buildPredictivePeriodSnapshot:1575 已消费(o.dirZone||np.zone)、regen:1833 已透传 record.dirZone,
+	// 仅此前漏建 schema 字段 → record.dirZone 恒 undefined 回退本命时区。补齐后异地返照三盘(solarreturn/lunarreturn/givenyear)时区可调。
+	{ name: 'dirZone', label: '返照地·时区(空=本命)', type: 'text', default: '', group: '异地' },
 ];
 
 // 三式合一：合并 六壬/奇门/太乙 三子组可调项。各子组 regen 均读 payload.options 的对应键（键名互不冲突）；
@@ -582,7 +762,26 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 	// 注：禽星盘只取生辰原始时刻，ken 引擎不消费 日界/晚子时/真太阳时换算（parseFieldsDateTime 只读 date/time/zone/lat/lon）→
 	// 此前挂 TIME_FIELDS 是「可选但无效」的死设置，移除以免误导（报告配置/AI 挂载两处都不再显示无效项）。
 	xianqin: { kind: 'record', fields: [], emptyHint: '演禽按出生时间起盘，无独立可调排盘设置。' },
-	cetian: { kind: 'record', fields: [], emptyHint: '策天飞星按出生时间起盘，无独立可调排盘设置。' },
+	// 策天飞星：算法(书/原)+原法子选项 + 5 显示开关；全默认=现状(prune 为空，零字节差)。show_* 经 payload 下发后端过滤输出段/行。
+	cetian: { kind: 'payload', optionsPath: '', group: '策天飞星', fields: [
+		{ name: 'method', label: '排盘算法', type: 'select', default: 'book', group: '排盘方法', options: [
+			{ value: 'book', label: '书法·策天本法' },
+			{ value: 'kentang', label: '原法·标准紫微嫁接' },
+		] },
+		{ name: 'lunarMode', label: '农历算法', type: 'select', default: 'sxtwl', group: '排盘方法', when: { method: 'kentang' }, options: [
+			{ value: 'sxtwl', label: 'sxtwl（修正）' },
+			{ value: 'classic', label: '原闰月法' },
+		] },
+		{ name: 'starOrder', label: '十二正曜布法', type: 'select', default: 'reverse', group: '排盘方法', when: { method: 'kentang' }, options: [
+			{ value: 'reverse', label: '逆布（书）' },
+			{ value: 'forward', label: '顺布（原）' },
+		] },
+		{ name: 'showBrightness', label: '显示亮度', type: 'switch', options: ON_OFF, default: 1, group: '显示选项' },
+		{ name: 'showWuXingJu', label: '显示五行局', type: 'switch', options: ON_OFF, default: 1, group: '显示选项', when: { method: 'kentang' } },
+		{ name: 'showSihua', label: '显示四化', type: 'switch', options: ON_OFF, default: 1, group: '显示选项', when: { method: 'kentang' } },
+		{ name: 'showFlying', label: '显示飞星格局', type: 'switch', options: ON_OFF, default: 1, group: '显示选项', when: { method: 'kentang' } },
+		{ name: 'showSolarTerm', label: '显示节气', type: 'switch', options: ON_OFF, default: 1, group: '显示选项', when: { method: 'kentang' } },
+	] },
 	// 皇极经世：双栖——命盘侧按出生重算(buildHuangJiSnapshotForFields)，又可存事盘(报数/起例确定性结果)。
 	// 与五兆/太玄/荆诀/神易数 同列 sectionsOnly：事盘按 payload.snapshot 出正文不重算，且去掉事盘上误显的
 	// TIME_FIELDS 覆盖(对已定型存案无意义、覆盖重算会落空)；命盘侧重算不受 schema.kind 影响(buildTechniqueContext chart 分支仍重算)。
@@ -628,7 +827,41 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 			{ value: '日', label: '按日柱查神煞' },
 			{ value: '年日', label: '年柱日柱都查' },
 		] },
-		{ name: 'adjustJieqi', label: '节气微调', type: 'switch', options: ON_OFF, default: 0, group: '取用' },
+		// 盘法 4 项（CnTraditionInput 命宫起法/月律分野/起运精度/藏干版本）：BaZi.js:722/767-771 据 baziOpt 触发重算并转发后端,
+		//   改命宫/月令分野/起运岁/藏干打分 → 真改 ground-truth。live 盘走 BaZi.js 自身 params;但 AI 挂载侧走 buildChartBaziParams,
+		//   此前漏转发 → 挂载/导出快照这 4 项恒默认。补 4 字段 + buildChartBaziParams 同补转发(读 record,与 school 同范式)。默认即现状零回归。
+		{ name: 'minggongMethod', label: '命宫起法', type: 'select', default: 'tongxing', group: '盘法', options: [
+			{ value: 'tongxing', label: '通行版（默认）' },
+			{ value: 'shufa', label: '子平数法' },
+		] },
+		{ name: 'fenyeVersion', label: '月律分野', type: 'select', default: 'common', group: '盘法', options: [
+			{ value: 'common', label: '通行版（默认）' },
+			{ value: 'fajue', label: '法诀版' },
+		] },
+		{ name: 'dayunPrecision', label: '起运精度', type: 'select', default: 'precise', group: '盘法', options: [
+			{ value: 'precise', label: '精确(年月日时,默认)' },
+			{ value: 'integer', label: '整数(取整岁)' },
+		] },
+		{ name: 'cangVersion', label: '藏干版本', type: 'select', default: 'common', group: '盘法', options: [
+			{ value: 'common', label: '通行版（默认）' },
+			{ value: 'fenye', label: '分野加权' },
+		] },
+		// 节气微调（adjustJieqi）：本地引擎尚未实现该算法 → 暂从挂载设置面隐藏，避免选了不生效误导。
+		// 字段仍由 model/buildFieldObject 保留默认 0（不破坏存档/快照结构）。Java 后端算法（BaZi.java
+		// adjustJieqiInfo）供日后本地实现参考：仅当出生纬度 23.5°<|lat|<66.5° 时调整，把每个节气的儒略日
+		// JDN 平移 delta 天后据以定月柱——北纬 delta=(lat−35)×2、南纬 delta=(lat+35)×2（35°为基准纬度）。
+		// { name: 'adjustJieqi', label: '节气微调', type: 'switch', options: ON_OFF, default: 0, group: '取用' },
+		// 断命流派(CnTraditionInput school):进快照(切「当前主用流派」标注)。merge 进 record.school →
+		// buildChartBaziParams 挂上 params.school → buildBaziSnapshotText 据此标注;缺省 zonghe=现状。各派对照数据恒全算,此项只切主标注。
+		{ name: 'school', label: '断命流派', type: 'select', default: 'zonghe', group: '流派', options: [
+			{ value: 'zonghe', label: '传统综合（默认）' },
+			{ value: 'fuyi', label: '扶抑派' },
+			{ value: 'geju', label: '格局派' },
+			{ value: 'tiaohou', label: '调候派' },
+			{ value: 'bingyao', label: '病药派' },
+			{ value: 'mangpai', label: '盲派' },
+			{ value: 'nayin', label: '纳音古法' },
+		] },
 		// 多运限(批A)：流年(逗号年份串) / 流月(节气月序1–12) / 流日(锚定首流年首流月,公历日1–31) / 流时(时辰序0–11)。
 		// 全空(默认)=不追加多运限段=现状(守「默认即现状」)。流月读现成 subDirect[].flowMonths；流日/流时调 buildFlowDays/Hours。
 		{ name: 'liunianSel', label: '流年(公历年,逗号分隔,如 2024,2025)', type: 'text', default: '', group: '运限' },
@@ -641,16 +874,30 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 		// 四化流派:进快照(切流派改星曜四化标注 + 后端格局判定)。merge 进 record.sihuaSchool →
 		// buildChartZiweiParams 挂上 params.sihuaSchool → buildZiweiSnapshotForParams 临时切单例复算(用毕还原)。
 		{ name: 'sihuaSchool', label: '四化流派', type: 'select', default: 'beipai', group: '流派', options: [
-			{ value: 'beipai', label: '北派·飞星（默认）' },
+			{ value: 'beipai', label: '通用·飞星（默认）' },
 			{ value: 'zhongzhou', label: '中州派' },
+			{ value: 'quanshu', label: '全书系' },
+			{ value: 'beixiang', label: '北派(天相忌)' },
 			{ value: 'custom', label: '自定义' },
 		] },
+		// 传本/排盘开关(本地引擎):任一非默认 → buildZiweiSnapshotForParams 临时覆盖 ZWEngineOptions 并以本地引擎重排盘+重算格局,
+		// 使挂载/导出快照与该盘传本设置一致;全默认(缺省·被 pruneOptionsToNonDefault 剪掉不进 record)=回退全局单例=现状逐字节一致。
+		{ name: 'daxianSpan', label: '大限跨度', type: 'select', default: 10, group: '传本', options: ZW_DAXIAN_SPAN_OPTIONS },
+		{ name: 'tianmaBasis', label: '天马依据', type: 'select', default: 'month', group: '传本', options: ZW_TIANMA_BASIS_OPTIONS },
+		{ name: 'starSet', label: '星集', type: 'select', default: 'full', group: '传本', options: ZW_STAR_SET_OPTIONS },
+		{ name: 'sanPan', label: '观察盘(三盘)', type: 'select', default: 'tian', group: '传本', options: ZW_SANPAN_OPTIONS },
+		{ name: 'shangShi', label: '天伤天使', type: 'select', default: 'fixed', group: '传本', options: ZW_SHANGSHI_OPTIONS },
+		{ name: 'leapMonth', label: '闰月归月', type: 'select', default: 'mid_split', group: '传本', options: ZW_LEAP_MONTH_OPTIONS },
+		{ name: 'lateZi', label: '晚子时', type: 'select', default: 'zi_chu', group: '传本', options: ZW_LATE_ZI_OPTIONS },
+		{ name: 'yearBoundary', label: '定年界线', type: 'select', default: 'lichun', group: '传本', options: ZW_YEAR_BOUNDARY_OPTIONS },
+		{ name: 'huoling', label: '火铃', type: 'select', default: 'sanhe', group: '传本', options: ZW_HUOLING_OPTIONS },
+		{ name: 'kongNaming', label: '空劫命名', type: 'select', default: 'modern', group: '传本', options: ZW_KONG_NAMING_OPTIONS },
 		// 运限层(多选,批A)：大限已逐宫含于[宫位总览];选所选层即让快照追加[运限]段(逐层钻取四化落宫+流曜)。
 		// 流年/流月/流日/流时是盘面交互导航,本由 chart 本地推算(无后端参数)→ 复用 ZWLuckPanel 同口径构造器。
 		// 多选语义：大限/流年/流月对所选每项各产一段(流年×流月笛卡尔);流日/流时锚定到所选的第一个上层。
 		// 全空(默认)=不追加[运限]段=现状(守「默认即现状」,逐字节一致)。总段数上限~50,超限截断+提示行。
 		{ name: 'daxianSel', label: '大限(命盘宫位序0–11,可多选)', type: 'multiselect', default: [], group: '运限', options: ZIWEI_DAXIAN_OPTIONS },
-		{ name: 'liunianSel', label: '流年(公历年,逗号分隔多年,如 1996,2000)', type: 'text', default: '', group: '运限' },
+		{ name: 'liunianSel', label: '流年小限(公历年,逗号分隔多年,如 1996,2000;小限随年按虚岁自动并出)', type: 'text', default: '', group: '运限' },
 		{ name: 'liuyueSel', label: '流月(农历月1–12,可多选)', type: 'multiselect', default: [], group: '运限', options: LUNAR_MONTH_OPTIONS },
 		{ name: 'liuriSel', label: '流日(农历日1–31,可多选,锚定首个上层)', type: 'multiselect', default: [], group: '运限', options: LUNAR_DAY_OPTIONS },
 		{ name: 'liushiSel', label: '流时(时辰序0–11子起,可多选,锚定首个上层)', type: 'multiselect', default: [], group: '运限', options: SHICHEN_OPTIONS },
@@ -693,6 +940,7 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 	sixyao: { kind: 'sectionsOnly', reason: '六爻为摇钱/报数起卦的确定性结果，仅可调纳入内容、不可改卦象。' },
 	tongshefa: { kind: 'sectionsOnly', reason: '统摄法基于已起卦象的确定性结果，仅可调纳入内容、不可重算。' },
 	mundane: { kind: 'sectionsOnly', reason: '世俗盘类型多样、按事件时刻确定，仅可调纳入内容、不按时间重算。' },
+	auxchart: { kind: 'sectionsOnly', reason: '辅盘(十三/十二分、重置、调波、龙盘等)由本命盘衍生，报告复用本命快照按辅盘视角解读，仅可勾选纳入内容、不另起盘重算。' },
 	// 报数/揲蓍 等确定性起卦术（均已在 CASE_TYPE_OPTIONS 可存为事盘 + saveModuleAISnapshot 存模块快照）：
 	// 此前可存事盘却挂不上，补登记 sectionsOnly（挂载走缓存、不重算），与 sixyao/tongshefa/mundane 同范式。
 	// 注：otherbu(骰子,随机)/fengshui(风水)/jieqi(节气盘) 暂不在 CASE_TYPE_OPTIONS（无事盘存储），不在此补挂载——见 windows/AGENTS 交接。
@@ -703,6 +951,9 @@ export const TECHNIQUE_SETTINGS_SCHEMA = {
 	taixuan: { kind: 'payload', optionsPath: '', fields: TAIXUAN_FIELDS },
 	jingjue: { kind: 'payload', optionsPath: '', fields: JINGJUE_FIELDS },
 	shenyishu: { kind: 'payload', optionsPath: '', fields: SHENYISHU_FIELDS },
+	// 天文地占:所问之事 + 起卦种子确定起盘,事盘按 payload.snapshot 出正文不重算;仅勾选纳入内容,不按挂载覆盖。
+	geomancy: { kind: 'sectionsOnly', reason: '天文地占按所问之事 + 起卦种子确定起盘(事盘读已存结果)，仅可勾选纳入内容、不按挂载覆盖重算。' },
+	tarot: { kind: 'sectionsOnly', reason: '塔罗按所问之事 + 洗牌种子确定抽牌(事盘读已存牌阵)，仅可勾选纳入内容、不按挂载覆盖重算。' },
 };
 
 // 星运系里「参数固定 = 现状」的纯推运技法：无可调重算项，但仍登记（显式 emptySchema）让自检无遗漏、UI 显示「仅内容勾选」。

@@ -315,7 +315,7 @@ class ACGraph:
     # ----- relocation point report -------------------------------------------------
 
     def pointReport(self, lat, lon, orb=2.0):
-        """ Planets within orb of a local angle at (lat, lon) — Astro Gold's 'planets on angles'. """
+        """ Planets within orb of a local angle at (lat, lon) — planets on angles. """
         chart = Chart(self.dateTime, GeoPos(lat, lon), self.zodiacal, hsys=self.house,
                       IDs=self.objlists, needpars=False)
         angids = [const.ASC, const.DESC, const.MC, const.IC]

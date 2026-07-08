@@ -109,6 +109,64 @@ function newEmptyFields(){
 			value: 'northKetuSouthRahu',
 			name: ['guolaoNodeMode'],
 		},
+		guolaoAyanamsa: {
+			value: '',
+			name: ['guolaoAyanamsa'],
+		},
+		guolaoTrueSolarTime: {
+			value: 'true',
+			name: ['guolaoTrueSolarTime'],
+		},
+		guolaoNodeType: {
+			value: 'mean',
+			name: ['guolaoNodeType'],
+		},
+		guolaoLilithType: {
+			value: 'mean',
+			name: ['guolaoLilithType'],
+		},
+		guolaoZiqiMode: {
+			value: 'real',
+			name: ['guolaoZiqiMode'],
+		},
+		guolaoBodyMode: {
+			value: 'taiyin',
+			name: ['guolaoBodyMode'],
+		},
+		guolaoTuibianMethod: {
+			value: 'jiyuan',
+			name: ['guolaoTuibianMethod'],
+		},
+		guolaoGufaPrecess: {
+			value: 0,
+			name: ['guolaoGufaPrecess'],
+		},
+		guolaoEqTropicalAnchor: {
+			value: 'dongzhi',
+			name: ['guolaoEqTropicalAnchor'],
+		},
+		// 占星(希腊化)G12/G13/G15/G20-P2:西占月交点真平 / 区分昼夜缓冲 / 迦勒底界狮子首星 / 三分集 / 福点反转。
+		// 默认(平/几何地平/狮子木首/Dorothean/反转ON)= 当前零回归;仅非默认才下发(见 fieldsToParams 条件透传)。
+		westNodeType: {
+			value: 'mean',
+			name: ['westNodeType'],
+		},
+		sectBuffer: {
+			value: 'geo',
+			name: ['sectBuffer'],
+		},
+		leoBoundFirst: {
+			value: 0,
+			name: ['leoBoundFirst'],
+		},
+		triplicity: {
+			value: 'Dorothean',
+			name: ['triplicity'],
+		},
+		lotReversal: {
+			value: 1,
+			name: ['lotReversal'],
+		},
 		houseStartMode: {
 			value: 0,
 			name: ['houseStartMode'],
@@ -236,8 +294,25 @@ function fieldsToParams(fields){
 		zodiacal: fields.zodiacal.value,
 		siderealAyanamsa: fields.siderealAyanamsa ? fields.siderealAyanamsa.value : '',
 		tradition: fields.tradition.value,
+		// 界系(bounds)：默认 0/缺省 不下发 → /chart body 零变 + 不扰缓存键(同 pd*/orbScale 条件透传口径);仅非 0 才传给 Java→Python。
+		...(fields.termsVariant && fields.termsVariant.value ? { termsVariant: fields.termsVariant.value } : {}),
 		doubingSu28: fields.doubingSu28.value,
-		guolaoLifeMode: fields.guolaoLifeMode ? fields.guolaoLifeMode.value : 'asc',
+		guolaoLifeMode: fields.guolaoLifeMode ? fields.guolaoLifeMode.value : 'asc',   // R2 含地支(自定命宫,BaZi 按地支当 custom)
+		// 七政四余 G6/G10/G11：报时星太阳时(真/平/关)+ 四余取法(罗计真平/月孛真平)。默认(真/平/平)不下发 → body 零变、不扰缓存键(同 termsVariant 条件透传);仅非默认才传 Java→Python。
+		...(fields.guolaoTrueSolarTime && (fields.guolaoTrueSolarTime.value === 'mean' || fields.guolaoTrueSolarTime.value === 'off') ? { trueSolarTime: fields.guolaoTrueSolarTime.value } : {}),
+		...(fields.guolaoNodeType && fields.guolaoNodeType.value === 'true' ? { guolaoNodeType: 'true' } : {}),
+		...(fields.guolaoLilithType && fields.guolaoLilithType.value === 'true' ? { guolaoLilithType: 'true' } : {}),
+		// 授时历古法(用制 6)推变法 + 古宿岁差:仅非默认(纪元闭式·不随岁差)才下发 → body 零变、不扰缓存键(同上条件透传)。
+		...(fields.guolaoTuibianMethod && (fields.guolaoTuibianMethod.value === 'jintui' || fields.guolaoTuibianMethod.value === 'huiyuan') ? { guolaoTuibianMethod: fields.guolaoTuibianMethod.value } : {}),
+		...(fields.guolaoGufaPrecess && (fields.guolaoGufaPrecess.value === 1 || fields.guolaoGufaPrecess.value === '1') ? { guolaoGufaPrecess: 1 } : {}),
+		...(fields.guolaoEqTropicalAnchor && fields.guolaoEqTropicalAnchor.value === 'chunfen' ? { guolaoEqTropicalAnchor: 'chunfen' } : {}),
+		// 占星(希腊化)G12/G13/G15/G20-P2:西占月交点真平 / 区分昼夜缓冲 / 迦勒底界狮子首星 / 三分集 / 福点反转。
+		// 默认(平/几何地平/狮子木首/Dorothean/反转ON)不下发 → body 零变、不扰缓存键(同 termsVariant/guolao* 条件透传);仅非默认才传给 Java→Python。
+		...(fields.westNodeType && fields.westNodeType.value === 'true' ? { westNodeType: 'true' } : {}),
+		...(fields.sectBuffer && fields.sectBuffer.value === 'ptolemy5' ? { sectBuffer: 'ptolemy5' } : {}),
+		...(fields.leoBoundFirst && (fields.leoBoundFirst.value === 1 || fields.leoBoundFirst.value === '1') ? { leoBoundFirst: 1 } : {}),
+		...(fields.triplicity && fields.triplicity.value && fields.triplicity.value !== 'Dorothean' ? { triplicity: fields.triplicity.value } : {}),
+		...(fields.lotReversal && (fields.lotReversal.value === 0 || fields.lotReversal.value === '0') ? { lotReversal: 0 } : {}),
 		strongRecption: fields.strongRecption.value,
 		simpleAsp: fields.simpleAsp.value,
 		virtualPointReceiveAsp: fields.virtualPointReceiveAsp.value,
@@ -1265,6 +1340,10 @@ export default {
 			}
 			const Result = rsp.Result;
 			Result.chartId = randomStr(8);
+			// 确保「基本信息」名称/地点反映当前输入 fields(后端参数白名单可能不回显 name/pos → 跳转后无需手动按确定即同步)
+			if(!Result.params){ Result.params = {}; }
+			if(fields && fields.name){ Result.params.name = fields.name.value; }
+			if(fields && fields.pos){ Result.params.pos = fields.pos.value; }
 			saveAstroAISnapshotLazy(Result, fields);
 
 			let drawer = closeAllDrawer('*nowChart');

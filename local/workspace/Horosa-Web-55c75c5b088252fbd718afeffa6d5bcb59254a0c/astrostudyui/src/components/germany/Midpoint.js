@@ -6,6 +6,7 @@ import * as AstroHelper from '../astro/AstroHelper';
 import { randomStr} from '../../utils/helper'
 import { buildMeaningTipByCategory, } from '../astro/AstroMeaningData';
 import { isMeaningEnabled, wrapWithMeaning, } from '../astro/AstroMeaningPopover';
+import { composeShort } from '../../data/uranianMeanings';
 import styles from '../../css/styles.less';
 
 class Midpoint extends Component{
@@ -30,7 +31,8 @@ class Midpoint extends Component{
 		let term = AstroHelper.whichTerm(obj.sign, obj.signlon);
 			let dom = (
 				// 外层 genMidsDom 已用稳定 key 的 <Col> 包裹,单子节点无需 key
-				<div style={{marginTop:3}}>
+				// hover 行=中点对造句义(增强;原 wrapWithMeaning 逐因子 tip 保留)。
+				<div style={{marginTop:3}} title={composeShort(obj.idA, obj.idB)}>
 					{wrapWithMeaning(
 						<span style={{fontFamily: AstroConst.AstroFont}}>{AstroText.AstroMsg[obj.idA]}</span>,
 						this.showMeaning(),

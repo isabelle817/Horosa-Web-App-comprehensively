@@ -1,0 +1,224 @@
+{
+ "schema": "geomancy.hakata/v1",
+ "orientation": "诊断病因/祖灵取向(占位合成,待补正宗断语)",
+ "tablets": [
+  {
+   "id": "laonan",
+   "label": "老男",
+   "yin": 0,
+   "yang": 1
+  },
+  {
+   "id": "laonv",
+   "label": "老女",
+   "yin": 0,
+   "yang": 1
+  },
+  {
+   "id": "shaonan",
+   "label": "少男",
+   "yin": 0,
+   "yang": 1
+  },
+  {
+   "id": "shaonv",
+   "label": "少女",
+   "yin": 0,
+   "yang": 1
+  }
+ ],
+ "casts": {
+  "0": {
+   "bits": [
+    0,
+    0,
+    0,
+    0
+   ],
+   "figure": "Populus",
+   "figure_zh": "民众",
+   "tone": "neutral",
+   "reading": "中性·随众随邻图(诊断取向:病因/祖灵)"
+  },
+  "1": {
+   "bits": [
+    0,
+    0,
+    0,
+    1
+   ],
+   "figure": "Tristitia",
+   "figure_zh": "忧伤",
+   "tone": "bad",
+   "reading": "凶·悲伤·利稳固建造农事(诊断取向:病因/祖灵)"
+  },
+  "2": {
+   "bits": [
+    0,
+    0,
+    1,
+    0
+   ],
+   "figure": "Albus",
+   "figure_zh": "白",
+   "tone": "good",
+   "reading": "吉(弱)·和平智慧纯洁(诊断取向:病因/祖灵)"
+  },
+  "3": {
+   "bits": [
+    0,
+    0,
+    1,
+    1
+   ],
+   "figure": "Fortuna Maior",
+   "figure_zh": "大吉",
+   "tone": "good",
+   "reading": "大吉·大利长久成功(诊断取向:病因/祖灵)"
+  },
+  "4": {
+   "bits": [
+    0,
+    1,
+    0,
+    0
+   ],
+   "figure": "Rubeus",
+   "figure_zh": "赤红",
+   "tone": "bad",
+   "reading": "大凶·激情欺骗暴力(诊断取向:病因/祖灵)"
+  },
+  "5": {
+   "bits": [
+    0,
+    1,
+    0,
+    1
+   ],
+   "figure": "Acquisitio",
+   "figure_zh": "获得",
+   "tone": "good",
+   "reading": "吉·主得获利(诊断取向:病因/祖灵)"
+  },
+  "6": {
+   "bits": [
+    0,
+    1,
+    1,
+    0
+   ],
+   "figure": "Coniunctio",
+   "figure_zh": "会合",
+   "tone": "neutral",
+   "reading": "中性·利结合复得婚恋(诊断取向:病因/祖灵)"
+  },
+  "7": {
+   "bits": [
+    0,
+    1,
+    1,
+    1
+   ],
+   "figure": "Caput Draconis",
+   "figure_zh": "龙首",
+   "tone": "neutral",
+   "reading": "中性偏吉·利开端入门获利(诊断取向:病因/祖灵)"
+  },
+  "8": {
+   "bits": [
+    1,
+    0,
+    0,
+    0
+   ],
+   "figure": "Laetitia",
+   "figure_zh": "喜悦",
+   "tone": "good",
+   "reading": "吉·喜悦上升速建(诊断取向:病因/祖灵)"
+  },
+  "9": {
+   "bits": [
+    1,
+    0,
+    0,
+    1
+   ],
+   "figure": "Carcer",
+   "figure_zh": "牢狱",
+   "tone": "bad",
+   "reading": "凶·阻滞束缚·利稳固保密(诊断取向:病因/祖灵)"
+  },
+  "10": {
+   "bits": [
+    1,
+    0,
+    1,
+    0
+   ],
+   "figure": "Amissio",
+   "figure_zh": "损失",
+   "tone": "bad",
+   "reading": "凶·主失·利求失或爱情(诊断取向:病因/祖灵)"
+  },
+  "11": {
+   "bits": [
+    1,
+    0,
+    1,
+    1
+   ],
+   "figure": "Puella",
+   "figure_zh": "少女",
+   "tone": "good",
+   "reading": "吉·尤利女性美和谐(诊断取向:病因/祖灵)"
+  },
+  "12": {
+   "bits": [
+    1,
+    1,
+    0,
+    0
+   ],
+   "figure": "Fortuna Minor",
+   "figure_zh": "小吉",
+   "tone": "neutral",
+   "reading": "小吉·速成需外助不久(诊断取向:病因/祖灵)"
+  },
+  "13": {
+   "bits": [
+    1,
+    1,
+    0,
+    1
+   ],
+   "figure": "Puer",
+   "figure_zh": "赤子",
+   "tone": "bad",
+   "reading": "偏凶·利战争竞争男性事(诊断取向:病因/祖灵)"
+  },
+  "14": {
+   "bits": [
+    1,
+    1,
+    1,
+    0
+   ],
+   "figure": "Cauda Draconis",
+   "figure_zh": "龙尾",
+   "tone": "bad",
+   "reading": "大凶·利结束断离(诊断取向:病因/祖灵)"
+  },
+  "15": {
+   "bits": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "figure": "Via",
+   "figure_zh": "道路",
+   "tone": "bad",
+   "reading": "中性偏凶·利出行/变化(诊断取向:病因/祖灵)"
+  }
+ }
+}

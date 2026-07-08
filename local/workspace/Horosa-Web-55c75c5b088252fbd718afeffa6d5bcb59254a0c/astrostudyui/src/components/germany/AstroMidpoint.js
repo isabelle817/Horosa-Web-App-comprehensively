@@ -6,13 +6,12 @@ import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import { buildAstroSnapshotContent, } from '../../utils/astroAiSnapshot';
 import { saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
-import { planetaryPictures, midpointList, spiegelContacts } from '../../utils/uranianDial';
+import { planetaryPictures, midpointList, spiegelContacts, solarArcDirections } from '../../utils/uranianDial';
+import { getStoredUranianDisplay } from './UranianDialStyle';
+import { personalSetForSchool, schoolToBackendParams, SCHOOL_OPTIONS } from './UranianSchools';
+import { medicalMeaning, factorLabel } from '../../data/uranianMeanings';
 
-// AI 快照口径:个人点 / TNP 集合(同盘交互层),供行星图/映点/中点列表的锚点剪枝与优先级排序。
-const SNAP_PERSONAL = new Set([
-	AstroConst.SUN, AstroConst.MOON, AstroConst.ASC, AstroConst.MC,
-	AstroConst.NORTH_NODE, AstroConst.SOUTH_NODE, AstroConst.ARIES_POINT,
-]);
+// AI 快照口径:个人点集随「90°中点盘」当前流派派生(与盘交互层一致,防口径分叉);TNP 集恒定。
 const SNAP_URANIAN = new Set(AstroConst.LIST_URANIAN);
 
 function fieldsToParams(fields){
@@ -107,6 +106,116 @@ function pickAstroSections(text, sectionNames){
 	return blocks.join('\n\n').trim();
 }
 
+// 汉堡学派要素(WP-8):流派 / 六宫框 / 差值表 / 医学四液 / 赤纬平行,聚合入快照供 AI 读盘。
+// 门控 showHamburg:用户介入任一汉堡功能即附加——非默认流派 / 差值表 / 十字指针 / 合盘叠加,
+// 以及映点(showAntiscia)/中点列表(showMidpointList)/行星图(showPlanetPicture)/和点(showSumPoints)/差距(showArcOpenings)。
+// 注:只纳入「默认 false 的用户主动开关」;showHouseFrames/showDeclination 在 classic 默认即 true,不能进门控
+// (否则 classic 默认就触发汉堡段,破坏零回归)。默认 classic 且无任一开关 → 空数组,既有快照逐字零回归
+// (硬证见 __tests__/germanyHamburgSnapshot)。
+export function buildHamburgLines(disp, dialPoints, result, snapOrb){
+	const out = [];
+	if(!disp){
+		return out;
+	}
+	const synLen = Array.isArray(disp.synastryPeople) ? disp.synastryPeople.length : 0;
+	const showHamburg = disp.school !== 'classic' || disp.showDiffList || disp.crossPointer || synLen > 0
+		|| disp.showAntiscia || disp.showMidpointList || disp.showPlanetPicture || disp.showSumPoints || disp.showArcOpenings;
+	if(!showHamburg){
+		return out;
+	}
+	const orb = Number.isFinite(Number(snapOrb)) && Number(snapOrb) > 0 ? Number(snapOrb) : 1;
+	const pts = Array.isArray(dialPoints) ? dialPoints : [];
+	out.push('[汉堡学派要素]');
+
+	// 流派(classic 不进入此分支;此处必为非默认派或显式开关)。
+	const schoolOpt = (SCHOOL_OPTIONS || []).find((o)=>o.value === disp.school);
+	if(schoolOpt){
+		out.push(`流派：${schoolOpt.label}`);
+	}
+
+	// 六宫框(WP-2):后端 houseFrames.frames[key].placements[id]→宫号;报太阳局四点落宫。
+	const frames = result && result.houseFrames && result.houseFrames.frames ? result.houseFrames.frames : null;
+	const sunFrame = frames ? frames.sun : null;
+	if(sunFrame && sunFrame.placements){
+		const pl = sunFrame.placements;
+		const hps = [AstroConst.SUN, AstroConst.MOON, AstroConst.ASC, AstroConst.MC]
+			.filter((id)=>pl[id])
+			.map((id)=>`${msg(id)}→${pl[id]}宫`);
+		if(hps.length){
+			out.push(`六宫框(太阳局)：${hps.join('、')}`);
+		}
+	}
+
+	// 差值表(WP-3):太阳弧到期(naibod),目标年龄命中标★。
+	if(disp.showDiffList){
+		const targetAge = Number.isFinite(Number(disp.diffTargetAge)) ? Number(disp.diffTargetAge) : 30;
+		const diffs = solarArcDirections(pts, 90, { saKey: 'naibod', targetAge, win: 1, maxAge: 90 });
+		if(diffs && diffs.length){
+			out.push(`差值表(太阳弧到期，目标年龄${targetAge}岁)：`);
+			diffs.slice(0, 8).forEach((d)=>{
+				const due = d.due ? ' ★到期' : '';
+				out.push(`  ${factorLabel(d.a)}∠${factorLabel(d.b)} 弧${Number(d.arc).toFixed(2)}° → ${Number(d.age).toFixed(1)}岁${due}`);
+			});
+		}
+	}
+
+	// 医学四液(WP-4):四液中点被本盘因子激活(某点落该中点折叠位,90°盘 orb 内)则报体质倾向。
+	const foldOf = (id)=>{
+		const p = pts.find((x)=>x && x.id === id);
+		return p && Number.isFinite(Number(p.lon)) ? ((Number(p.lon) % 90) + 90) % 90 : null;
+	};
+	const dialDist = (x, y)=>{ const dd = Math.abs(x - y) % 90; return Math.min(dd, 90 - dd); };
+	const MED_PAIRS = [
+		[AstroConst.SUN, AstroConst.MARS],
+		[AstroConst.VENUS, AstroConst.JUPITER],
+		[AstroConst.MERCURY, AstroConst.SATURN],
+		[AstroConst.MOON, AstroConst.NEPTUNE],
+	];
+	const medHits = [];
+	MED_PAIRS.forEach(([a, b])=>{
+		const fa = foldOf(a);
+		const fb = foldOf(b);
+		if(fa === null || fb === null){
+			return;
+		}
+		let mid = (fa + fb) / 2;
+		if(Math.abs(fa - fb) > 45){
+			mid = (mid + 45) % 90;
+		}
+		const hit = pts.some((p)=>{
+			if(!p || p.id === a || p.id === b || !Number.isFinite(Number(p.lon))){
+				return false;
+			}
+			const fp = ((Number(p.lon) % 90) + 90) % 90;
+			return dialDist(fp, mid) <= orb;
+		});
+		if(hit){
+			const m = medicalMeaning(a, b);
+			if(m){
+				medHits.push(`${factorLabel(a)}/${factorLabel(b)}=${m.temperament}`);
+			}
+		}
+	});
+	if(medHits.length){
+		out.push(`医学四液中点(本盘激活)：${medHits.join('；')}`);
+		out.push('（仅为体质倾向参考，不替代医疗诊断）');
+	}
+
+	// 赤纬平行/反平行(WP-11):后端 declination top 接触(仅 showDeclination 开时)。
+	const decl = (disp.showDeclination !== false && result && result.declination && typeof result.declination === 'object') ? result.declination : null;
+	if(decl){
+		const par = Array.isArray(decl.parallel) ? decl.parallel : [];
+		const cp = Array.isArray(decl.contraParallel) ? decl.contraParallel : [];
+		if(par.length || cp.length){
+			out.push('赤纬接触：');
+			par.slice(0, 6).forEach((p)=>out.push(`  ${msg(p.a)} ∥ ${msg(p.b)}（平行≈合，Δ${Number(p.delta).toFixed(2)}°）`));
+			cp.slice(0, 6).forEach((p)=>out.push(`  ${msg(p.a)} ⥮ ${msg(p.b)}（反平行≈冲，Δ${Number(p.delta).toFixed(2)}°）`));
+		}
+	}
+
+	return out;
+}
+
 // 供 AI 分析无头复算：取本命西洋盘 + 中点盘，生成量化盘快照（不依赖组件挂载）。
 export async function buildGermanySnapshotForFields(fields){
 	if(!fields){
@@ -118,8 +227,11 @@ export async function buildGermanySnapshotForFields(fields){
 		silent: true,
 	});
 	const chartObj = chartData && chartData[Constants.ResultKey] ? chartData[Constants.ResultKey] : null;
+	// 流派/赤纬随「90°中点盘」存储派生(同盘口径);默认 classic → schoolParams=后端默认、declination 默认开,既有段字节零回归。
+	const dispReq = getStoredUranianDisplay();
+	const schoolReq = { ...schoolToBackendParams(dispReq.school), orb: dispReq.orb, personalOrb: dispReq.orbPersonal, declination: dispReq.showDeclination !== false };
 	const mpData = await request(`${Constants.ServerRoot}/germany/midpoint`, {
-		body: JSON.stringify(params),
+		body: JSON.stringify({ ...params, ...schoolReq }),
 		silent: true,
 	});
 	const result = mpData && mpData[Constants.ResultKey] ? mpData[Constants.ResultKey] : null;
@@ -219,15 +331,19 @@ function buildGermanySnapshotText(params, chartObj, result, fields){
 		});
 	}
 
-	// 行星图 / 映点 / 中点列表(与盘交互层同口径:base=90、orb=1 Witte 标准),供 AI 完整读盘。
+	// 行星图 / 映点 / 中点列表(与盘交互层同口径:base=90、orb=1 严格口径),供 AI 完整读盘。
 	const dialPoints = [];
 	const pushPoint = (id, lon) => { const n = Number(lon); if (id && Number.isFinite(n)) dialPoints.push({ id, lon: n }); };
 	(innerChart.objects || []).forEach((o)=>{ if(DIAL_IDS.has(o.id)) pushPoint(o.id, o.lon); });
 	(innerChart.angles || []).forEach((o)=>{ if(DIAL_IDS.has(o.id)) pushPoint(o.id, o.lon); });
 	tnpList.forEach((t)=>pushPoint(t.id, t.lon));
 	pushPoint(AstroConst.ARIES_POINT, 0);
-	const SNAP_BASE = 90, SNAP_ORB = 1;
-	const scanOpts = { personal: SNAP_PERSONAL, uranian: SNAP_URANIAN };
+	// 流派/容许度随「90°中点盘」存储派生(与盘一致);缺省 classic → 个人点含白羊+南交、orb 1°,即现状口径。
+	const disp = getStoredUranianDisplay();
+	const snapPersonal = personalSetForSchool(disp.school);
+	const SNAP_BASE = 90;
+	const SNAP_ORB = Number.isFinite(Number(disp.orb)) && Number(disp.orb) > 0 ? Number(disp.orb) : 1;
+	const scanOpts = { personal: snapPersonal, uranian: SNAP_URANIAN, orbPersonal: disp.orbPersonal };
 
 	lines.push('');
 	lines.push('[行星图]');
@@ -256,6 +372,13 @@ function buildGermanySnapshotText(params, chartObj, result, fields){
 		lines.push('暂无中点');
 	}else{
 		mpl.slice(0, 120).forEach((m)=>lines.push(`${msg(m.a)} / ${msg(m.b)} = ${m.lon.toFixed(2)}°`));
+	}
+
+	// 汉堡学派要素(WP-8):流派/六宫框/差值/医学/赤纬,仅用户介入汉堡功能时附加(默认 classic 零回归)。
+	const hamburgLines = buildHamburgLines(disp, dialPoints, result, SNAP_ORB);
+	if(hamburgLines.length){
+		lines.push('');
+		lines.push(hamburgLines.join('\n'));
 	}
 
 	return lines.join('\n');
@@ -290,10 +413,13 @@ class AstroMidpoint extends Component{
 	}
 
 	async requestChart(params){
+		// 流派出参随「90°中点盘」存储派生(同盘口径);默认 classic 即现状字节零回归,不扰后端缓存。
+		const disp = getStoredUranianDisplay();
+		const schoolParams = { ...schoolToBackendParams(disp.school), orb: disp.orb, personalOrb: disp.orbPersonal };
 		const data = await request(`${Constants.ServerRoot}/germany/midpoint`, {
-			body: JSON.stringify(params),
+			body: JSON.stringify({ ...params, ...schoolParams }),
 		});
-		const result = data[Constants.ResultKey]
+		const result = data && data[Constants.ResultKey] ? data[Constants.ResultKey] : null; // 后端无响应/异常时优雅降级(与本文件 229/237 同口径),不再 data undefined 时 data[ResultKey] 崩红屏
 
 		const st = {
 			midpoints: result,

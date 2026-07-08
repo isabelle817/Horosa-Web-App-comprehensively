@@ -37,10 +37,12 @@ public class BaZiBirthController {
 		boolean gender = (boolean) params.get("gender");
 		boolean adjustJieqi = (boolean) params.get("adjustJieqi");
 		String godKeyPos = (String) params.get("godKeyPos");
+		String minggongMethod = (String) params.get("minggongMethod");
 		int ad = ConvertUtility.getValueAsInt(params.get("ad"), 1);
 
 		Object obj = ParamHashCacheHelper.get("/bazi/birth", params, (args)->{
 			BaZi bz = new BaZi(ad, dtstr, zone, lon, lat, timealg, zodiacalLon, godKeyPos, after23NewDay, adjustJieqi, lateZiHourUseNextDay);
+			bz.setMinggongMethod(minggongMethod);
 			bz.calculate(phaseType);
 			Map<String, Object> res = new HashMap<String, Object>();
 			res.put("bazi", bz);
@@ -76,9 +78,14 @@ public class BaZiBirthController {
 		map.put("lat", TransData.getValueAsString("lat"));
 		map.put("lon", TransData.getValueAsString("lon"));
 		if(TransData.containsParam("godKeyPos")) {
-			map.put("godKeyPos", TransData.getValueAsString("godKeyPos"));			
+			map.put("godKeyPos", TransData.getValueAsString("godKeyPos"));
 		}else {
-			map.put("godKeyPos", GodRule.ZhuNianRi);	
+			map.put("godKeyPos", GodRule.ZhuNianRi);
+		}
+		if(TransData.containsParam("minggongMethod")) {
+			map.put("minggongMethod", TransData.getValueAsString("minggongMethod"));
+		}else {
+			map.put("minggongMethod", "shufa");
 		}
 		int timealg = TransData.getValueAsInt("timeAlg", 0);
 		map.put("timeAlg", TimeZiAlg.fromCode(timealg));

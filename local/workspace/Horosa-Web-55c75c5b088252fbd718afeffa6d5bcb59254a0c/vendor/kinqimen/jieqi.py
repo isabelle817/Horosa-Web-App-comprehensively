@@ -97,6 +97,25 @@ def get_jieqi_start_date(year, month, day, hour, minute):
                     "時間":datetime.datetime(t.Y, t.M, t.D, int(t.h), round(t.m))
                 }
             
+def get_current_jieqi_start_date(year, month, day, hour, minute):
+    """時刻感知:返回「當前時刻所處節氣」的交節時刻與名稱。
+
+    修 get_jieqi_start_date 只按「當天有無節氣」判定、忽略時分的邊界誤差:
+    節氣當天但尚未到交節時刻時,真正所處的仍是上一個節氣(其交節時刻 <= now)。
+    逐日向前回掃,取第一個交節時刻 <= now 的節氣(節氣間距~15天,40天足夠)。
+    """
+    now = datetime.datetime(year, month, day, hour, minute)
+    cur = sxtwl.fromSolar(year, month, day)
+    for _ in range(40):
+        if cur.hasJieQi():
+            t = sxtwl.JD2DD(cur.getJieQiJD())
+            cand = datetime.datetime(t.Y, t.M, t.D, int(t.h), round(t.m))
+            if cand <= now:
+                return {"節氣": jqmc[cur.getJieQi() - 1], "時間": cand}
+        cur = cur.before(1)
+    # 兜底:回退原實現(極端情況不致拋錯)
+    return get_jieqi_start_date(year, month, day, hour, minute)
+
 def get_before_jieqi_start_date(year, month, day, hour, minute):
     """
     Get the start date and time of the next solar term (jieqi) after the given date and time.
@@ -244,6 +263,17 @@ def zhirun_jieqi(year, month, day, hour, minute):
         seq = [_RUN_REPEAT[znm]] + seq
     n = (_solar_date(fromSolar(year, month, day)) - _solar_date(fstar)).days // 5   # 自 F* 起第 n 元
     g = max(0, min(n // 3, len(seq) - 1))                      # 第 g 組節氣(每組三元)
+    return seq[g]
+
+def zhirun_jieqi_noleap(year, month, day, hour, minute):
+    """无闰定局所用節氣(超神接氣,不置閏):同 zhirun_jieqi 但跳過大雪/芒種≥9天的置閏重複。"""
+    znm, zday = _anchor_solstice(year, month, day)
+    if znm is None:
+        return jq(year, month, day, hour, minute)
+    fstar = _last_shangyuan_before(zday)
+    seq = _JIE_SEQ_ZHIRUN[znm]                                 # 无闰:不做 dgap>=9 置閏
+    n = (_solar_date(fromSolar(year, month, day)) - _solar_date(fstar)).days // 5
+    g = max(0, min(n // 3, len(seq) - 1))
     return seq[g]
 
 def ke_jiazi_d(hour):

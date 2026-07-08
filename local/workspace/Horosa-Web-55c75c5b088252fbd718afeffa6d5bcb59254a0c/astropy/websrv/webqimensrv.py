@@ -98,7 +98,7 @@ def _build_sections(selected, all_raw, mode, option):
         "title": "起盘",
         "rows": [
             _row("起盘方式", MODE_LABELS.get(mode, mode)),
-            _row("排盘方式", selected.get("排盤方式", {1: "拆補", 2: "置閏"}.get(option, ""))),
+            _row("排盘方式", selected.get("排盤方式", {1: "拆補", 2: "置閏", 3: "茅山", 4: "無閏"}.get(option, ""))),
             _row("干支", selected.get("干支")),
             _row("节气", selected.get("節氣")),
             _row("排局", selected.get("排局") or selected.get("局")),
@@ -158,7 +158,7 @@ def _build_sections(selected, all_raw, mode, option):
     return sections
 
 
-def _mode_result(qimen_obj, mode, option):
+def _mode_result(qimen_obj, mode, option, school="轉盤"):
     if mode == "year":
         return {"年家": qimen_obj.ypan()}
     if mode == "minute":
@@ -166,8 +166,8 @@ def _mode_result(qimen_obj, mode, option):
     if mode == "golden":
         return qimen_obj.gpan()
     if mode == "overall":
-        return qimen_obj.pan(option)
-    return qimen_obj.pan(option)
+        return qimen_obj.pan(option, school)
+    return qimen_obj.pan(option, school)
 
 
 class QiMenSrv:
@@ -205,14 +205,18 @@ class QiMenSrv:
                     _qm_jieqi.set_hour_gan_use_next_day(late_zi_hour_use_next_day)
             except Exception:
                 pass
-            option = 2 if _clean_text(data.get("qijuMethod")) == "zhirun" or _to_int(data.get("option"), 2) == 2 else 1
+            # 定局法 → option:1拆补/2置闰/3茅山/4无闰(qijuMethod 优先,缺则回退数字 option,默认 2 置闰保持旧默认)
+            _qm_option_map = {"chaibu": 1, "zhirun": 2, "maoshan": 3, "wurun": 4}
+            option = _qm_option_map.get(_clean_text(data.get("qijuMethod")), _to_int(data.get("option"), 2))
             mode = _clean_text(data.get("qimenMode"), "hour")
             if mode not in MODE_LABELS:
                 mode = "hour"
+            # 盤式 school:飛盤(洛書飛布九神)/轉盤(預設活盤)。僅時家/綜合分量套用。
+            school = "飛盤" if _clean_text(data.get("school")) in ("飞盘", "飛盤") else "轉盤"
 
             qimen_obj = kinqimen.Qimen(year, month, day, hour, minute)
-            selected = _json_safe(_mode_result(qimen_obj, mode, option))
-            all_raw = _json_safe(qimen_obj.overall(option))
+            selected = _json_safe(_mode_result(qimen_obj, mode, option, school))
+            all_raw = _json_safe(qimen_obj.overall(option, school))
             all_raw["年家奇門"] = qimen_obj.ypan()
             if mode == "golden":
                 selected["年家"] = qimen_obj.ypan()
@@ -227,6 +231,7 @@ class QiMenSrv:
                 "jiedelta": data.get("jiedelta", ""),
                 "qijuMethod": "zhirun" if option == 2 else "chaibu",
                 "option": option,
+                "school": "飞盘" if school == "飛盤" else "转盘",
                 "selected": selected,
                 "raw": selected,
                 "allRaw": all_raw,

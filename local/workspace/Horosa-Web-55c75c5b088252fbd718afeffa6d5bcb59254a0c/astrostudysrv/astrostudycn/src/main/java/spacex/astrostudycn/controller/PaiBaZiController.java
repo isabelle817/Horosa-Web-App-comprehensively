@@ -40,10 +40,12 @@ public class PaiBaZiController {
 		boolean gender = (boolean) params.get("gender");
 		boolean adjustJieqi = (boolean) params.get("adjustJieqi");
 		String godKeyPos = (String) params.get("godKeyPos");
+		String minggongMethod = (String) params.get("minggongMethod");
 		int ad = ConvertUtility.getValueAsInt(params.get("ad"), 1);
 
 		Object obj = ParamHashCacheHelper.get("/bazi/direct", params, (args)->{
 			BaZiDirect bz = new BaZiDirect(ad, dtstr, zone, lon, lat, timealg, zodiacalLon, godKeyPos, after23NewDay, gender, adjustJieqi, lateZiHourUseNextDay);
+			bz.setMinggongMethod(minggongMethod);
 			bz.calculate(phaseType);
 			Map<String, Object> res = new HashMap<String, Object>();
 			res.put("bazi", bz);
@@ -82,9 +84,14 @@ public class PaiBaZiController {
 		boolean byLon = TransData.getValueAsBool("byLon", false);
 		map.put("useZodicalLon", byLon);
 		if(TransData.containsParam("godKeyPos")) {
-			map.put("godKeyPos", TransData.getValueAsString("godKeyPos"));			
+			map.put("godKeyPos", TransData.getValueAsString("godKeyPos"));
 		}else {
-			map.put("godKeyPos", GodRule.ZhuNianRi);	
+			map.put("godKeyPos", GodRule.ZhuNianRi);
+		}
+		if(TransData.containsParam("minggongMethod")) {
+			map.put("minggongMethod", TransData.getValueAsString("minggongMethod"));
+		}else {
+			map.put("minggongMethod", "shufa");
 		}
 		boolean after23NewDay = TransData.getValueAsInt("after23NewDay", 1) == 1;
 		map.put("after23NewDay", after23NewDay);

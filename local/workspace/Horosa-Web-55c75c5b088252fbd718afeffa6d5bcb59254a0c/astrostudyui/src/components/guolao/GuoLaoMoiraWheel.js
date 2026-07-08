@@ -1,6 +1,6 @@
 import React, { Component } from 'react';
 import * as AstroConst from '../../constants/AstroConst';
-import { GUOLAO_LIFE_MODE_COTRANS, GUOLAO_LIFE_MODE_YUMAO, getStoredGuolaoLifeMode, normalizeGuolaoLifeMode, } from './GuoLaoChartStyle';
+import { GUOLAO_LIFE_MODE_ASC, GUOLAO_LIFE_MODE_COTRANS, GUOLAO_LIFE_MODE_YUMAO, getStoredGuolaoLifeMode, normalizeGuolaoLifeMode, } from './GuoLaoChartStyle';
 import { guolaoShenShaTip } from './GuoLaoShenShaDoc';
 import './GuoLaoMoiraWheel.less';
 
@@ -795,7 +795,8 @@ function lifeDegree(chart, fields){
 	const asc = findObject(chart, AstroConst.ASC);
 	const sun = findObject(chart, AstroConst.SUN);
 	const lifeMode = lifeModeFromFields(fields);
-	const useLifeMaster = lifeMode === GUOLAO_LIFE_MODE_YUMAO || lifeMode === GUOLAO_LIFE_MODE_COTRANS;
+	// R: 除「占星上升」外(asc 直接用上升点),日出/赤黄/古法遇卯/自定命宫(地支)均以 BaZi 算出的 LifeMasterDeg74 为命度起宫。
+	const useLifeMaster = lifeMode !== GUOLAO_LIFE_MODE_ASC;
 	const preferLon = isZhengSiderealChart(chart);
 	const primary = useLifeMaster ? objectRa(life, preferLon) : objectRa(asc, preferLon);
 	const secondary = useLifeMaster ? objectRa(asc, preferLon) : objectRa(life, preferLon);

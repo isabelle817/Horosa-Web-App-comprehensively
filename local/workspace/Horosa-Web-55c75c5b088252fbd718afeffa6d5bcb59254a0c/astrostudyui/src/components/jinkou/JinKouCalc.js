@@ -7,17 +7,32 @@ import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/d
 import {
 	JINKOU_SHENSHA_DOC,
 	JINKOU_RELATION_DOC,
+	JINKOU_BIHE_DOC,
 	JINKOU_DIZHI_DOC,
 	JINKOU_CATEGORY_RULES,
+	JINKOU_DONG_DOC,
+	JINKOU_GEJU_DOC,
+	JINKOU_GUISHEN_XIANGYI,
+	JINKOU_YUEJIANG_DOC,
 } from './JinKouDoc';
 
-export const JinKouElementColor = {
-	'木': '#2f9f68',
-	'火': '#d64a35',
-	'土': '#b7842f',
-	'金': '#d6a64f',
-	'水': '#4da3ff',
-};
+// 五行配色统一对齐八字模块的品牌色板(--horosa-bazi-*)，全 app 一套色。
+// 金口诀主盘走 SVG presentation 属性(attr fill)，CSS 变量在此不解析，故落为对应 hex；
+// 主盘底色随暗黑模式翻深，浅色板的水/木/火会过暗不可读 → 按主题在 access 时取浅/深板(Proxy)，
+// 主盘重绘时即解析当前主题，明暗皆可读。
+const JINKOU_ELEMENT_COLOR_LIGHT = { '木': '#237a45', '火': '#c72d22', '土': '#805526', '金': '#e0892a', '水': '#275fc7' };
+const JINKOU_ELEMENT_COLOR_DARK = { '木': '#66c486', '火': '#ff5f50', '土': '#c08a4c', '金': '#eda34a', '水': '#5f8fff' };
+function jinKouElementPalette(){
+	try {
+		if(typeof document !== 'undefined' && document.documentElement && document.documentElement.getAttribute('data-horosa-appearance') === 'dark'){
+			return JINKOU_ELEMENT_COLOR_DARK;
+		}
+	} catch(e){ /* 非浏览器环境(测试)走浅色板 */ }
+	return JINKOU_ELEMENT_COLOR_LIGHT;
+}
+export const JinKouElementColor = new Proxy(JINKOU_ELEMENT_COLOR_LIGHT, {
+	get: function(target, key){ return jinKouElementPalette()[key]; },
+});
 
 const JinKouWuXingOrder = ['木', '火', '土', '金', '水'];
 const JinKouWuXingSheng = {
@@ -105,6 +120,22 @@ const JinKouYueJiangByJieQi = {
 	'大寒': '子',
 	'立春': '子',
 };
+// 交节即换口径（A1）：月将随月建六合，于「节」一交即变（立春→亥起，逐节顺退）。
+// 24 节气全列：节起新值、随后中气保持，与中气表同形可直接替换。
+const JinKouYueJiangByJieQi_JiaoJie = {
+	'立春': '亥', '雨水': '亥',
+	'惊蛰': '戌', '春分': '戌',
+	'清明': '酉', '谷雨': '酉',
+	'立夏': '申', '小满': '申',
+	'芒种': '未', '夏至': '未',
+	'小暑': '午', '大暑': '午',
+	'立秋': '巳', '处暑': '巳',
+	'白露': '辰', '秋分': '辰',
+	'寒露': '卯', '霜降': '卯',
+	'立冬': '寅', '小雪': '寅',
+	'大雪': '丑', '冬至': '丑',
+	'小寒': '子', '大寒': '子',
+};
 const JinKouGuiRuleLiuReng = {
 	'甲': {
 		day: { start: '丑', reverse: false },
@@ -147,6 +178,20 @@ const JinKouGuiRuleLiuReng = {
 		night: { start: '卯', reverse: false },
 	},
 };
+// 大六壬古法贵人表（A2，§3.4(3)）：昼/夜起例与实务派在甲乙丙辛壬 5 干相反；
+// 顺逆一律按贵人落支重判（巳午未申酉戌逆、亥子丑寅卯辰顺），故只存 start。
+const JinKouGuiRuleLiuRenClassic = {
+	'甲': { day: { start: '未' }, night: { start: '丑' } },
+	'乙': { day: { start: '申' }, night: { start: '子' } },
+	'丙': { day: { start: '酉' }, night: { start: '亥' } },
+	'丁': { day: { start: '亥' }, night: { start: '酉' } },
+	'戊': { day: { start: '丑' }, night: { start: '未' } },
+	'己': { day: { start: '子' }, night: { start: '申' } },
+	'庚': { day: { start: '丑' }, night: { start: '未' } },
+	'辛': { day: { start: '寅' }, night: { start: '午' } },
+	'壬': { day: { start: '卯' }, night: { start: '巳' } },
+	'癸': { day: { start: '巳' }, night: { start: '卯' } },
+};
 const WuZiDunStart = {
 	'甲': '甲',
 	'己': '甲',
@@ -160,7 +205,9 @@ const WuZiDunStart = {
 	'癸': '壬',
 };
 const DayTimeZi = ['卯', '辰', '巳', '午', '未', '申'];
-const GuiReverseStartZi = ['巳', '午', '未', '申', '酉'];
+// B6 修正：贵人落「巳午未申酉戌」六支逆布（§3.4(4)），原缺「戌」。
+// 实务派(idx=0)用表内 reverse 不受影响；古法表/idx≠0 按此判顺逆，戌不在实务派任何 start → 零回归。
+const GuiReverseStartZi = ['巳', '午', '未', '申', '酉', '戌'];
 export const JinKouShenShaOrder = [
 	'天德',
 	'天德合',
@@ -192,6 +239,10 @@ export const JinKouShenShaOrder = [
 	'天医',
 	'地医',
 	'五鬼',
+	'月德合',
+	'桃花',
+	'禄倒',
+	'马倒',
 ];
 
 function uniq(arr){
@@ -341,12 +392,20 @@ function resolveIsDay(timeZi, isDiurnal){
 	return containsVal(DayTimeZi, timeZi);
 }
 
-function getGuiShenAtDiFen(dayGan, timeZi, diFen, guirengType, isDiurnal){
+function getGuiShenAtDiFen(dayGan, timeZi, diFen, guirengType, isDiurnal, schoolOpts){
+	const so = schoolOpts || {};
+	const guiTable = so.guiTable || 'shiwu';
+	const guiPan = so.guiPan || 'di';
 	const idx = guirengType === undefined || guirengType === null ? 0 : parseInt(guirengType + '', 10);
 	const isDay = resolveIsDay(timeZi, isDiurnal);
 	let startZi = '';
 	let reverse = false;
-	if(idx === 0 && JinKouGuiRuleLiuReng[dayGan]){
+	if(guiTable === 'liuren' && JinKouGuiRuleLiuRenClassic[dayGan]){
+		// A2 大六壬古法贵人表：起例(start)按古法表，顺逆按贵人落支重判。
+		const cfg = JinKouGuiRuleLiuRenClassic[dayGan][isDay ? 'day' : 'night'];
+		startZi = cfg ? cfg.start : '';
+		reverse = containsVal(GuiReverseStartZi, startZi);
+	}else if(idx === 0 && JinKouGuiRuleLiuReng[dayGan]){
 		const mode = isDay ? 'day' : 'night';
 		const cfg = JinKouGuiRuleLiuReng[dayGan][mode];
 		startZi = cfg ? cfg.start : '';
@@ -364,7 +423,17 @@ function getGuiShenAtDiFen(dayGan, timeZi, diFen, guirengType, isDiurnal){
 			isDay: isDay,
 		};
 	}
-	const startIdx = LRConst.ZiList.indexOf(startZi);
+	// A3 起贵神盘：di=地盘(贵人直坐落支)、tian=天盘(贵人落支在天盘上方之地盘位起布，§3.4(5))。
+	let startIdx = LRConst.ZiList.indexOf(startZi);
+	if(guiPan === 'tian' && so.yuejiang){
+		const yjIdx = LRConst.ZiList.indexOf(so.yuejiang);
+		const tIdx = LRConst.ZiList.indexOf(timeZi);
+		const sIdx = LRConst.ZiList.indexOf(startZi);
+		if(yjIdx >= 0 && tIdx >= 0 && sIdx >= 0){
+			// 天盘[地盘位 di] = (月将+di-时)%12；解 tianPan[di*]=startZi → di* 为贵人落支上方的地盘位。
+			startIdx = (sIdx - yjIdx + tIdx + 24) % 12;
+		}
+	}
 	const map = {};
 	for(let i=0; i<JinKouGuiShenSeq.length; i++){
 		const idxVal = reverse ? (startIdx - i + 12) % 12 : (startIdx + i) % 12;
@@ -380,10 +449,12 @@ function getGuiShenAtDiFen(dayGan, timeZi, diFen, guirengType, isDiurnal){
 	};
 }
 
-function getYueJiang(liureng, monthZi){
+function getYueJiang(liureng, monthZi, school){
 	const jieqi = resolveJieqiForYueJiang(liureng);
-	if(jieqi && JinKouYueJiangByJieQi[jieqi]){
-		return JinKouYueJiangByJieQi[jieqi];
+	// A1 月将换将流派：jiaojie=交节即换、否则中气换将(默认)。节气名缺失时两派均 fallback 月支六合。
+	const table = school === 'jiaojie' ? JinKouYueJiangByJieQi_JiaoJie : JinKouYueJiangByJieQi;
+	if(jieqi && table[jieqi]){
+		return table[jieqi];
 	}
 	const explicitYue = extractFromList(liureng && liureng.yue ? liureng.yue : '', LRConst.ZiList);
 	if(explicitYue){
@@ -580,10 +651,8 @@ function getSeason(liureng, elem){
 }
 
 function buildPowerText(elem, sign, season){
+	// 旺衰文本仅「五行+旺衰」(如 金相/土旺)；阴阳(+/-)另列单独显示，避免与旺衰连写「金-相」误解。
 	let txt = elem ? elem : '—';
-	if(sign){
-		txt += sign;
-	}
 	if(season){
 		txt += season;
 	}
@@ -923,6 +992,11 @@ function getBranchesByElem(elem){
 	return res;
 }
 
+// §9 起例补全用表（标准三合沐浴/驿马后位/临官后位，与既有 getJieShaByZi 解耦，独立标准表）
+const JINKOU_TAOHUA_BY_ZI = { '申': '酉', '子': '酉', '辰': '酉', '寅': '卯', '午': '卯', '戌': '卯', '巳': '午', '酉': '午', '丑': '午', '亥': '子', '卯': '子', '未': '子' };
+const JINKOU_MADAO_BY_ZI = { '申': '卯', '子': '卯', '辰': '卯', '寅': '酉', '午': '酉', '戌': '酉', '巳': '子', '酉': '子', '丑': '子', '亥': '午', '卯': '午', '未': '午' };
+const JINKOU_LUDAO_BY_GAN = { '甲': '卯', '乙': '辰', '丙': '午', '丁': '未', '戊': '午', '己': '未', '庚': '酉', '辛': '戌', '壬': '子', '癸': '丑' };
+
 function calcJinKouShenShaRows(liureng, rows, ext){
 	const godMap = {};
 	for(let i=0; i<rows.length; i++){
@@ -976,6 +1050,8 @@ function calcJinKouShenShaRows(liureng, rows, ext){
 		addGodByStems(rows, godMap, '天德合', [tianDeHeStems[monthIdx - 1]]);
 		addGodByStems(rows, godMap, '月德', [yueDeStems[monthIdx - 1]]);
 		addGodByStems(rows, godMap, '月合', [yueHeStems[monthIdx - 1]]);
+		// 月德合(月德之干五合)——§9 起例补全
+		if(LRConst.GanHe[yueDeStems[monthIdx - 1]]){ addGodByStems(rows, godMap, '月德合', [LRConst.GanHe[yueDeStems[monthIdx - 1]]]); }
 		addGodByBranches(rows, godMap, '天马', [tianMaByMonth[monthIdx]]);
 		addGodByBranches(rows, godMap, '飞廉', [feiLianByMonth[monthIdx]]);
 		addGodByBranches(rows, godMap, '生气', shengQiByMonth[monthIdx]);
@@ -1019,6 +1095,9 @@ function calcJinKouShenShaRows(liureng, rows, ext){
 		addGodByBranches(rows, godMap, '劫煞', [yiMaByDay]);
 		addGodByBranches(rows, godMap, '地煞', [shiftZi(yiMaByDay, 5)]);
 		addGodByBranches(rows, godMap, '望门', [shiftZi(yiMaByDay, 6)]);
+		// 桃花(日支三合沐浴)、马倒(日支驿马后一位)——§9 起例补全
+		if(JINKOU_TAOHUA_BY_ZI[dayZi]){ addGodByBranches(rows, godMap, '桃花', [JINKOU_TAOHUA_BY_ZI[dayZi]]); }
+		if(JINKOU_MADAO_BY_ZI[dayZi]){ addGodByBranches(rows, godMap, '马倒', [JINKOU_MADAO_BY_ZI[dayZi]]); }
 	}
 	if(monthZi){
 		addGodByBranches(rows, godMap, '驿马', [getJieShaByZi(monthZi), getJieShaByZi(dayZi)]);
@@ -1057,6 +1136,8 @@ function calcJinKouShenShaRows(liureng, rows, ext){
 		};
 		addGodByBranches(rows, godMap, '截命灾杀', jieMing[dayGan] ? jieMing[dayGan] : []);
 		addGodByBranches(rows, godMap, '五鬼', wuGui[dayGan] ? wuGui[dayGan] : []);
+		// 禄倒(日干临官后一位)——§9 起例补全
+		if(JINKOU_LUDAO_BY_GAN[dayGan]){ addGodByBranches(rows, godMap, '禄倒', [JINKOU_LUDAO_BY_GAN[dayGan]]); }
 		if(dayGan === '丁'){
 			addRowGod(godMap, '人元', '六丁');
 		}
@@ -1240,6 +1321,151 @@ function buildJinKouRelations(rows){
 		const text = JINKOU_RELATION_DOC[key] || JINKOU_RELATION_DOC[`_${rel}_`] || '';
 		out.push({ from: pair[0], to: pair[1], rel: rel, fromElem: a.elem, toElem: b.elem, text: text });
 	});
+	// 干元类（§10.3）：神干(贵神之遁干) ↔ 将干(将神之遁干)，先判天干五合（合局），否则按五行生克。
+	const shenRow = byLabel['贵神'], jiangRow = byLabel['将神'];
+	if(shenRow && jiangRow && shenRow.gan && jiangRow.gan && shenRow.gan !== '-' && jiangRow.gan !== '-' && shenRow.ganElem && jiangRow.ganElem){
+		const rel = (LRConst.GanHe[shenRow.gan] === jiangRow.gan) ? '合' : wuxingRelation(shenRow.ganElem, jiangRow.ganElem);
+		if(rel){
+			const key = `神干_${rel}_将干`;
+			const text = JINKOU_RELATION_DOC[key] || JINKOU_RELATION_DOC[`_${rel}_`] || '';
+			out.push({ from: '神干', to: '将干', rel: rel, fromElem: shenRow.ganElem, toElem: jiangRow.ganElem, text: text });
+		}
+	}
+	return out;
+}
+
+// 五比同类（§10.4）：四位两两五行同气定名；四位全同气优先取「合比」。
+export function buildJinKouBihe(rows){
+	const byLabel = {};
+	rows.forEach((r)=>{ byLabel[r.label] = r; });
+	const elemOf = (label)=>{ const r = byLabel[label]; return r && r.elem ? r.elem : ''; };
+	const out = [];
+	const elems = ['人元', '贵神', '将神', '地分'].map(elemOf);
+	if(elems[0] && elems.every((e)=>e === elems[0])){
+		out.push({ name: '合比', text: JINKOU_BIHE_DOC['合比'].text });
+		return out;
+	}
+	['正比', '近比', '远比', '次比'].forEach((name)=>{
+		const def = JINKOU_BIHE_DOC[name];
+		const ea = elemOf(def.pair[0]);
+		const eb = elemOf(def.pair[1]);
+		if(ea && eb && ea === eb){
+			out.push({ name: name, text: def.text });
+		}
+	});
+	return out;
+}
+
+// 象意（§4.7/§4.8）：当前贵神(断事之性质) + 将神月将(断经过/媒介)的象意。
+function buildJinKouXiangyi(guiName, jiangName){
+	const gs = guiName && JINKOU_GUISHEN_XIANGYI[guiName] ? Object.assign({ name: guiName }, JINKOU_GUISHEN_XIANGYI[guiName]) : null;
+	const yj = jiangName && JINKOU_YUEJIANG_DOC[jiangName] ? { name: jiangName, desc: JINKOU_YUEJIANG_DOC[jiangName].desc } : null;
+	return { guishen: gs, yuejiang: yj };
+}
+
+// 太岁月建系统（§9.9）：据年/月/日支算各项落支，命中四位者高亮。
+const JINKOU_NIANYUERI_DEFS = [
+	{ name: '岁君', text: '太岁所临，神将与之相生主当年迁进吉庆、受克主尊长灾困、仕人利见大人。' },
+	{ name: '岁破', text: '太岁对冲，主道路音信、财物破散、家宅损耗、人事阻隔。' },
+	{ name: '月建', text: '当月之支，旺则物盛数多、谋望有成、吉凶力壮、动则立应。' },
+	{ name: '月破', text: '冲破月建，主器破忧散、病败财空、孕育不顺，反可解凶神。' },
+	{ name: '月厌', text: '正戌逆行之位，主咒诅冤仇、厌恶不明之事，占病连绵。' },
+	{ name: '日冲', text: '课被日辰冲破，主器物破坏、望事难成、人情不和；旺相逢冲即发、休囚逢破则空。' },
+];
+function buildJinKouNianYueRi(yearZi, monthZi, monthIdx, dayZi, fourBranches){
+	const four = fourBranches || [];
+	const zhiMap = {
+		'岁君': yearZi || '',
+		'岁破': yearZi ? shiftZi(yearZi, 6) : '',
+		'月建': monthZi || '',
+		'月破': monthZi ? shiftZi(monthZi, 6) : '',
+		'月厌': monthIdx > 0 ? shiftZi('戌', -(monthIdx - 1)) : '',
+		'日冲': dayZi ? shiftZi(dayZi, 6) : '',
+	};
+	const out = [];
+	JINKOU_NIANYUERI_DEFS.forEach((d)=>{
+		const zhi = zhiMap[d.name];
+		if(!zhi){ return; }
+		out.push({ name: d.name, zhi: zhi, hit: four.indexOf(zhi) >= 0, text: d.text });
+	});
+	return out;
+}
+
+// 断课避讳忌时（§10.7）：月三合局忌时(=局沐浴时) + 日干忌时；命中占时则准确率偏低。
+const JINKOU_JISHI_BY_YUE = { '寅': '卯', '午': '卯', '戌': '卯', '亥': '子', '卯': '子', '未': '子', '申': '酉', '子': '酉', '辰': '酉', '巳': '午', '酉': '午', '丑': '午' };
+const JINKOU_JISHI_BY_GAN = { '甲': '酉', '乙': '酉', '丙': '子', '丁': '子', '戊': '卯', '己': '卯', '庚': '午', '辛': '午', '壬': '未', '癸': '未' };
+function buildJinKouJishi(monthZi, dayGan, timeZi){
+	const byYue = JINKOU_JISHI_BY_YUE[monthZi] || '';
+	const byGan = JINKOU_JISHI_BY_GAN[dayGan] || '';
+	const hit = !!(timeZi && (timeZi === byYue || timeZi === byGan));
+	return { byYue: byYue, byGan: byGan, timeZi: timeZi || '', hit: hit, text: hit ? '当前占时为断课忌时，准确率偏低，宜另择时辰或多重印证。' : '' };
+}
+
+// 五动三动（§4.4/§10.1/§10.2）：以四位两两生克定门户。干=人元、神=贵神、将=将神、方=地分。
+//   五动(克)：妻=干克方、官=神克干、贼=神克将、财=将克神、鬼=方克干。
+//   三动(生·同)：父母=方生干、子孙=干生方、兄弟=干方同气。逢空(关键位地支落旬空)则减断。
+function buildJinKouDong(rows, xunKongBranches, yongLabel){
+	const byLabel = {};
+	rows.forEach((r)=>{ byLabel[r.label] = r; });
+	const gan = byLabel['人元'], shen = byLabel['贵神'], jiang = byLabel['将神'], fang = byLabel['地分'];
+	if(!gan || !shen || !jiang || !fang){ return { wu: [], san: [] }; }
+	const kongSet = {};
+	(xunKongBranches || []).forEach((z)=>{ kongSet[z] = true; });
+	const zhiOf = (r)=>rowZhi(r);
+	const isKong = (...rs)=>rs.some((r)=>{ const z = zhiOf(r); return z && kongSet[z]; });
+	const mk = (type, fromR, toR)=>({
+		type: type,
+		from: fromR.label,
+		to: toR.label,
+		kong: isKong(fromR, toR),
+		yong: yongLabel === fromR.label || yongLabel === toR.label,
+		text: JINKOU_DONG_DOC[type] || '',
+	});
+	const rel = (a, b)=>wuxingRelation(a && a.elem, b && b.elem);
+	const wu = [];
+	if(rel(gan, fang) === '克'){ wu.push(mk('妻', gan, fang)); }
+	if(rel(shen, gan) === '克'){ wu.push(mk('官', shen, gan)); }
+	if(rel(shen, jiang) === '克'){ wu.push(mk('贼', shen, jiang)); }
+	if(rel(jiang, shen) === '克'){ wu.push(mk('财', jiang, shen)); }
+	if(rel(fang, gan) === '克'){ wu.push(mk('鬼', fang, gan)); }
+	const san = [];
+	if(rel(fang, gan) === '生'){ san.push(mk('父母', fang, gan)); }
+	if(rel(gan, fang) === '生'){ san.push(mk('子孙', gan, fang)); }
+	if(gan.elem && fang.elem && gan.elem === fang.elem){ san.push(mk('兄弟', gan, fang)); }
+	return { wu: wu, san: san };
+}
+
+// 格局判定（§9.5）：由四位地支/五行结构判连茹/三合全身/四位俱比/四墓(清晰可判者)。
+const JINKOU_SANHE_JU = [['申', '子', '辰', '水'], ['寅', '午', '戌', '火'], ['巳', '酉', '丑', '金'], ['亥', '卯', '未', '木']];
+const JINKOU_MU_ZHI = ['辰', '戌', '丑', '未'];
+function buildJinKouGeju(rows){
+	const zhis = rows.map((r)=>rowZhi(r)).filter(Boolean);
+	const elems = rows.map((r)=>r.elem).filter(Boolean);
+	const zhiSet = {};
+	zhis.forEach((z)=>{ zhiSet[z] = true; });
+	const out = [];
+	// 四位俱比：四位五行俱同
+	if(elems.length === 4 && elems.every((e)=>e === elems[0])){
+		out.push({ name: `四位俱比·${elems[0]}`, kind: '俱比', jx: 'zhong', text: JINKOU_GEJU_DOC['俱比'] });
+	}
+	// 三合全身：四位含某三合局三支
+	JINKOU_SANHE_JU.forEach((ju)=>{
+		if(ju[0] && zhiSet[ju[0]] && zhiSet[ju[1]] && zhiSet[ju[2]]){
+			out.push({ name: `三合全身·${ju[3]}局`, kind: '三合', jx: 'ji', text: JINKOU_GEJU_DOC['三合全身'] });
+		}
+	});
+	// 连茹：去重地支中存在 3 支于地支环上前后相连
+	const idxSet = {};
+	zhis.forEach((z)=>{ const i = LRConst.ZiList.indexOf(z); if(i >= 0){ idxSet[i] = true; } });
+	let lianru = false;
+	for(let i = 0; i < 12; i++){
+		if(idxSet[i] && idxSet[(i + 1) % 12] && idxSet[(i + 2) % 12]){ lianru = true; break; }
+	}
+	if(lianru){ out.push({ name: '连茹', kind: '连茹', jx: 'zhong', text: JINKOU_GEJU_DOC['连茹'] }); }
+	// 三支(贵神/将神/地分)皆临墓库 → 墓库格(四位干无支，故以三地支判)
+	if(zhis.length >= 3 && zhis.every((z)=>JINKOU_MU_ZHI.indexOf(z) >= 0)){
+		out.push({ name: '墓库格', kind: '墓库', jx: 'xiong', text: JINKOU_GEJU_DOC['四墓'] });
+	}
 	return out;
 }
 
@@ -1293,11 +1519,14 @@ function buildJinKouYongStrength(yongYao, rows, wangShuaiMap){
 	return { label: yongYao.label, elem: elem, state: state, level: level, text: text };
 }
 
+// 应期合德六法（§9.8）：天地合德/将干近合/三奇合/三合补字/支六合/旺相逢冲。
+const JINKOU_SANQI_SETS = [['甲', '戊', '庚'], ['乙', '丙', '丁'], ['壬', '癸', '辛']];
 function buildJinKouYingQi(ctx){
 	const yongRow = ctx.yongRow;
 	if(!yongRow){ return null; }
 	const yBranch = yongRow.branch || (LRConst.ZiList.indexOf(yongRow.content) >= 0 ? yongRow.content : '');
 	const yGan = (yongRow.gan && yongRow.gan !== '-') ? yongRow.gan : (LRConst.GanList.indexOf(yongRow.content) >= 0 ? yongRow.content : '');
+	// —— 基础口径（临日/月/时/年 + 旺衰 + 空）——
 	let scope = '月内';
 	if(yGan && yGan === ctx.dayGan){ scope = '旬内'; }
 	else if(yBranch && yBranch === ctx.dayZi){ scope = '月内'; }
@@ -1310,7 +1539,49 @@ function buildJinKouYingQi(ctx){
 	if(state === '旺' || state === '相'){ text += '用神旺相，应之宜速（取近）。'; }
 	else if(state === '休' || state === '囚' || state === '死'){ text += '用神休囚，应之多迟（取远）。'; }
 	if(empty){ scope = '出空后'; text += '用神逢空，须俟出空之日方应。'; }
-	return { scope: scope, text: text };
+
+	// —— 合德六法 ——
+	const rows = ctx.rows || [];
+	const fourBranches = rows.map((r)=>rowZhi(r)).filter(Boolean);
+	const fourGans = rows.map((r)=>((r.gan && r.gan !== '-') ? r.gan : (LRConst.GanList.indexOf(r.content) >= 0 ? r.content : ''))).filter(Boolean);
+	const jiangRow = rows.find((r)=>r.label === '将神');
+	const jiangGan = jiangRow && jiangRow.gan && jiangRow.gan !== '-' ? jiangRow.gan : '';
+	const fast = (state === '旺' || state === '相');
+	const methods = [];
+	// 1 天地合德：用爻干支之干合+支合俱全
+	if(yGan && yBranch && LRConst.GanHe[yGan] && LRConst.ZiHe[yBranch]){
+		methods.push({ fa: '天地合德', when: `${LRConst.GanHe[yGan]}${LRConst.ZiHe[yBranch]}`, text: `用爻(${yGan}${yBranch})干合支合俱全者，逢「${LRConst.GanHe[yGan]}${LRConst.ZiHe[yBranch]}」之期应（合处为妙）。` });
+	}
+	// 2 将干近合：将干五合之日
+	if(jiangGan && LRConst.GanHe[jiangGan]){
+		methods.push({ fa: '将干近合', when: `${LRConst.GanHe[jiangGan]}日`, text: `取将干(${jiangGan})之五合，逢「${LRConst.GanHe[jiangGan]}」日为应。` });
+	}
+	// 3 三奇合：课中三奇缺一字，逢所缺之干日时应
+	JINKOU_SANQI_SETS.forEach((set)=>{
+		const present = set.filter((g)=>fourGans.indexOf(g) >= 0);
+		const missing = set.filter((g)=>fourGans.indexOf(g) < 0);
+		if(present.length === 2 && missing.length === 1){
+			methods.push({ fa: '三奇合', when: `${missing[0]}日`, text: `课见三奇(${set.join('')})之${present.join('')}，缺「${missing[0]}」，逢之日时为应。` });
+		}
+	});
+	// 4 三合补字：用爻三合局缺一字，逢虚字透出为应
+	if(yBranch && LRConst.ZiSangHe[yBranch]){
+		const group = [yBranch].concat(LRConst.ZiSangHe[yBranch]);
+		const present = group.filter((z)=>fourBranches.indexOf(z) >= 0);
+		const missing = group.filter((z)=>fourBranches.indexOf(z) < 0);
+		if(present.length >= 2 && missing.length === 1){
+			methods.push({ fa: '三合补字', when: `${missing[0]}`, text: `三合局(${group.join('')})已见${present.join('')}，缺「${missing[0]}」，逢之透出为应。` });
+		}
+	}
+	// 5 支六合：用爻六合之支
+	if(yBranch && LRConst.ZiHe[yBranch]){
+		methods.push({ fa: '支六合', when: `${LRConst.ZiHe[yBranch]}`, text: `取用爻(${yBranch})之六合，逢「${LRConst.ZiHe[yBranch]}」之期应。` });
+	}
+	// 6 旺相逢冲：用爻逢冲为动（旺相远应年月、休囚近应日时）
+	if(yBranch && LRConst.ZiCong[yBranch]){
+		methods.push({ fa: '旺相逢冲', when: `${LRConst.ZiCong[yBranch]}`, text: `用爻逢冲(${LRConst.ZiCong[yBranch]})为动，${fast ? '旺相远应年月' : '休囚近应日时'}（冲为动、合为止）。` });
+	}
+	return { scope: scope, text: text, methods: methods };
 }
 
 function buildJinKouShenshaDoc(shenshaRows, yongLabel){
@@ -1353,12 +1624,17 @@ export function buildJinKouData(liureng, options){
 	const timeZi = (opt.zhanShi && opt.zhanShi !== 'auto' && containsVal(LRConst.ZiList, opt.zhanShi)) ? opt.zhanShi : autoTimeZi;
 	const diFen = normalizeDiFen(opt.diFen, timeZi);
 	const renYuanGan = getStemByWuZiDun(dayGan, diFen);
-	const guiShen = getGuiShenAtDiFen(dayGan, timeZi, diFen, opt.guirengType, opt.isDiurnal);
+	// 排盘流派(P0-1)：月将换将(中气/交节)、贵人昼夜表(实务/古法)、起贵神盘(地盘/天盘)、盘式(阳/阴占位)。
+	const schoolYueJiang = opt.schoolYueJiang === 'jiaojie' ? 'jiaojie' : 'zhongqi';
+	const schoolGuiTable = opt.schoolGuiTable === 'liuren' ? 'liuren' : 'shiwu';
+	const schoolGuiPan = opt.schoolGuiPan === 'tian' ? 'tian' : 'di';
+	const panShi = opt.panShi === 'yin' ? 'yin' : 'yang';
+	// 月将（yueJiang）先算(天盘起贵神依赖月将)：默认按节气取；可手动覆盖。
+	const autoYueJiang = getYueJiang(liureng, monthZi, schoolYueJiang);
+	const yuejiang = (opt.yueJiang && opt.yueJiang !== 'auto' && containsVal(LRConst.ZiList, opt.yueJiang)) ? opt.yueJiang : autoYueJiang;
+	const guiShen = getGuiShenAtDiFen(dayGan, timeZi, diFen, opt.guirengType, opt.isDiurnal, { guiTable: schoolGuiTable, guiPan: schoolGuiPan, yuejiang: yuejiang });
 	const guiZi = guiShen.zi;
 	const guiGan = getStemByWuZiDun(dayGan, guiZi);
-	// 月将（yueJiang）：默认按节气取；AI 挂载/主页面可指定具体地支（非 'auto' 且为合法支时覆盖）。
-	const autoYueJiang = getYueJiang(liureng, monthZi);
-	const yuejiang = (opt.yueJiang && opt.yueJiang !== 'auto' && containsVal(LRConst.ZiList, opt.yueJiang)) ? opt.yueJiang : autoYueJiang;
 	const jiang = getJiangZiAtDiFen(yuejiang, timeZi, diFen);
 	const jiangZi = jiang.zi;
 	const jiangGan = getStemByWuZiDun(dayGan, jiangZi);
@@ -1466,10 +1742,16 @@ export function buildJinKouData(liureng, options){
 	const yongRow = yongYao && yongYao.label ? rows.find((r)=>r.label === yongYao.label) : null;
 	const shenshaDoc = buildJinKouShenshaDoc(shenshaRows, yongYao ? yongYao.label : '');
 	const jkRelations = buildJinKouRelations(rows);
+	const jkBihe = buildJinKouBihe(rows);
 	const jkBranchRelations = buildJinKouBranchRelations(rows, dayZi);
 	const jkTaixuan = buildJinKouTaixuan(rows);
 	const jkYongStrength = buildJinKouYongStrength(yongYao, rows, wangShuaiMap);
-	const jkYingQi = buildJinKouYingQi({ yongRow: yongRow, dayGan: dayGan, dayZi: dayZi, timeZi: timeZi, yearZi: yearZi, guiGan: guiGan, guiZi: guiZi, wangShuaiMap: wangShuaiMap, xunKongBranches: xunKongBranches });
+	const jkYingQi = buildJinKouYingQi({ yongRow: yongRow, rows: rows, dayGan: dayGan, dayZi: dayZi, timeZi: timeZi, yearZi: yearZi, guiGan: guiGan, guiZi: guiZi, wangShuaiMap: wangShuaiMap, xunKongBranches: xunKongBranches });
+	const jkDong = buildJinKouDong(rows, xunKongBranches, yongYao ? yongYao.label : '');
+	const jkGeju = buildJinKouGeju(rows);
+	const jkFourBranches = rows.map((r)=>rowZhi(r)).filter(Boolean);
+	const jkNianYueRi = buildJinKouNianYueRi(yearZi, monthZi, getMonthIndexByZi(monthZi), dayZi, jkFourBranches);
+	const jkJishi = buildJinKouJishi(monthZi, dayGan, timeZi);
 
 	return {
 		ready: true,
@@ -1499,13 +1781,19 @@ export function buildJinKouData(liureng, options){
 		yearZi: yearZi,
 		yongStrength: jkYongStrength,
 		relations: jkRelations,
+		bihe: jkBihe,
+		xiangyi: buildJinKouXiangyi(guiShen.name, jiang.name),
+		nianYueRi: jkNianYueRi,
+		jishi: jkJishi,
 		branchRelations: jkBranchRelations,
 		taixuan: jkTaixuan,
 		yingQi: jkYingQi,
 		shenshaDocRows: shenshaDoc.rows,
 		relevantShensha: shenshaDoc.relevant,
 		categoryRules: JINKOU_CATEGORY_RULES,
-		dong: { san: [], wu: [] },
+		schools: { yueJiang: schoolYueJiang, guiTable: schoolGuiTable, guiPan: schoolGuiPan, panShi: panShi },
+		dong: jkDong,
+		geju: jkGeju,
 		topInfo: {
 			diFen: diFen,
 			xunKong: xunKongBranches.length ? xunKongBranches.join('') : '无',
@@ -1576,16 +1864,20 @@ function cleanDisplay(value, def = '—'){
 
 function normalizeBackendRow(row, fallbackRow){
 	const elem = cleanDisplay(row && row.element, '');
-	const sign = cleanDisplay(row && row.sign, '');
+	const content = cleanDisplay(row && row.content, '—');
+	// 阴阳列：后端有给则用后端，否则由四位定位干支(人元=天干、贵神/将神/地分=地支)现算，
+	// 保证中间盘四位旁 +/- 列四行齐全(零回归：后端给值时不动)。
+	const sign = cleanDisplay(row && row.sign, '') || getYinYangSign(content) || (fallbackRow ? cleanDisplay(fallbackRow.sign, '') : '');
 	const season = cleanDisplay(row && row.season, '');
 	const label = cleanDisplay(row && row.label, fallbackRow ? fallbackRow.label : '');
 	return {
 		...(fallbackRow || {}),
 		label: label,
 		gan: cleanDisplay(row && row.gan, '-'),
-		content: cleanDisplay(row && row.content, '—'),
+		content: content,
 		shenjiang: cleanDisplay(row && row.shenjiang, '-'),
-		power: cleanDisplay(row && row.power, elem || sign || season ? `${elem}${sign}${season}` : '—'),
+		// 力量列去掉阴阳符号(+/-)，阴阳改由中间盘四位旁的独立 +/- 列承担，避免「金-相」误读为减号
+		power: cleanDisplay(row && row.power, elem || sign || season ? `${elem}${sign}${season}` : '—').replace(/[+\-−]/g, ''),
 		kong: fallbackRow && fallbackRow.kong ? fallbackRow.kong : '—',
 		elem: elem,
 		sign: sign,
@@ -1612,6 +1904,8 @@ export function normalizeKinjinkouData(backendPan, fallbackData){
 	const reYongLabel = (yongRow && yongRow.label) || (backendPan.yongYao && backendPan.yongYao.label) || (fallback.yongYao && fallback.yongYao.label) || '';
 	const reYongRow = reYongLabel ? rows.find((row)=>row.label === reYongLabel) : null;
 	const reGuiRow = rows.find((row)=>row.label === '贵神');
+	const reJiangRow = rows.find((row)=>row.label === '将神');
+	const reJiangZhi = reJiangRow ? rowZhi(reJiangRow) : '';
 	return {
 		...fallback,
 		ready: true,
@@ -1630,10 +1924,14 @@ export function normalizeKinjinkouData(backendPan, fallbackData){
 		},
 		rows: rows,
 		relations: buildJinKouRelations(rows),
+		bihe: buildJinKouBihe(rows),
+		xiangyi: buildJinKouXiangyi(reGuiRow ? reGuiRow.shenjiang : '', JinKouYueJiangName[reJiangZhi] || ''),
 		branchRelations: buildJinKouBranchRelations(rows, fallback.dayZi),
+		dong: buildJinKouDong(rows, fallback.xunKongBranches, reYongLabel),
+		geju: buildJinKouGeju(rows),
 		taixuan: buildJinKouTaixuan(rows),
 		yongStrength: reYongRow ? buildJinKouYongStrength({ label: reYongRow.label }, rows, fallback.wangShuai) : fallback.yongStrength,
-		yingQi: buildJinKouYingQi({ yongRow: reYongRow, dayGan: fallback.dayGan, dayZi: fallback.dayZi, timeZi: fallback.timeZi, yearZi: fallback.yearZi, guiGan: reGuiRow ? reGuiRow.gan : fallback.guiGan, guiZi: reGuiRow ? rowZhi(reGuiRow) : fallback.guiZi, wangShuaiMap: fallback.wangShuai, xunKongBranches: fallback.xunKongBranches }),
+		yingQi: buildJinKouYingQi({ yongRow: reYongRow, rows: rows, dayGan: fallback.dayGan, dayZi: fallback.dayZi, timeZi: fallback.timeZi, yearZi: fallback.yearZi, guiGan: reGuiRow ? reGuiRow.gan : fallback.guiGan, guiZi: reGuiRow ? rowZhi(reGuiRow) : fallback.guiZi, wangShuaiMap: fallback.wangShuai, xunKongBranches: fallback.xunKongBranches }),
 		plates: backendPan.plates || [],
 		sections: backendPan.sections || [],
 		shenshaRows: fallback.shenshaRows || [],

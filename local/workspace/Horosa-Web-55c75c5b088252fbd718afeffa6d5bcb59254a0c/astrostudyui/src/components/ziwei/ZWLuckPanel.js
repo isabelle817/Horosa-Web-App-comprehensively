@@ -2,14 +2,13 @@ import { Component } from 'react';
 import { Lunar, LunarMonth } from 'lunar-javascript';
 import * as ZWConst from '../../constants/ZWConst';
 import * as ZiWeiHelper from './ZiWeiHelper';
-import DateTime from '../comp/DateTime';
 
 const DIZI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 const GANS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
 const LUNAR_MONTH = ['正月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '冬月', '腊月'];
 const SHICHEN = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 const HUA_BG = { '禄': '#c9912e', '权': '#2868d8', '科': '#1497a8', '忌': '#d44d43' };
-const LEVEL_LABEL = { daxian: '大限', liunian: '流年', xiaoxian: '小限', liuyue: '流月', liuri: '流日', liushi: '流时' };
+const LEVEL_LABEL = { daxian: '大限', liunian: '流年小限', xiaoxian: '小限', liuyue: '流月', liuri: '流日', liushi: '流时' };
 
 // ——— 干支基础（纯前端，绝不返回 undefined） ———
 function yearGanzi(year) {
@@ -204,7 +203,35 @@ function buildLiushiItems(chart, liuri) {
 	return out;
 }
 
-// 导出纯构造器 + 宫位定位工具,供 AI 挂载快照按所选运限层复用同一口径(见 ZiWeiMain.buildZiWeiSnapshotText)。
+// ——— 运限选择状态机（纯函数·受控）：返回新的 luckSel；供 ZWLuckPanel 与命盘九宫格(ZiWeiMain)共用，杜绝两处分叉 ———
+function emptyLuckSel() {
+	return { daxian: null, liunian: null, xiaoxian: null, liuyue: null, liuri: null, liushi: null };
+}
+function matchXiaoxian(chart, daxian, age) {
+	if (!chart || !daxian || age === undefined || age === null) return null;
+	return buildXiaoxianItems(chart, daxian).find((x) => x.age === age) || null;
+}
+// 选大限：仅定大限、清空更深层（不自动补流年 → 四化窗口=[本命,大限]，符合需求5）。
+function luckSelectDaxian(chart, item, prev) {
+	return { ...(prev || emptyLuckSel()), daxian: item, liunian: null, xiaoxian: null, liuyue: null, liuri: null, liushi: null };
+}
+// 选「流年小限」(合并)：该年同时定 流年(按年支) 与 小限(按虚岁对齐)，清空更深层。
+function luckSelectLiunian(chart, item, prev) {
+	const base = prev || emptyLuckSel();
+	const xx = matchXiaoxian(chart, base.daxian, item ? item.age : null);
+	return { ...base, liunian: item, xiaoxian: xx, liuyue: null, liuri: null, liushi: null };
+}
+function luckSelectLiuyue(chart, item, prev) {
+	return { ...(prev || emptyLuckSel()), liuyue: item, liuri: null, liushi: null };
+}
+function luckSelectLiuri(chart, item, prev) {
+	return { ...(prev || emptyLuckSel()), liuri: item, liushi: null };
+}
+function luckSelectLiushi(chart, item, prev) {
+	return { ...(prev || emptyLuckSel()), liushi: item };
+}
+
+// 导出纯构造器 + 宫位定位工具 + 运限状态机,供 AI 挂载快照与命盘九宫格按同一口径复用(见 ZiWeiMain)。
 export {
 	buildDaxianItems,
 	buildLiunianItems,
@@ -215,82 +242,31 @@ export {
 	houseName,
 	houseIdxByBranch,
 	LEVEL_LABEL,
+	emptyLuckSel,
+	matchXiaoxian,
+	luckSelectDaxian,
+	luckSelectLiunian,
+	luckSelectLiuyue,
+	luckSelectLiuri,
+	luckSelectLiushi,
 };
 
 class ZWLuckPanel extends Component {
-	constructor(props) {
-		super(props);
-		this.state = this.initState(props);
+	// 受控组件：选择态由父级(ZiWeiMain)的 luckSel 单一真值源驱动(props.value)，pick* 经 props.onChange 上报。
+	// 初值/默认/最深层高亮 全由 ZiWeiMain 派生（与命盘九宫格共用同一 luckSel），本组件不持本地选择态。
+	sel() {
+		return this.props.value || emptyLuckSel();
 	}
-
-	initState(props) {
-		const chart = props.chart || {};
-		let nowYear = 2000;
-		try { nowYear = parseInt(new DateTime().format('YYYY'), 10); } catch (e) { /* noop */ }
-		const daxianItems = buildDaxianItems(chart);
-		let dx = daxianItems[0] || null;
-		if (chart.birth && daxianItems.length) {
-			const age = nowYear - birthYearOf(chart) + 1;
-			dx = daxianItems.find((d) => d.start <= age && age <= d.end) || daxianItems[0];
-		}
-		const liunianItems = dx ? buildLiunianItems(chart, dx) : [];
-		const ln = liunianItems.find((y) => y.year === nowYear) || liunianItems[0] || null;
-		return {
-			annualMode: 'liunian',
-			daxian: dx, liunian: ln, xiaoxian: null,
-			liuyue: null, liuri: null, liushi: null,
-		};
-	}
-
-	componentDidMount() { this.emit(); }
-	componentDidUpdate(prev) {
-		if (prev.chart !== this.props.chart) {
-			this.setState(this.initState(this.props), this.emit);
+	change(next) {
+		if (this.props.onChange) {
+			this.props.onChange(next);
 		}
 	}
-
-	// 当前激活的「年级」层（流年 or 小限）
-	activeAnnual() {
-		return this.state.annualMode === 'liunian' ? this.state.liunian : this.state.xiaoxian;
-	}
-	activeYear() {
-		const a = this.activeAnnual();
-		return a && Number.isFinite(a.year) ? a.year : null;
-	}
-	// 最深选中层（驱动盘面流命环）
-	deepest() {
-		const s = this.state;
-		return s.liushi || s.liuri || s.liuyue || this.activeAnnual() || s.daxian || null;
-	}
-	emit() {
-		if (!this.props.onLuckChange) return;
-		const d = this.deepest();
-		this.props.onLuckChange(d ? d.mingIndex : null);
-	}
-
-	pickDaxian(item) {
-		const chart = this.props.chart || {};
-		const ln = buildLiunianItems(chart, item)[0] || null;
-		const xx = buildXiaoxianItems(chart, item)[0] || null;
-		this.setState({ daxian: item, liunian: ln, xiaoxian: xx, liuyue: null, liuri: null, liushi: null }, this.emit);
-	}
-	setAnnualMode(mode) {
-		const chart = this.props.chart || {};
-		// 切换年级模式时，确保该模式有默认选中，并清空下层
-		const patch = { annualMode: mode, liuyue: null, liuri: null, liushi: null };
-		if (mode === 'liunian' && !this.state.liunian && this.state.daxian) {
-			patch.liunian = buildLiunianItems(chart, this.state.daxian)[0] || null;
-		}
-		if (mode === 'xiaoxian' && !this.state.xiaoxian && this.state.daxian) {
-			patch.xiaoxian = buildXiaoxianItems(chart, this.state.daxian)[0] || null;
-		}
-		this.setState(patch, this.emit);
-	}
-	pickLiunian(item) { this.setState({ annualMode: 'liunian', liunian: item, liuyue: null, liuri: null, liushi: null }, this.emit); }
-	pickXiaoxian(item) { this.setState({ annualMode: 'xiaoxian', xiaoxian: item, liuyue: null, liuri: null, liushi: null }, this.emit); }
-	pickLiuyue(item) { this.setState({ liuyue: item, liuri: null, liushi: null }, this.emit); }
-	pickLiuri(item) { this.setState({ liuri: item, liushi: null }, this.emit); }
-	pickLiushi(item) { this.setState({ liushi: item }, this.emit); }
+	pickDaxian(item) { this.change(luckSelectDaxian(this.props.chart || {}, item, this.sel())); }
+	pickLiunian(item) { this.change(luckSelectLiunian(this.props.chart || {}, item, this.sel())); }
+	pickLiuyue(item) { this.change(luckSelectLiuyue(this.props.chart || {}, item, this.sel())); }
+	pickLiuri(item) { this.change(luckSelectLiuri(this.props.chart || {}, item, this.sel())); }
+	pickLiushi(item) { this.change(luckSelectLiushi(this.props.chart || {}, item, this.sel())); }
 
 	renderAxis(label, items, selectedId, onClick, key) {
 		if (!items || !items.length) return null;
@@ -311,27 +287,30 @@ class ZWLuckPanel extends Component {
 		);
 	}
 
-	// 年级行：左侧为 流年/小限 互斥 toggle，右侧为当前模式的 chips
-	renderAnnualRow(liunianItems, xiaoxianItems) {
-		const { annualMode, liunian, xiaoxian } = this.state;
-		const items = annualMode === 'liunian' ? liunianItems : xiaoxianItems;
-		const selId = annualMode === 'liunian' ? (liunian && liunian.id) : (xiaoxian && xiaoxian.id);
-		const onClick = annualMode === 'liunian' ? (i) => this.pickLiunian(i) : (i) => this.pickXiaoxian(i);
+	// 「流年小限」合并行（需求2）：每个 chip = 流年年份 + 流年干支/小限干支·虚岁；选中即同时定 流年(按年支)+小限(按虚岁)。
+	renderMergedAnnual(liunianItems, xiaoxianItems) {
+		if (!liunianItems || !liunianItems.length) return null;
+		const sel = this.sel();
+		const selId = sel.liunian ? sel.liunian.id : '';
+		const xxByAge = new Map((xiaoxianItems || []).map((x) => [x.age, x]));
 		return (
 			<div className="horosa-ziwei-luck-axis-row">
-				<div className="horosa-ziwei-luck-annual-toggle">
-					<button type="button" className={`horosa-ziwei-luck-toggle-btn ${annualMode === 'liunian' ? 'is-on' : ''}`} onClick={() => this.setAnnualMode('liunian')}>流年</button>
-					<button type="button" className={`horosa-ziwei-luck-toggle-btn ${annualMode === 'xiaoxian' ? 'is-on' : ''}`} onClick={() => this.setAnnualMode('xiaoxian')}>小限</button>
-				</div>
+				<div className="horosa-ziwei-luck-axis-label">流年小限</div>
 				<div className="horosa-ziwei-luck-axis">
-					{(items || []).map((item) => (
-						<button type="button" key={item.id}
-							className={`horosa-ziwei-luck-chip ${item.id === selId ? 'is-selected' : ''}`}
-							onClick={() => onClick(item)}>
-							<span className="chip-top">{item.top}</span>
-							<span className="chip-sub">{item.sub}</span>
-						</button>
-					))}
+					{liunianItems.map((item) => {
+						const xx = xxByAge.get(item.age);
+						// 上行=流年(年份+流年干支)、下行=小限(小限干支+虚岁)，与左侧「流年/小限」竖标对应；不再用「/」分隔。
+						const topLine = `${item.top} ${item.ganzi}`;
+						const subLine = xx ? `${xx.ganzi} ${xx.age}岁` : `${item.age}岁`;
+						return (
+							<button type="button" key={item.id}
+								className={`horosa-ziwei-luck-chip ${item.id === selId ? 'is-selected' : ''}`}
+								onClick={() => this.pickLiunian(item)}>
+								<span className="chip-top">{topLine}</span>
+								<span className="chip-sub">{subLine}</span>
+							</button>
+						);
+					})}
 				</div>
 			</div>
 		);
@@ -360,6 +339,11 @@ class ZWLuckPanel extends Component {
 					{sub && <span className="horosa-ziwei-luck-sub-tag">{sub}</span>}
 					<span className="horosa-ziwei-luck-pal-inline">命【{houseName(chart, mingIdx, true)}】·对【{houseName(chart, oppIdx, true)}】</span>
 				</div>
+				{layer.level === 'liunian' && this.sel().xiaoxian && (
+					<div className="horosa-ziwei-luck-xiaoxian" style={{ fontSize: 11.5, color: 'var(--horosa-text-soft, #888)', margin: '2px 0 4px' }}>
+						小限：{this.sel().xiaoxian.ganzi}·{this.sel().xiaoxian.age}虚岁 命【{houseName(chart, this.sel().xiaoxian.mingIndex, true)}】
+					</div>
+				)}
 				<div className="horosa-ziwei-luck-sihua">
 					{sihua.map((h) => (
 						<span key={h.star} className="hua" style={{ background: HUA_BG[h.hua] || '#888' }}>
@@ -436,23 +420,22 @@ class ZWLuckPanel extends Component {
 
 	render() {
 		const chart = this.props.chart || {};
-		const s = this.state;
+		const s = this.sel();
 		if (!chart || !chart.houses) {
 			return <div className="horosa-empty-hint">起盘后查看运限</div>;
 		}
 		const daxianItems = buildDaxianItems(chart);
 		const liunianItems = s.daxian ? buildLiunianItems(chart, s.daxian) : [];
 		const xiaoxianItems = s.daxian ? buildXiaoxianItems(chart, s.daxian) : [];
-		const year = this.activeYear();
+		const year = (s.liunian && Number.isFinite(s.liunian.year)) ? s.liunian.year : null;
 		const liuyueItems = year ? buildLiuyueItems(chart, year) : [];
 		const liuriItems = (year && s.liuyue) ? buildLiuriItems(chart, year, s.liuyue) : [];
 		const liushiItems = s.liuri ? buildLiushiItems(chart, s.liuri) : [];
 
-		// 卡片栈：每个已选层级各一张（大限 + 年级 + 流月? + 流日? + 流时?）
+		// 卡片栈：每个已选层级各一张（大限 + 流年小限 + 流月? + 流日? + 流时?）
 		const cards = [];
 		if (s.daxian) cards.push(s.daxian);
-		const annual = this.activeAnnual();
-		if (annual) cards.push(annual);
+		if (s.liunian) cards.push(s.liunian);
 		if (s.liuyue) cards.push(s.liuyue);
 		if (s.liuri) cards.push(s.liuri);
 		if (s.liushi) cards.push(s.liushi);
@@ -461,7 +444,7 @@ class ZWLuckPanel extends Component {
 			<div className="horosa-ziwei-luck">
 				<div className="horosa-ziwei-luck-axes">
 					{this.renderAxis('大限', daxianItems, s.daxian ? s.daxian.id : '', (i) => this.pickDaxian(i), 'dx')}
-					{this.renderAnnualRow(liunianItems, xiaoxianItems)}
+					{this.renderMergedAnnual(liunianItems, xiaoxianItems)}
 					{liuyueItems.length > 0 && this.renderAxis('流月', liuyueItems, s.liuyue ? s.liuyue.id : '', (i) => this.pickLiuyue(i), 'ly')}
 					{liuriItems.length > 0 && this.renderAxis('流日', liuriItems, s.liuri ? s.liuri.id : '', (i) => this.pickLiuri(i), 'lr')}
 					{liushiItems.length > 0 && this.renderAxis('流时', liushiItems, s.liushi ? s.liushi.id : '', (i) => this.pickLiushi(i), 'ls')}

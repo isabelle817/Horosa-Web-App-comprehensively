@@ -3,6 +3,7 @@ import { Row, Col, } from 'antd';
 import DoubleMeiyiGuaSym from './DoubleMeiyiGuaSym';
 import GuaSym from './GuaSym';
 import GuaChartDiv from './GuaChartDiv';
+import { safeLocalStorageGet, safeLocalStorageSet, safeLocalStorageRemove } from '../../utils/safeStorage';
 
 const guaDataKey = 'guaData';
 
@@ -10,13 +11,13 @@ export default class GuaSymDesc extends Component{
     constructor(props) {
 		super(props);
 
-        let json = localStorage.getItem(guaDataKey);
+        let json = safeLocalStorageGet(guaDataKey);
         let data = null;
         let gua64 = null;
         let gua64Inverse = null;
         if(json && json !== ''){
             // 本地值损坏 → 清掉自愈,按无数据渲染,别在构造期抛错白屏
-            try{ data = JSON.parse(json); }catch(e){ data = null; localStorage.removeItem(guaDataKey); }
+            try{ data = JSON.parse(json); }catch(e){ data = null; safeLocalStorageRemove(guaDataKey); }
         }
         if(data){
             let type = data.guaType;
@@ -102,7 +103,8 @@ export default class GuaSymDesc extends Component{
             allData: data,
         }, ()=>{
             let json = JSON.stringify(data);
-            localStorage.setItem(guaDataKey, json);
+            // 🛡 safeStorage:setState callback 内的 setItem 抛 QuotaExceededError 会被 React 上冒到 ErrorBoundary → 八卦类象整面板崩。包 try/catch + 配额满自动清理重试。
+            safeLocalStorageSet(guaDataKey, json);
         });
     }
 
@@ -133,12 +135,12 @@ export default class GuaSymDesc extends Component{
     }
 
     componentDidMount(){
-        let json = localStorage.getItem(guaDataKey);
+        let json = safeLocalStorageGet(guaDataKey);
         let data = null;
         let gua64 = null;
         let gua64Inverse = null;
         if(json && json !== ''){
-            try{ data = JSON.parse(json); }catch(e){ data = null; localStorage.removeItem(guaDataKey); }
+            try{ data = JSON.parse(json); }catch(e){ data = null; safeLocalStorageRemove(guaDataKey); }
         }
         if(data){
             let type = data.guaType;

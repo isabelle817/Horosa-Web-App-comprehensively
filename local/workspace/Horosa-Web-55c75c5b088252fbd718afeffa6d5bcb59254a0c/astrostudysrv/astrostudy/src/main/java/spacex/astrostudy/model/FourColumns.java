@@ -78,11 +78,19 @@ public class FourColumns {
 		this.day.setRiYuan();
 	}
 	
+	// 命宫起法:shufa=子平数法表(默认,月序时序定宫,见 _minggong 12×12)/xingming=星命式(沿用 setupMing 太阳过宫)。只影响命宫/身宫,不动四柱/大运/胎元。
+	public String minggongMethod = "shufa";
+
 	public void setupThreeSpec(PhaseType phaseType, Map<String, Object> sunInfo, Map<String, Object> moonInfo) {
 		this.phaseType = phaseType;
 		setupTai(phaseType);
-		setupMing(phaseType, sunInfo);
-		setupSheng(phaseType, sunInfo);
+		if ("xingming".equals(this.minggongMethod)) {
+			setupMing(phaseType, sunInfo);
+			setupSheng(phaseType, sunInfo);
+		} else {
+			setupMingByShuFa(phaseType);
+			setupShengByShuFa(phaseType);
+		}
 		setupMing12();
 		
 		this.year.zhu = "年";
@@ -180,11 +188,36 @@ public class FourColumns {
 		int ganidx = (StemBranch.StemIndex.get(this.month.stem.cell) + delta + 10) % 10;
 		String gan = StemBranch.Stems[ganidx];
 		this.shen = new GanZi(gan, zi, phaseType);
-		
+
 		this.shen.fillRela(this.day.stem.cell);
-		
+
 	}
-	
+
+	// 子平数法表命宫(_minggong 12×12):月序 m(寅=1..丑=12)、时序 h(子=1..亥=12),命宫数=26-(m+h)折入1..12,命宫支=Branches[(数+1)%12];命宫干=年干五虎遁推至命宫支当月。
+	private GanZi shuFaPalace(PhaseType phaseType, int base) {
+		int mNum = StemBranch.ZiMonth.get(this.month.branch.cell);
+		int hNum = StemBranch.BranchIndex.get(this.time.branch.cell) + 1;
+		int n = base - (mNum + hNum);
+		while (n > 12) { n -= 12; }
+		while (n < 1) { n += 12; }
+		int ziIdx = (n + 1) % 12;
+		String zi = StemBranch.Branches[ziIdx];
+		int yinStem = ((StemBranch.StemIndex.get(this.year.stem.cell) % 5) * 2 + 2) % 10; // 年干五虎遁→寅月干
+		int ganIdx = (yinStem + (StemBranch.ZiMonth.get(zi) - 1)) % 10;
+		String gan = StemBranch.Stems[ganIdx];
+		GanZi gz = new GanZi(gan, zi, phaseType);
+		gz.fillRela(this.day.stem.cell);
+		return gz;
+	}
+
+	private void setupMingByShuFa(PhaseType phaseType) {
+		this.ming = shuFaPalace(phaseType, 26); // 命宫:26-(月序+时序)
+	}
+
+	private void setupShengByShuFa(PhaseType phaseType) {
+		this.shen = shuFaPalace(phaseType, 32); // 身宫:32-(月序+时序)(较命宫锚后六位)
+	}
+
 	private void setupMing12() {
 		String mzhi = this.month.branch.cell;
 		String tzhi = this.time.branch.cell;

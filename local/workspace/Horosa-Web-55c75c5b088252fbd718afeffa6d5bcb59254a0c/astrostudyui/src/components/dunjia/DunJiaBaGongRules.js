@@ -186,7 +186,7 @@ const YUNU_SHOUMEN_BY_TIME_GAN = {
 	癸: '壬',
 };
 const YUNU_EXTRA_TIME_GANZHI = new Set(['乙卯', '乙未', '丙午', '丁酉', '庚午', '庚子', '己卯', '戊子']);
-const XUN_SHOU_TO_LIUYI = {
+export const XUN_SHOU_TO_LIUYI = {
 	甲子: '戊',
 	甲戌: '己',
 	甲申: '庚',

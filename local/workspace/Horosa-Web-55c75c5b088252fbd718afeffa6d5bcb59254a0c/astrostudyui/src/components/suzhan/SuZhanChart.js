@@ -4,6 +4,8 @@ import {randomStr,} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import * as SZConst from './SZConst';
 import SZChart from './SZChart';
+import { chartDrawGuardEnabled } from '../../utils/perfFlags';
+import { buildChartDrawSig, sameChartDrawSig, chartDrawnAtNonZeroSize } from '../../utils/chartDrawGuard';
 
 const SQUARE_SIDE_MIN = 480;
 const SQUARE_SIDE_MAX = 1280;
@@ -193,6 +195,18 @@ class SuZhanChart extends Component{
 			return;
 		}
 
+		// 重绘签名守卫:render() 每次调 drawChart,输入未变则跳过整树 d3 重建(宿盘缩放/装饰多,重建尤贵)。
+		const guardOn = chartDrawGuardEnabled();
+		const sig = guardOn ? buildChartDrawSig(this.state.chartid, {
+			value: chartobj,
+			chartDisplay: this.props.chartDisplay,
+			planetDisplay: this.props.planetDisplay,
+			fields: this.props.fields,
+		}) : null;
+		if(guardOn && sameChartDrawSig(sig, this._lastDrawnSig)){
+			return;
+		}
+
 		let disp = [];
 		if(this.props.chartDisplay !== undefined && this.props.chartDisplay !== null){
 			disp = this.props.chartDisplay;
@@ -216,6 +230,10 @@ class SuZhanChart extends Component{
 		this.szchart.chart = chartobj;
 
 		this.szchart.draw();
+
+		if(sig && chartDrawnAtNonZeroSize(this.state.chartid)){
+			this._lastDrawnSig = sig;
+		}
 	}
 
 	componentDidMount(){
@@ -226,6 +244,16 @@ class SuZhanChart extends Component{
 		this.scheduleSquareMeasure(80);
 		this.scheduleSquareMeasure(240);
 		this.drawChart();
+		// 🔴 防「首开比例严重错误」:宿盘 szchart.draw() 按 svgdom 实时尺寸绘,首挂载时容器可能尚 0/未 settle,
+		// 80/240ms 定时重试会「有几率」错过慢渲染。改用 ResizeObserver——容器 0→实际尺寸的那次变化必可靠重测+重绘。
+		if(typeof ResizeObserver !== 'undefined'){
+			const svgdom = document.getElementById(this.state.chartid);
+			const target = svgdom ? ((svgdom.closest && svgdom.closest('.horosa-suzhan-chart-panel')) || svgdom.parentElement || svgdom) : null;
+			if(target){
+				this._ro = new ResizeObserver(()=>{ if(this.mounted){ this.handleResize(); this.drawChart(); } });
+				this._ro.observe(target);
+			}
+		}
 	}
 
 	componentWillUnmount() {
@@ -239,6 +267,7 @@ class SuZhanChart extends Component{
 			window.clearTimeout(this.squareMeasureTimers[i]);
 		}
 		this.squareMeasureTimers = [];
+		if(this._ro){ this._ro.disconnect(); this._ro = null; }
 		d3.select('#' + this.state.tooltipId).remove();
 	}
 

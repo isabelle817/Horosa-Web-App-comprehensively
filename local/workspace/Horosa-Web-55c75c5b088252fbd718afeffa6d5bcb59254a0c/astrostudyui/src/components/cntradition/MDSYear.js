@@ -2,6 +2,7 @@ import { Component } from 'react';
 import { Row, Col, Popover} from 'antd';
 import { randomStr } from '../../utils/helper';
 import { BaZiMsg } from '../../msg/bazimsg';
+import { resolveStarCharger } from './starChargerLazy';
 import DateTime from '../comp/DateTime';
 
 function gongName(gong12, palace, part){
@@ -85,7 +86,8 @@ class MDSYear extends Component{
 			if(gong12god){
 				gong12dom = this.genGong12GodDom(gong12god[idx]);
 			}
-			const starCharger = sub && sub.starCharger ? sub.starCharger : {};
+			// starCharger 惰性化：null 时按公历年补算（出生月/日由父组件 MainDirectionSimple 传入）。
+			const starCharger = resolveStarCharger(sub && sub.starCharger, sub && sub.year != null ? sub.year : y, this.props.birthMonth, this.props.birthDay);
 			let condom = (
 				<div style={{width: 200,}}>
 					<h4>值年星宿：{starCharger.name || '暂无'}</h4>

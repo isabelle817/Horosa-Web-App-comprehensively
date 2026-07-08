@@ -3,6 +3,7 @@ import { Row, Col, Divider, Popover} from 'antd';
 import { XQCard as Card, XQTabs as Tabs } from '../xq-ui';
 import { randomStr } from '../../utils/helper';
 import { BaZiMsg } from '../../msg/bazimsg';
+import { birthMonthDayFromBazi, resolveStarCharger } from './starChargerLazy';
 import styles from '../../css/styles.less';
 
 const TabPane = Tabs.TabPane;
@@ -133,7 +134,8 @@ class MainDirection extends Component{
 				let y = startYear + i;
 				let dirtm = y;
 				let gods = this.genGodsDom(sub);
-				let starCharger = sub.starCharger || {};
+				// starCharger 惰性化：null 时按公历年补算（buildStarChargerForYear，与 eager 逐字等价）。
+				let starCharger = resolveStarCharger(sub.starCharger, sub.year != null ? sub.year : y, this._birthMonth, this._birthDay);
 				let popcontent = (
 					<div style={{width: 350}}>
 						<Row key={randomStr(8)} style={{width: 350}}>
@@ -215,9 +217,13 @@ class MainDirection extends Component{
 	render(){
 		let rec = this.props.value ? this.props.value : {};
 		let height = this.props.height ? this.props.height : '100%';
+		// starCharger 惰性补算所需出生月/日（从 nongli.birth 解析），供 genSubDirectDom 用。
+		const bmd = birthMonthDayFromBazi(rec);
+		this._birthMonth = bmd.month;
+		this._birthDay = bmd.day;
 		let style = {
 			height: (height-130) + 'px',
-			overflowY:'auto', 
+			overflowY:'auto',
 			overflowX:'hidden',
 		};
 

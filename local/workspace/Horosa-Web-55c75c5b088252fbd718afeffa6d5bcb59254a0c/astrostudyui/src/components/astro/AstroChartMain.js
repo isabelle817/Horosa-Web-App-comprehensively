@@ -2,11 +2,16 @@ import { Component } from 'react';
 import { Row, Col, Popover, Tooltip } from 'antd';
 import AstroChart from './AstroChart';
 import AstroInfo from './AstroInfo';
+import AstroThemaMundi from './AstroThemaMundi';
+import AstroDerivedHouses from './AstroDerivedHouses';
+import AstroEminence from './AstroEminence';
+import AstroKlimata from './AstroKlimata';
 import AstroAspect from './AstroAspect';
 import AstroPlanet from './AstroPlanet';
 import AstroLots from './AstroLots';
 import AstroPredictPlanetSign from './AstroPredictPlanetSign';
 import AstroAnalysisLab from './AstroAnalysisLab';
+import AstroEgypt from './AstroEgypt';
 import AspSelector from './AspSelector';
 import ChartDisplaySelector from './ChartDisplaySelector';
 import PlanetSelector from './PlanetSelector';
@@ -18,6 +23,7 @@ import { dstAwareZoneAt } from '../../utils/timezone';
 import { getHousesOption } from '../comp/CompHelper'
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
+import { SCHOOL_PRESETS, SCHOOL_PRESET_OPTIONS, SCHOOL_PRESET_DEFAULT, SCHOOL_PRESET_CUSTOM, normalizeSchoolPreset, presetOf } from './schoolPresets';
 import { XQButton, XQIconButton, XQSectionTitle, XQSegmented, XQSelect, XQTabs, XQToggle } from '../xq-ui';
 import XQIcon from '../xq-icons';
 
@@ -62,6 +68,7 @@ class AstroChartMain extends Component{
 		this.changeTime = this.changeTime.bind(this);
 		this.changeZodiacal = this.changeZodiacal.bind(this);
 		this.changeHsys = this.changeHsys.bind(this);
+		this.changeSchoolPreset = this.changeSchoolPreset.bind(this);
 		this.changeGeo = this.changeGeo.bind(this);
 		this.changeSouthChart = this.changeSouthChart.bind(this);
 		this.openDrawer = this.openDrawer.bind(this);
@@ -134,6 +141,53 @@ class AstroChartMain extends Component{
 				});
 			}
 		}
+	}
+
+	// 当前流派预设：由实时四维(黄道/宫制/界/三分)反查命中的档；任一单项被单独改 → 'custom'。
+	// 三分体系不是 fields，取自 app.tripSystem(默认 Dorothean)。
+	currentSchoolPreset(){
+		const f = this.props.fields || {};
+		const zodiac = AstroConst.zodiacSelectValue(
+			f.zodiacal ? f.zodiacal.value : 0,
+			f.siderealAyanamsa ? f.siderealAyanamsa.value : '',
+		);
+		const hsys = f.hsys ? f.hsys.value : '';
+		const termsVariant = f.termsVariant ? f.termsVariant.value : 0;
+		const tripSystem = this.props.tripSystem || 'Dorothean';
+		return presetOf({ zodiac, hsys, termsVariant, tripSystem });
+	}
+
+	// 选流派预设：展开该档 → 一次性写入黄道/宫制/界/三分。
+	//   ① 持久化 app.schoolPreset(UI 记忆) + app.tripSystem(三分体系，供三分主星页读取)。
+	//   ② 经既有 onChange(=index.changeCond)一次写 zodiacal/siderealAyanamsa/hsys/termsVariant → 单次重算。
+	// 选到「自定」不做动作(它是单项覆盖后的派生显示态，无对应取值)。
+	changeSchoolPreset(e){
+		const val = e && e.target ? e.target.value : e;
+		if(val === SCHOOL_PRESET_CUSTOM){ return; }
+		const preset = SCHOOL_PRESETS[normalizeSchoolPreset(val)];
+		if(!preset){ return; }
+		if(this.props.dispatch){
+			this.props.dispatch({
+				type: 'app/save',
+				payload: { schoolPreset: normalizeSchoolPreset(val), tripSystem: preset.tripSystem },
+			});
+		}
+		if(!this.props.onChange){ return; }
+		const parsed = AstroConst.parseZodiacSelectValue(preset.zodiac);
+		const change = {
+			zodiacal: parsed.zodiacal,
+			siderealAyanamsa: parsed.siderealAyanamsa,
+			hsys: preset.hsys,
+			termsVariant: preset.termsVariant,
+			triplicity: preset.tripSystem,   // G20-P2:预设三分集 → fields.triplicity → 后端尊贵换表
+		};
+		if(this.tmHook.getValue){
+			const tm = this.tmHook.getValue().value;
+			change.tm = tm;
+			change.ad = tm.ad;
+			change.zone = tm.zone;
+		}
+		this.props.onChange(change);
 	}
 
 	changeSouthChart(val){
@@ -310,7 +364,9 @@ class AstroChartMain extends Component{
 		const dayerStar = chart.dayerStar ? (AstroText.AstroMsgCN[chart.dayerStar] || chart.dayerStar) : '';
 		const timerStar = chart.timerStar ? (AstroText.AstroMsgCN[chart.timerStar] || chart.timerStar) : '';
 		return {
-			title: params.name || '本命盘',
+			// 标题优先取当前 fields.name(玄学史等联动跳转会即时写入,排盘前也能立刻显示),
+			// 再退回已排盘结果 params.name,最后默认「本命盘」。正常本命盘 fields.name 为 null → 零回归。
+			title: fieldValue(fields, 'name', '') || params.name || '本命盘',
 			birth: `${birth}${dayofweek ? ` ${dayofweek}` : ''}`,
 			location,
 			lon,
@@ -519,6 +575,20 @@ class AstroChartMain extends Component{
 								<XQIcon name="globe" />
 							</button>
 						</GeoCoordModal>
+					</div>
+				) : null}
+				{(showzodical || showhsys) && !indiahsys ? (
+					<div className="horosa-field-block horosa-school-preset-block">
+						<div className="horosa-field-label">流派预设</div>
+						<XQSelect
+							style={{width: '100%'}}
+							onChange={this.changeSchoolPreset}
+							dropdownMatchSelectWidth={false}
+							value={this.currentSchoolPreset()}
+							size='small'>
+							{SCHOOL_PRESET_OPTIONS.map((item)=>(<Option value={item.value} key={item.value}>{item.label}</Option>))}
+						</XQSelect>
+						<div className="horosa-field-hint">一档联动黄道 · 宫制 · 界 · 三分；改单项转「自定」</div>
 					</div>
 				) : null}
 				<div className="horosa-field-grid">
@@ -818,6 +888,7 @@ class AstroChartMain extends Component{
 			{ label: '主限', icon: 'quickPrimary', onClick: ()=>this.navigateDirectionTool('primarydirect') },
 			{ label: '法达', icon: 'quickFirdaria', onClick: ()=>this.navigateDirectionTool('firdaria') },
 			{ label: '小限', icon: 'quickProfection', onClick: ()=>this.navigateDirectionTool('profection') },
+			{ label: '产前朔望', icon: 'quickReturn', onClick: ()=>this.navigateDirectionTool('prenatalsyzygy') },
 			{ label: '返照', icon: 'quickReturn', onClick: ()=>this.navigateDirectionTool('solarreturn') },
 			{ label: '合盘', icon: 'quickComposite', onClick: ()=>this.navigateFeature('relativechart') },
 			{ label: '星运', icon: 'quickTransit', onClick: ()=>this.navigateFeature('direction') },
@@ -887,6 +958,17 @@ class AstroChartMain extends Component{
 								showOnlyRulExaltReception={this.props.showOnlyRulExaltReception}
 							/>
 							{/* 寿命/十二分度/主宰星链 已并入 AstroInfo 古典分节(状态/度数/格局补充/寿命),此处不再单列 */}
+							{/* 衍化分节:与 AstroInfo 古典分节同一卡片语汇(分节头 + 双语卡标题),排版统一 */}
+							<div className="horosa-classical-scroll">
+								<div className="horosa-classical-section">
+									<span className="horosa-classical-section-zh">衍化</span>
+									<span className="horosa-classical-section-en">Derivations</span>
+								</div>
+								<AstroThemaMundi />
+								<AstroDerivedHouses value={chartObj} />
+								<AstroEminence value={chartObj} />
+								<AstroKlimata value={chartObj} fields={fields} />
+							</div>
 							</div>
 					</TabPane>
 						<TabPane tab="可能性" key="5">
@@ -900,7 +982,11 @@ class AstroChartMain extends Component{
 							<AstroAnalysisLab
 								value={chartObj}
 								height={tabHeight}
+								voidClassical={this.props.voidClassical}
 							/>
+						</TabPane>
+						<TabPane tab="埃及" key="egypt">
+							<AstroEgypt value={chartObj} height={tabHeight} />
 						</TabPane>
 					</XQTabs>
 				</div>
@@ -985,6 +1071,7 @@ class AstroChartMain extends Component{
 											chartStyle={this.props.chartStyle}
 										planetDisplay={this.props.planetDisplay}
 										lotsDisplay={this.props.lotsDisplay}
+										aspects={this.props.aspects}
 										showAstroMeaning={this.props.showAstroMeaning}
 										height="100%"
 									/>

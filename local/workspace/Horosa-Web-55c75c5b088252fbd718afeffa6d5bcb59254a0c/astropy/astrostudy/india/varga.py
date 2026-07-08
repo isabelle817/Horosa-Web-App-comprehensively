@@ -118,7 +118,72 @@ def _d30_position(sign_index, degree_in_sign):
     return ranges[-1][2], 0.0
 
 
-def varga_position(longitude, chartnum):
+# 分盘变体（大运§9.2 / 09_chartcasting）：默认 None/'standard' = 标准 Parāśara（零回归，既有 golden 不变）。
+# 已实现 D2 parivritti/kashinatha · D3 parivritti/jagannatha/somanatha · D24 correct · D30 equal(公式 _agentA_chartcasting.md)。
+# D2 Kashinatha 依源座主星(_D2_KASH_DAY/NIGHT)、D3 Somanatha 奇象自白羊顺/偶象自双鱼逆。
+_D3_JAGANNATHA = {0: (0, 4, 8), 1: (8, 0, 4), 2: (4, 8, 0)}
+
+
+# D60 Ṣaṣṭyāṃśa 吉凶(09_chartcasting §D60):奇象恶段(Krūra)24 个段号;偶象神名逆序(deity=61−seg)+吉凶随之。
+# 恶段(Krūra)24 个段号 = BPHS 权威的「按段号」吉凶编码(名义与段号冲突时以段号为准,_agentA_chartcasting.md:419)。偶象逆读 deity=61−seg、吉凶随之翻转。
+_D60_KRURA = frozenset({1, 2, 8, 9, 10, 11, 12, 15, 16, 30, 31, 32, 33, 34, 35,
+                        39, 40, 42, 43, 44, 48, 51, 52, 59})
+
+# D60 六十神名(奇象顺序;Santhanam BPHS 体系,_agentA_chartcasting.md:421-439)。偶象取 deity=61−seg 逆序读。
+_D60_NAMES = (
+    'Ghora', 'Rākṣasa', 'Deva', 'Kubera', 'Yakṣa', 'Kinnara', 'Bhraṣṭa', 'Kulaghna',
+    'Garala', 'Vahni', 'Māyā', 'Puriṣaka', 'Apāmpati', 'Marut', 'Kāla', 'Sarpa',
+    'Amṛta', 'Indu', 'Mṛdu', 'Komala', 'Heramba', 'Brahmā', 'Viṣṇu', 'Maheśvara',
+    'Deva', 'Ārdra', 'Kalināśa', 'Kṣitīśvara', 'Kamalākara', 'Gulika', 'Mṛtyu', 'Kāla',
+    'Dāvāgni', 'Ghora', 'Yama', 'Kaṇṭaka', 'Sudhā', 'Amṛta', 'Pūrṇacandra', 'Viṣadagdha',
+    'Kulanāśa', 'Vaṃśakṣaya', 'Utpāta', 'Kāla', 'Saumya', 'Komala', 'Śītala', 'Karāladaṃṣṭra',
+    'Candramukhī', 'Pravīṇa', 'Kālapāvaka', 'Daṇḍāyudha', 'Nirmala', 'Saumya', 'Krūra', 'Atiśītala',
+    'Amṛta', 'Payodhi', 'Bhramaṇa', 'Candrarekhā',
+)
+
+# D2 Kashinatha(SJC 财富 horā,_agentA_chartcasting.md:206-215):唯一依「源座主星」的 D-2(不可纯 f(s,d))。
+# 日 horā(段==座奇偶) → 主星「昼强座」;月 horā → 主星「夜强座」;巨蟹/狮子为发光体对(昼→狮子4/夜→巨蟹3)。
+_D2_KASH_DAY = (7, 6, 5, 4, 4, 5, 6, 7, 11, 10, 10, 11)
+_D2_KASH_NIGHT = (0, 1, 2, 3, 3, 2, 1, 0, 8, 9, 9, 8)
+
+
+def shashtiamsa_nature(longitude):
+    lon = float(longitude) % 360.0
+    sign_index = int(math.floor(lon / 30.0)) % 12
+    seg = int(math.floor((lon % 30.0) * 2.0)) + 1     # 1..60
+    if seg > 60:
+        seg = 60
+    deity_idx = seg if (sign_index in ODD_SIGNS) else (61 - seg)   # 偶象神名逆序
+    return {'segment': seg, 'deityIndex': deity_idx,
+            'deity': _D60_NAMES[deity_idx - 1],
+            'nature': 'malefic' if deity_idx in _D60_KRURA else 'benefic'}
+
+
+def _varga_variant_sign(chartnum, variant, sign_index, part):
+    if not variant or variant == 'standard':
+        return None
+    if chartnum == 2 and variant == 'parivritti':
+        return ((sign_index % 6) * 2 + part) % 12
+    if chartnum == 2 and variant == 'kashinatha':
+        sun = (part == sign_index % 2)            # 段==座奇偶 → 日 horā(取主星昼强座)
+        return _D2_KASH_DAY[sign_index] if sun else _D2_KASH_NIGHT[sign_index]
+    if chartnum == 3 and variant == 'parivritti':
+        return (3 * sign_index + part) % 12
+    if chartnum == 3 and variant == 'jagannatha':
+        return (sign_index + _D3_JAGANNATHA[sign_index % 3][part]) % 12
+    if chartnum == 3 and variant == 'somanatha':
+        if sign_index % 2 == 0:                   # 奇象(Jyotish parity):自白羊顺
+            return (3 * (sign_index // 2) + part) % 12
+        return (11 - 3 * ((sign_index - 1) // 2) - part) % 12   # 偶象:自双鱼逆
+    if chartnum == 24 and variant == 'correct':
+        is_odd = sign_index in ODD_SIGNS
+        return ((4 + part) % 12) if is_odd else ((3 - part) % 12)   # 偶象座逆(Narasimha Rao)
+    if chartnum == 30 and variant == 'equal':
+        return (sign_index + part) % 12   # 30×1° 等分(配 _scaled_degree 等分度)
+    return None
+
+
+def varga_position(longitude, chartnum, variant=None):
     chartnum = normalize_chartnum(chartnum)
     lon = float(longitude) % 360.0
     if chartnum == 1:
@@ -129,6 +194,10 @@ def varga_position(longitude, chartnum):
     part = _part(degree_in_sign, chartnum)
     degree = _scaled_degree(degree_in_sign, chartnum)
     is_odd = sign_index in ODD_SIGNS
+
+    _vsign = _varga_variant_sign(chartnum, variant, sign_index, part)
+    if _vsign is not None:
+        return (_vsign * 30.0 + degree) % 360.0
 
     if chartnum == 2:
         if is_odd:

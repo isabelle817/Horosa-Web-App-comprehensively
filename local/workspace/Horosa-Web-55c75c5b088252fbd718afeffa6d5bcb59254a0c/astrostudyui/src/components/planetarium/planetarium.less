@@ -171,6 +171,116 @@
 	grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+// 倒退档与正向档之间留出与档内行距一致的间隙(8px),视觉统一不挤。
+.planetarium-speed-grid-rev {
+	margin-top: 8px;
+}
+
+/* 阶段 C:折叠分组 + 图例点 + 预设按钮 */
+.planetarium-layer-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+.planetarium-layer-actions {
+	display: flex;
+	gap: 6px;
+}
+.planetarium-layer-actions button {
+	min-height: 24px;
+	padding: 0 8px;
+	border: 1px solid rgba(145, 170, 210, 0.22);
+	background: rgba(18, 27, 47, 0.9);
+	color: #cfe0ff;
+	border-radius: 6px;
+	font-size: 11px;
+	cursor: pointer;
+	transition: border-color 0.16s, background 0.16s;
+}
+.planetarium-layer-actions button:first-child {
+	border-color: rgba(117, 177, 255, 0.5);
+	color: #dce8ff;
+}
+.planetarium-layer-actions button:hover {
+	border-color: rgba(117, 177, 255, 0.68);
+	background: rgba(31, 48, 82, 0.95);
+}
+.planetarium-layer-actions button.is-on {
+	border-color: rgba(132, 200, 255, 0.85);
+	background: rgba(46, 86, 140, 0.95);
+	color: #eaf3ff;
+}
+.planetarium-subgroup {
+	margin-top: 10px;
+}
+.planetarium-subgroup:first-of-type {
+	margin-top: 6px;
+}
+.planetarium-subgroup-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	padding: 4px 2px 7px;
+	background: none;
+	border: none;
+	color: #b6c4dd;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	cursor: pointer;
+	transition: color 0.16s;
+}
+.planetarium-subgroup-header:hover {
+	color: #dce8ff;
+}
+.planetarium-subgroup-header .chevron {
+	display: inline-block;
+	font-size: 10px;
+	opacity: 0.7;
+	transition: transform 0.18s;
+}
+.planetarium-subgroup.is-collapsed .chevron {
+	transform: rotate(-90deg);
+}
+.planetarium-subgroup.is-collapsed .planetarium-layer-grid {
+	display: none;
+}
+.planetarium-chip.has-legend {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+}
+.planetarium-legend-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex: 0 0 8px;
+	box-shadow: 0 0 5px currentColor;
+}
+.planetarium-legend-dot.grid-h {
+	background: #5fd39a;
+	color: #5fd39a;
+}
+.planetarium-legend-dot.grid-eq {
+	background: #6fb6ff;
+	color: #6fb6ff;
+}
+.planetarium-legend-dot.grid-ec {
+	background: #e6c15a;
+	color: #e6c15a;
+}
+.planetarium-legend-dot.grid-su28 {
+	background: linear-gradient(90deg, #57c7eb 0%, #70d195 33%, #f0bd61 66%, #c795f5 100%);
+	color: #70d195;
+}
+.planetarium-layer-grid .planetarium-chip {
+	font-size: 12.5px;
+	padding: 0 4px;
+	white-space: nowrap;
+}
+
 .planetarium-view-grid,
 .planetarium-step-grid {
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -246,7 +356,7 @@
 
 .planetarium-actions {
 	display: grid;
-	grid-template-columns: 1fr 78px;
+	grid-template-columns: 1fr 96px;
 	gap: 8px;
 	margin-top: 10px;
 }
@@ -274,12 +384,50 @@
 .planetarium-status {
 	position: absolute;
 	left: 18px;
-	bottom: 18px;
+	bottom: 60px;
 	padding: 8px 12px;
 	border: 1px solid rgba(155, 181, 230, 0.24);
 	background: rgba(8, 13, 26, 0.86);
 	color: #dce8ff;
 	border-radius: 7px;
+}
+
+/* B3:左下角场景读数(JD / 本地恒星时 / 黄赤交角) */
+.planetarium-scene-readout {
+	position: absolute;
+	left: 18px;
+	bottom: 18px;
+	display: flex;
+	gap: 14px;
+	padding: 7px 12px;
+	border: 1px solid rgba(155, 181, 230, 0.18);
+	background: rgba(8, 13, 26, 0.55);
+	-webkit-backdrop-filter: blur(6px);
+	backdrop-filter: blur(6px);
+	color: #b8c8e4;
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+	border-radius: 7px;
+	z-index: 5;
+	pointer-events: none;
+}
+.planetarium-scene-readout b {
+	color: #e6eefc;
+	font-weight: 600;
+	margin-left: 4px;
+}
+
+// 性能读数迷你 overlay:挪到画布右上角(照搬左下读数样式),不占右栏。
+.planetarium-scene-readout-tr {
+	left: auto;
+	bottom: auto;
+	top: 14px;
+	right: 14px;
+	max-width: none;
+	flex-wrap: nowrap;
+	white-space: nowrap;
+	justify-content: flex-end;
+	gap: 5px 9px;
 }
 
 .planetarium-status.is-syncing {
@@ -338,7 +486,8 @@
 .planetarium-detail h3 {
 	margin: 0 0 6px;
 	font-size: 20px;
-	font-weight: 650;
+	font-weight: 500;
+	color: #eaf1fb;
 }
 
 .planetarium-detail p {
@@ -354,6 +503,93 @@
 	border: 1px dashed rgba(128, 154, 190, 0.28);
 	border-radius: 8px;
 	line-height: 1.7;
+}
+
+/* 任务 1:星等过滤滑块 */
+.planetarium-mag-filter {
+	padding: 10px 12px 11px;
+	border: 1px solid rgba(130, 160, 210, 0.2);
+	background: rgba(20, 30, 52, 0.62);
+	border-radius: 8px;
+	margin-bottom: 8px;
+}
+.planetarium-mag-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	color: #9fb0ca;
+	font-size: 12px;
+	margin-bottom: 6px;
+}
+.planetarium-mag-head b {
+	color: #e6eefc;
+	font-size: 14px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.planetarium-mag-slider {
+	width: 100%;
+	margin: 2px 0 4px;
+	accent-color: #71c6ff;
+	cursor: pointer;
+}
+.planetarium-mag-scale {
+	display: flex;
+	justify-content: space-between;
+	color: #7e90b0;
+	font-size: 10.5px;
+}
+
+/* 任务 4:角距测量读数 / 任务 3:天区方向读数 */
+.planetarium-measure,
+.planetarium-sky-readout {
+	padding: 11px 13px 12px;
+	border: 1px solid rgba(113, 198, 255, 0.32);
+	background: rgba(18, 40, 58, 0.5);
+	border-radius: 8px;
+	margin-bottom: 12px;
+}
+.planetarium-sky-readout {
+	border-color: rgba(130, 160, 210, 0.28);
+	background: rgba(20, 30, 52, 0.6);
+}
+.planetarium-measure h4,
+.planetarium-sky-readout h4 {
+	margin: 0 0 8px;
+	font-size: 13px;
+	font-weight: 650;
+	color: #dff0ff;
+}
+.planetarium-measure div,
+.planetarium-sky-readout div {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 6px 0;
+	border-bottom: 1px solid rgba(128, 154, 190, 0.13);
+}
+.planetarium-measure span,
+.planetarium-sky-readout span {
+	color: #9fb0ca;
+	font-size: 12.5px;
+}
+.planetarium-measure strong,
+.planetarium-sky-readout strong {
+	text-align: right;
+	color: #f3f9ff;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+.planetarium-measure-result strong {
+	color: #6df0c0;
+	font-size: 15px;
+}
+.planetarium-measure p,
+.planetarium-sky-readout p {
+	margin: 8px 0 0;
+	color: #8fa2c0;
+	font-size: 12px;
+	line-height: 1.5;
 }
 
 .horosa-planetarium-page.is-immersive {
@@ -384,6 +620,7 @@
 	border-radius: 999px;
 	border: 1px solid rgba(155, 181, 230, 0.28);
 	background: rgba(8, 13, 26, 0.62);
+	-webkit-backdrop-filter: blur(8px);
 	backdrop-filter: blur(8px);
 	color: #dce8ff;
 	font-size: 13px;

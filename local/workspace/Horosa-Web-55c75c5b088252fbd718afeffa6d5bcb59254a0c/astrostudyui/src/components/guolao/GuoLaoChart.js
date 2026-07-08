@@ -3,6 +3,8 @@ import { Component } from 'react';
 import {randomStr,} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import GLChart from './GLChart';
+import { chartDrawGuardEnabled } from '../../utils/perfFlags';
+import { buildChartDrawSig, sameChartDrawSig } from '../../utils/chartDrawGuard';
 import * as SZConst from '../suzhan/SZConst';
 
 const SQUARE_SIDE_MIN = 620;
@@ -163,6 +165,18 @@ class GuoLaoChart extends Component{
 			return;
 		}
 
+		// 重绘签名守卫:输入(数据/显示项/fields 引用 + 主题 + 尺寸)全等则跳过整树 d3 重建。
+		const guardOn = chartDrawGuardEnabled();
+		const sig = guardOn ? buildChartDrawSig(this.state.chartid, {
+			value: chartobj,
+			chartDisplay: this.props.chartDisplay,
+			planetDisplay: this.props.planetDisplay,
+			fields: this.props.fields,
+		}) : null;
+		if(guardOn && sameChartDrawSig(sig, this._lastDrawnSig)){
+			return;
+		}
+
 		let disp = [];
 		if(this.props.chartDisplay !== undefined && this.props.chartDisplay !== null){
 			disp = this.props.chartDisplay;
@@ -194,6 +208,8 @@ class GuoLaoChart extends Component{
 		let svgdom = document.getElementById(this.state.chartid);
 		if(svgdom && (svgdom.clientWidth === 0 || svgdom.clientHeight === 0)){
 			this.scheduleDrawRetry();
+		}else if(sig){
+			this._lastDrawnSig = sig;
 		}
 	}
 

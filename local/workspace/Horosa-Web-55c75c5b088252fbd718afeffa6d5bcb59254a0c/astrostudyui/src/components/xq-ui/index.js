@@ -121,13 +121,15 @@ export function XQSectionTitle({children, className = '', ...rest}){
 	);
 }
 
-export function XQCheckItem({checked, children, className = '', compact = false, marker, ...rest}){
+export function XQCheckItem({checked, children, className = '', compact = false, marker, disabled = false, ...rest}){
 	return (
 		<button
 			type="button"
 			{...rest}
-			className={`xq-check-item ${checked ? 'xq-check-item-checked' : ''} ${compact ? 'xq-check-item-compact' : ''} ${className}`.trim()}
+			disabled={disabled}
+			className={`xq-check-item ${checked ? 'xq-check-item-checked' : ''} ${compact ? 'xq-check-item-compact' : ''} ${disabled ? 'xq-check-item-disabled' : ''} ${className}`.trim()}
 			aria-pressed={checked}
+			aria-disabled={disabled || undefined}
 		>
 			<span className="xq-check-box" aria-hidden="true">
 				{checked ? '✓' : ''}

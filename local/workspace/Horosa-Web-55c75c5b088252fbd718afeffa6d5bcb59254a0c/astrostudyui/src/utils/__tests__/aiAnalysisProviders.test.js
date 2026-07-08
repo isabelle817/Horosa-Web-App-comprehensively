@@ -75,8 +75,11 @@ describe('aiAnalysisProviders', ()=>{
 		expect(applyThinkingLevel({}, 'high', 'anthropic', 'claude-3-opus', 1000).thinking).toBeUndefined();
 	});
 
-	test('applyThinkingLevel: Gemini 写入 generationConfig.thinkingConfig.thinkingBudget', ()=>{
-		expect(applyThinkingLevel({}, 'max', 'gemini', 'gemini-2.5-pro').generationConfig.thinkingConfig.thinkingBudget).toBe(32768);
+	test('applyThinkingLevel: Gemini 写入 generationConfig.thinkingConfig.thinkingBudget + includeThoughts', ()=>{
+		const cfg = applyThinkingLevel({}, 'max', 'gemini', 'gemini-2.5-pro').generationConfig.thinkingConfig;
+		expect(cfg.thinkingBudget).toBe(32768);
+		// #54-G：includeThoughts=true 才让 Gemini 回流思维链(thought part);缺它则预算照烧但 UI 无思考过程。
+		expect(cfg.includeThoughts).toBe(true);
 	});
 
 	test('isOpenAiFamily: openai-compatible 也算 OpenAI 家族（预设实际取值就是它；曾因 === "openai" 永假致 stop/惩罚/JSON 模式静默失效）', ()=>{

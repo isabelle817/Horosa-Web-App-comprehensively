@@ -192,6 +192,9 @@ export default {
         showPlanetHouseInfo: 0,
         showAstroMeaning: 0,
         showOnlyRulExaltReception: 0,
+        voidClassical: 0,                  // G10 空亡古典义(30°内):默认 OFF=按本座义(现状);开=固定 30°窗口。星盘组件开关,格局页相位动态读此重算。
+        schoolPreset: 'brennan',           // G20 流派预设(默认 brennan = 现状默认四维 → 零回归)
+        tripSystem: 'Dorothean',           // 三分体系(默认多罗特 = 三分主星页现状默认)
         dayBoundary: DAY_BOUNDARY_AFTER23,
         lateZiHourMode: LATE_ZI_HOUR_NEXT_DAY,
         chartDisplayDefaultsVersion: ChartDisplayDefaultsVersion,
@@ -266,6 +269,8 @@ export default {
                 showPlanetHouseInfo: st.showPlanetHouseInfo,
                 showAstroMeaning: st.showAstroMeaning,
                 showOnlyRulExaltReception: st.showOnlyRulExaltReception,
+                schoolPreset: st.schoolPreset,
+                tripSystem: st.tripSystem,
                 dayBoundary: st.dayBoundary,
                 lateZiHourMode: st.lateZiHourMode,
                 chartDisplayDefaultsVersion: ChartDisplayDefaultsVersion,

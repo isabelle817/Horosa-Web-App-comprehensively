@@ -1,0 +1,76 @@
+// 天文地占 · 新内核增量样式(图形入宫 / 192 断语 / 技法卡 / 宫位盘图形 / 16图目录 tone)。
+// 基础盘/卡样式在全局 app.less;此处仅新增类,匹配暗金主题令牌。
+
+// 十二宫·图形入宫 + 192 断语
+.horosa-geomancy-house-row {
+	&.is-significator { background: var(--horosa-astro-card-hover, rgba(215, 173, 105, 0.08)); border-radius: 4px; }
+	.horosa-geomancy-house-figure {
+		margin-left: 8px; font-weight: 600; color: var(--horosa-astro-text, #e8ecf3);
+		&[data-tone='good'] { color: var(--horosa-good, #6bbf8a); }
+		&[data-tone='bad'] { color: var(--horosa-bad, #d77b7b); }
+		&[data-tone='neutral'] { color: var(--horosa-astro-muted, #8fa0b9); }
+	}
+	.horosa-geomancy-house-reading {
+		display: block; margin-top: 2px; font-size: 11px; line-height: 1.5;
+		color: var(--horosa-astro-muted, #8fa0b9);
+	}
+}
+
+// 宫位盘扇区图形入宫
+.horosa-geomancy-wheel-figure {
+	font-size: 15px; fill: var(--horosa-astro-text, #e8ecf3); font-weight: 600;
+	&.is-significator { fill: var(--horosa-astro-gold, #d7ad69); font-weight: 700; }
+}
+
+// 16 图目录:tone 角标 + 卡侧色 + 异名
+.horosa-geomancy-catalog-card {
+	&.is-tone-good { border-left: 2px solid var(--horosa-good, #6bbf8a); }
+	&.is-tone-bad { border-left: 2px solid var(--horosa-bad, #d77b7b); }
+	&.is-tone-neutral { border-left: 2px solid var(--horosa-astro-muted, #8fa0b9); }
+	.horosa-geomancy-catalog-tone {
+		margin-left: 6px; padding: 0 5px; border-radius: 6px; font-size: 11px;
+		background: var(--horosa-astro-card, rgba(255, 255, 255, 0.06)); color: var(--horosa-astro-gold, #d7ad69);
+	}
+	.horosa-geomancy-catalog-alt { color: var(--horosa-astro-muted, #8fa0b9); font-size: 11px; }
+	.horosa-geomancy-catalog-mean { color: var(--horosa-astro-text, #e8ecf3); font-size: 11px; line-height: 1.5; opacity: 0.85; }
+}
+
+// Sikidy 异或表盘
+.horosa-geomancy-sikidy {
+	width: 100%; padding: 12px;
+	.horosa-geomancy-sikidy-status { margin-bottom: 10px; color: var(--horosa-astro-muted, #8fa0b9); font-size: 12px;
+		.is-ok { color: var(--horosa-good, #6bbf8a); } .is-bad { color: var(--horosa-bad, #d77b7b); }
+		.horosa-geomancy-sikidy-red { margin-left: 10px; color: var(--horosa-bad, #d77b7b); font-weight: 600; }
+	}
+	.horosa-geomancy-sikidy-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+	.horosa-geomancy-sikidy-col {
+		border: 1px solid var(--horosa-astro-border, rgba(215, 173, 105, 0.25)); border-radius: 6px; padding: 6px 2px; text-align: center;
+		&.is-prince { background: rgba(107, 191, 138, 0.07); } &.is-slave { background: rgba(143, 160, 185, 0.06); }
+	}
+	.horosa-geomancy-sikidy-dots { display: flex; flex-direction: column; gap: 3px; align-items: center; min-height: 44px; justify-content: center; }
+	.horosa-geomancy-sikidy-dotrow { display: flex; gap: 4px; .horosa-geomancy-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--horosa-astro-gold, #d7ad69); display: inline-block; } }
+	.horosa-geomancy-sikidy-meta { margin-top: 5px; display: flex; flex-direction: column; line-height: 1.3;
+		span { color: var(--horosa-astro-muted, #8fa0b9); font-size: 10px; } em { font-size: 11px; color: var(--horosa-astro-text, #e8ecf3); font-style: normal; } small { font-size: 9px; color: var(--horosa-astro-muted, #8fa0b9); }
+	}
+}
+
+// Hakata 四片盘
+.horosa-geomancy-hakata {
+	width: 100%; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 22px;
+	.horosa-geomancy-hakata-tablets { display: flex; gap: 14px; }
+	.horosa-geomancy-hakata-tablet {
+		width: 84px; padding: 14px 8px; border-radius: 10px; text-align: center;
+		border: 1px solid var(--horosa-astro-border, rgba(215, 173, 105, 0.3));
+		strong { display: block; font-size: 15px; color: var(--horosa-astro-text, #e8ecf3); }
+		.horosa-geomancy-hakata-state { font-size: 11px; color: var(--horosa-astro-muted, #8fa0b9); }
+		&.is-open { background: rgba(215, 173, 105, 0.12); border-color: var(--horosa-astro-gold, #d7ad69); }
+		&.is-closed { background: rgba(143, 160, 185, 0.06); }
+	}
+	.horosa-geomancy-hakata-result { text-align: center; display: flex; flex-direction: column; gap: 6px; align-items: center;
+		.horosa-geomancy-hakata-figure { font-size: 24px; font-weight: 700; color: var(--horosa-astro-gold, #d7ad69);
+			&[data-tone='good'] { color: var(--horosa-good, #6bbf8a); } &[data-tone='bad'] { color: var(--horosa-bad, #d77b7b); }
+		}
+		small { font-size: 12px; color: var(--horosa-astro-muted, #8fa0b9); max-width: 360px; }
+		.horosa-geomancy-hakata-orient { font-size: 11px; opacity: 0.8; }
+	}
+}

@@ -42,4 +42,57 @@ describe('triplicityRulers', ()=>{
 		expect(txt).toContain('[三分主星推运]');
 		expect(buildTriplicityRulersSnapshotText(null)).toBe('');
 	});
+
+	it('零回归:不传 system 与显式 Dorothean 结果完全一致(各盘)', ()=>{
+		const cases = [
+			{ diurnal: true, sunSign: 'Aries', moonSign: 'Cancer' },
+			{ diurnal: false, sunSign: 'Leo', moonSign: 'Gemini' },
+			{ diurnal: true, sunSign: 'Capricorn', moonSign: 'Scorpio' },
+		];
+		cases.forEach((c)=>{
+			const a = buildTriplicityPeriods(chart(c), { division: 'thirds' });
+			const b = buildTriplicityPeriods(chart(c), { division: 'thirds', system: 'Dorothean' });
+			expect(a.periods.map((p)=>p.ruler)).toEqual(b.periods.map((p)=>p.ruler));
+			expect(a.periods.length).toBe(3);
+		});
+	});
+
+	it('托勒密二主:火/土/风象取昼夜两主、无协作主星(白羊昼→日,夜→木两段)', ()=>{
+		const r = buildTriplicityPeriods(chart({ diurnal: true, sunSign: 'Aries', moonSign: 'Cancer' }), { system: 'Ptolemaic' });
+		expect(r.system).toBe('Ptolemaic');
+		expect(r.periods.length).toBe(2);
+		expect(r.periods[0].ruler).toBe(AstroConst.SUN);  // 火象昼主
+		expect(r.periods[1].ruler).toBe(AstroConst.JUPITER); // 火象夜主
+	});
+
+	it('托勒密水象(标准):昼夜同主火星,退化为单段贯穿', ()=>{
+		const r = buildTriplicityPeriods(chart({ diurnal: true, sunSign: 'Cancer', moonSign: 'Aries' }), { system: 'Ptolemaic' });
+		expect(r.periods.length).toBe(1);
+		expect(r.periods[0].ruler).toBe(AstroConst.MARS);
+	});
+
+	it('托勒密水象变体·昼盘:水象取昼序两主[火,金]', ()=>{
+		const w = buildTriplicityPeriods(chart({ diurnal: true, sunSign: 'Cancer', moonSign: 'Aries' }), { system: 'PtolemaicWaterVariant' });
+		expect(w.periods.length).toBe(2);
+		expect(w.periods[0].ruler).toBe(AstroConst.MARS);  // 昼主火
+		expect(w.periods[1].ruler).toBe(AstroConst.VENUS); // 昼次金
+		// 非水象座(火象白羊)变体仍等同托勒密二主。
+		const f = buildTriplicityPeriods(chart({ diurnal: true, sunSign: 'Aries', moonSign: 'Cancer' }), { system: 'PtolemaicWaterVariant' });
+		expect(f.periods.map((p)=>p.ruler)).toEqual([AstroConst.SUN, AstroConst.JUPITER]);
+	});
+
+	it('托勒密水象变体·夜盘:水象按夜序取另一套两主[火,月](区分昼夜)', ()=>{
+		// 夜盘区间光体=月，落水象天蝎 → 夜序 [火, 月]。
+		const w = buildTriplicityPeriods(chart({ diurnal: false, sunSign: 'Aries', moonSign: 'Scorpio' }), { system: 'PtolemaicWaterVariant' });
+		expect(w.periods.length).toBe(2);
+		expect(w.periods[0].ruler).toBe(AstroConst.MARS); // 夜主火
+		expect(w.periods[1].ruler).toBe(AstroConst.MOON); // 夜次月(≠昼盘的金)
+	});
+
+	it('非法 system 回退多罗特(零回归保护)', ()=>{
+		const a = buildTriplicityPeriods(chart({ diurnal: true, sunSign: 'Aries', moonSign: 'Cancer' }), { system: 'NoSuch' });
+		const b = buildTriplicityPeriods(chart({ diurnal: true, sunSign: 'Aries', moonSign: 'Cancer' }), {});
+		expect(a.periods.map((p)=>p.ruler)).toEqual(b.periods.map((p)=>p.ruler));
+		expect(a.periods.length).toBe(3);
+	});
 });

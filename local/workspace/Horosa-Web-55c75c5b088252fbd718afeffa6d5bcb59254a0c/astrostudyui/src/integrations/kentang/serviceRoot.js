@@ -49,6 +49,18 @@ export const KENTANG_SERVICE_CONFIG = {
 		queryKeys: ['shenyishuSrv'],
 		defaultLocalPort: 8893,
 	},
+	geomancy: {
+		engine: 'astronomical_geomancy',
+		path: 'geomancy',
+		queryKeys: ['geomancySrv'],
+		defaultLocalPort: 8899,
+	},
+	xuanshi: {
+		engine: 'xuanshi_history',
+		path: 'xuanshi',
+		queryKeys: ['xuanshiSrv'],
+		defaultLocalPort: 8899,
+	},
 	shaozi: {
 		engine: 'kinastro-shaozi',
 		path: 'shaozi',

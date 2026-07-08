@@ -1,0 +1,85 @@
+{
+ "schema": "geomancy.sikidy/v1",
+ "columns": {
+  "1": {
+   "name": "Tale",
+   "role": "母列(随机)",
+   "meaning": "问者/起首"
+  },
+  "2": {
+   "name": "Maly",
+   "role": "母列(随机)",
+   "meaning": "财产"
+  },
+  "3": {
+   "name": "Fahatelo",
+   "role": "母列(随机)",
+   "meaning": "近亲"
+  },
+  "4": {
+   "name": "Bilady",
+   "role": "母列(随机)",
+   "meaning": "亲长/家"
+  },
+  "5": {
+   "name": "Fianahana",
+   "role": "转置列",
+   "meaning": "子嗣"
+  },
+  "6": {
+   "name": "Abidy",
+   "role": "转置列",
+   "meaning": "奴仆/疾"
+  },
+  "7": {
+   "name": "Betsimisay",
+   "role": "转置列",
+   "meaning": "配偶/对方"
+  },
+  "8": {
+   "name": "Fahavalo",
+   "role": "转置列",
+   "meaning": "敌/死"
+  },
+  "9": {
+   "name": "Fahasivy",
+   "role": "派生列(XOR)",
+   "meaning": "远事/神"
+  },
+  "10": {
+   "name": "Omasina",
+   "role": "派生列(XOR)",
+   "meaning": "君长/事业"
+  },
+  "11": {
+   "name": "Haja",
+   "role": "派生列(XOR)",
+   "meaning": "友/愿"
+  },
+  "12": {
+   "name": "Haky",
+   "role": "派生列(XOR)",
+   "meaning": "隐患"
+  },
+  "13": {
+   "name": "Sorotany",
+   "role": "派生列(XOR)",
+   "meaning": "地祇"
+  },
+  "14": {
+   "name": "Saily",
+   "role": "派生列(XOR)",
+   "meaning": "行止"
+  },
+  "15": {
+   "name": "Safary",
+   "role": "派生列(XOR)",
+   "meaning": "应验/结果"
+  },
+  "16": {
+   "name": "Akiba",
+   "role": "派生列(XOR)",
+   "meaning": "归藏/总断"
+  }
+ }
+}

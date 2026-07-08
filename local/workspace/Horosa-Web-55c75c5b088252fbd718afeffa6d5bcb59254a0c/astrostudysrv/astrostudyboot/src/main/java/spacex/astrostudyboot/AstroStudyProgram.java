@@ -1,6 +1,7 @@
 package spacex.astrostudyboot;
 
 import org.apache.tomcat.util.http.LegacyCookieProcessor;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -70,6 +71,30 @@ public class AstroStudyProgram {
     public WebServerFactoryCustomizer<TomcatServletWebServerFactory> cookieProcessorCustomizer() {
         return (factory)->factory.addContextCustomizers((context)->context.setCookieProcessor(new LegacyCookieProcessor()));
     }
+
+	// 🔥 Hystrix 核心预热:进程内**首次执行任意 HystrixCommand** 会初始化 Hystrix 核心(RxJava 调度器 /
+	// 指标发布 / 插件注册 / 线程池),约 1-2s(Hystrix 首用通病)。每次重启软件后,首个经 Java 转发 Python 的
+	// 请求(无论哪个技法,如印度占星)都要吃这一下 → 表现为「重启后首次进入某技法卡 ~3s」。这里启动后用后台
+	// 线程跑一个 trivial 命令把核心提前热好,后续真实转发不再付这笔冷启动。后台线程不阻塞启动;失败静默不影响服务。
+	@Bean
+	public CommandLineRunner hystrixCoreWarmup() {
+		return (args) -> {
+			Thread t = new Thread(() -> {
+				try {
+					new com.netflix.hystrix.HystrixCommand<String>(
+							com.netflix.hystrix.HystrixCommandGroupKey.Factory.asKey("warmup")) {
+						@Override
+						protected String run() {
+							return "ok";
+						}
+					}.execute();
+				} catch (Throwable ignore) {
+				}
+			}, "hystrix-core-warmup");
+			t.setDaemon(true);
+			t.start();
+		};
+	}
 
 //	@Bean
 //	public FilterRegistrationBean<RSAFilter> rsaFilter(){

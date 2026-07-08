@@ -7,12 +7,14 @@ import request from '../../utils/request';
 import * as AstroConst from '../../constants/AstroConst';
 import {randomStr, randomNum, littleEndian,} from '../../utils/helper';
 import * as LRConst from '../liureng/LRConst';
-import { ZSList, ZhangSheng, } from '../liureng/LRZhangSheng';
+import { ZSList, ZhangSheng, liurengWangXiang, judgeKongWang } from '../liureng/LRZhangSheng';
 import { resolveLiuRengTwelvePanStyle } from '../liureng/LRPanStyle';
 import { normalizeLiuRengJiangName } from '../liureng/LRShenJiangDoc';
 import ChuangChart from '../liureng/ChuangChart';
 import { buildXiangContext } from '../liureng/LRXiangDoc';
-import { computeFrontendShenSha } from '../liureng/LRShenShaDoc';
+import { computeFrontendShenSha, computeYearShenSha, computeMonthShenSha } from '../liureng/LRShenShaDoc';
+import { detectJianChuan } from '../liureng/LRJianChuanDoc';
+import { analyzeKongLocations, analyzeDunGan, analyzeNianMing } from '../liureng/LRKongDunNianDoc';
 import { ZHANDUAN_CATEGORIES, ZHANDUAN_DOC, RELATED_BIFA } from '../liureng/LRZhanDuanDoc';
 import { matchBiFa, BIFA_LIST } from '../liureng/LRBiFaDoc';
 import LRSanChuanRelationMini from '../liureng/LRSanChuanRelationMini';
@@ -30,10 +32,24 @@ import {
 	setLiurengRunyearLocalCache,
 } from '../../utils/localCalcCache';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
+import { chartDrawGuardEnabled } from '../../utils/perfFlags';
 
 
 const {Option} = Select;
 const TabPane = Tabs.TabPane;
+
+// 签名数组逐元素严格相等(引用/值);用于 render 内派生缓存命中判定(只多算、绝不少算)。
+function sameLRSigArr(a, b){
+	if(!a || !b || a.length !== b.length){
+		return false;
+	}
+	for(let i = 0; i < a.length; i++){
+		if(a[i] !== b[i]){
+			return false;
+		}
+	}
+	return true;
+}
 
 function cloneDateTimeSafe(val, fallback){
 	if(val && val instanceof DateTime){
@@ -2881,7 +2897,7 @@ function collectTianHeEvidence(context, a, b){
 function buildLiuRengReferenceContext(liureng, chartObj, guirengType, runyear, castOverride){
 	const layout = buildLiuRengLayout(chartObj, guirengType, castOverride);
 	const keData = buildKeData(layout, chartObj);
-	const sanChuan = buildSanChuanData(layout, keData.raw, chartObj);
+	const sanChuan = buildSanChuanData(layout, keData.raw, chartObj, castOverride);
 	const nongli = chartObj && chartObj.nongli ? chartObj.nongli : {};
 	const dayGanZi = nongli && nongli.dayGanZi ? nongli.dayGanZi : '';
 	const dayGan = dayGanZi.substr(0, 1);
@@ -2911,6 +2927,11 @@ function buildLiuRengReferenceContext(liureng, chartObj, guirengType, runyear, c
 	const sanChuanGz = sanChuan && sanChuan.cuang ? sanChuan.cuang : [];
 	const sanChuanGans = sanChuanGz.map((item)=>extractSingleGan(item)).filter(Boolean);
 	const sanChuanBranches = sanChuanGz.map((item)=>extractSingleBranch(item)).filter(Boolean);
+		// 🔴 上面 filter(Boolean) 会在某传无遁干时删掉空位，使 gans 整体上移、与 branches 错位 —— 右栏取象 mini 与
+		// 初/中/末 gan 因而把「辛」错配给戌、「癸」错配给未（与中盘真三传天干不符）。故按支位「保位重建」（不 filter）
+		// 供所有「按位取用」者；上面带 filter 的版本仍留给下方神煞/格局「合干池」（那里要干清单、空位本就该剔）。
+		const sanChuanGansAligned = sanChuanGz.map((item)=>extractSingleGan(item));
+		const sanChuanBranchesAligned = sanChuanGz.map((item)=>extractSingleBranch(item));
 	const sanChuanGods = (sanChuan && sanChuan.tianJiang ? sanChuan.tianJiang : []).map((item)=>normalizeTianJiangName(item));
 	const keUp = keRaw.map((item)=>extractSingleBranch(item[1])).filter(Boolean);
 	const keDown = keRaw.map((item)=>extractSingleBranch(item[2])).filter(Boolean);
@@ -3036,15 +3057,15 @@ function buildLiuRengReferenceContext(liureng, chartObj, guirengType, runyear, c
 		ke1Up: keUp[0] || '',
 		ke3Up: keUp[2] || '',
 		courseGans,
-		sanChuanBranches,
-		sanChuanGans,
+		sanChuanBranches: sanChuanBranchesAligned,
+		sanChuanGans: sanChuanGansAligned,
 		sanChuanGods,
-		firstBranch: sanChuanBranches[0] || '',
-		midBranch: sanChuanBranches[1] || '',
-		lastBranch: sanChuanBranches[2] || '',
-		firstGan: sanChuanGans[0] || '',
-		midGan: sanChuanGans[1] || '',
-		lastGan: sanChuanGans[2] || '',
+		firstBranch: sanChuanBranchesAligned[0] || '',
+		midBranch: sanChuanBranchesAligned[1] || '',
+		lastBranch: sanChuanBranchesAligned[2] || '',
+		firstGan: sanChuanGansAligned[0] || '',
+		midGan: sanChuanGansAligned[1] || '',
+		lastGan: sanChuanGansAligned[2] || '',
 		firstGod: sanChuanGods[0] || '',
 		midGod: sanChuanGods[1] || '',
 		lastGod: sanChuanGods[2] || '',
@@ -3843,11 +3864,13 @@ export const QI_METHODS = [
 	{ key: 'alyr', name: '月日对齐·催迫事' },
 	{ key: 'alys', name: '月时对齐·灵活事' },
 	{ key: 'xuanshi', name: '选时·事发之时' },
-	{ key: 'yanshu', name: '演数·随感之数' },
+	{ key: 'yanshu', name: '演数·随感之数(加时)' },
+	{ key: 'baoshu', name: '报数/端法·活时(÷12定支)' },
 ];
 const YUE_JIANG_METHODS = [
 	{ key: 'zhongqi', name: '中气过宫（默认）' },
 	{ key: 'jieqi', name: '节气换将' },
+	{ key: 'richan', name: '太阳过宫·日躔（含岁差）' },
 ];
 const FEN_ZHOU_YE_METHODS = [
 	{ key: 'chenhun', name: '晨昏分昼夜（默认）' },
@@ -3857,16 +3880,23 @@ const FEN_ZHOU_YE_METHODS = [
 const MAOYOU_DAY_BRANCHES = ['卯', '辰', '巳', '午', '未', '申'];
 const YINSHEN_DAY_BRANCHES = ['寅', '卯', '辰', '巳', '午', '未'];
 
-// 月将：中气过宫(默认=getChartYue) 或 节气换将（节气提前半月，太阳黄经+15°取宫）。
-function getYueJiangByMethod(chartObj, yueJiangMethod){
-	if(yueJiangMethod !== 'jieqi'){
+// 月将换将三派(§3.2):中气过宫(③默认=getChartYue,回归中气) / 节气换将(①立节古法,提前半月=黄经+15°取宫) /
+// 太阳过宫·日躔(②含岁差,黄经−岁差后取宫,今约较中气晚一周)。岁差=Lahiri 线性近似(标准天文常数,非传本臆断;
+// 仅用于定宫,精度足够;太阳黄经已由星历给出,无需后端)。
+export function liurengAyanamsa(solarYear){
+	const yr = (typeof solarYear === 'number' && isFinite(solarYear)) ? solarYear : 2024;
+	return 23.853 + 0.0139644 * (yr - 2000); // 23°51′@2000 + 50.27″/yr
+}
+export function getYueJiangByMethod(chartObj, yueJiangMethod, solarYear){
+	if(yueJiangMethod !== 'jieqi' && yueJiangMethod !== 'richan'){
 		return getChartYue(chartObj);
 	}
 	const sun = getPlanetObject(chartObj, AstroConst.SUN);
 	if(!sun || typeof sun.lon !== 'number' || !isFinite(sun.lon)){
 		return getChartYue(chartObj);
 	}
-	const lon = (((sun.lon + 15) % 360) + 360) % 360;
+	const offset = yueJiangMethod === 'richan' ? -liurengAyanamsa(solarYear) : 15;
+	const lon = (((sun.lon + offset) % 360) + 360) % 360;
 	return LRConst.SignZiList[Math.floor(lon / 30) % 12] || getChartYue(chartObj);
 }
 
@@ -3901,7 +3931,7 @@ function liurengChouBranch(yueEff, chou){
 }
 
 // 起课法 → 天盘起支 X 与 地盘临位 Y（yueEff＝换将后月将）。
-function computeQiXY(castMethod, chartObj, yueEff, opts){
+export function computeQiXY(castMethod, chartObj, yueEff, opts){
 	opts = opts || {};
 	const nongli = chartObj.nongli || {};
 	const timeBranch = nongli.time ? nongli.time.substr(1) : '';
@@ -3952,6 +3982,15 @@ function computeQiXY(castMethod, chartObj, yueEff, opts){
 			Y = LRConst.ZiList[forward ? (ti + step) % 12 : (ti - step + 12) % 12];
 			break;
 		}
+		case 'baoshu': {
+			// 活时/端法:报数(或字数/笔画/声数)÷12 直接折占时支(子1…亥12,余0=亥12),月将加之(§4.2/§5.8)
+			X = yueEff;
+			const N = parseInt(opts.yanShuNum, 10);
+			if(!isFinite(N)){ Y = timeBranch; break; }
+			let r = ((N % 12) + 12) % 12;
+			Y = LRConst.ZiList[r === 0 ? 11 : r - 1];
+			break;
+		}
 		default: break; // zheng / 未知 → X=月将, Y=正时
 	}
 	return { X, Y };
@@ -3967,11 +4006,21 @@ function buildLiuRengCastOverride(chartObj, opts){
 	const yueJiangMethod = opts.yueJiangMethod || 'zhongqi';
 	const fenZhouYe = opts.fenZhouYe || 'chenhun';
 	const isDiurnal = computeFenZhouYe(fenZhouYe, chartObj);
-	const allDefault = castMethod === 'zheng' && yueJiangMethod !== 'jieqi' && isDiurnal === undefined;
+	// 涉害取舍流派(默认全 app=仅下贼上,零回归);非默认时即便其余皆默认也须产出 override 携 seHaiOpts。
+	const seHaiOpts = {
+		method: opts.seHaiMethod || 'app',
+		boundary: opts.seHaiBoundary || 'app',
+		shiRuKe: !!opts.shiRuKe,
+	};
+	const seHaiDefault = seHaiOpts.method === 'app' && seHaiOpts.boundary === 'app' && !seHaiOpts.shiRuKe;
+	// 昼夜阳阴归属(§6.3④):danmu=旦暮系(默认)/yinyang=星历考原阳阴系。
+	const yinyangSystem = opts.yinyangSystem === 'yinyang' ? 'yinyang' : 'danmu';
+	const allDefault = castMethod === 'zheng' && yueJiangMethod !== 'jieqi' && yueJiangMethod !== 'richan' && isDiurnal === undefined && seHaiDefault && yinyangSystem === 'danmu';
 	if(allDefault){
 		return null;
 	}
-	const yueEff = getYueJiangByMethod(chartObj, yueJiangMethod);
+	const solarYear = Number(opts.solarYear);
+	const yueEff = getYueJiangByMethod(chartObj, yueJiangMethod, solarYear);
 	const xy = computeQiXY(castMethod, chartObj, yueEff, opts);
 	const tFallback = chartObj.nongli.time ? chartObj.nongli.time.substr(1) : '';
 	const X = (xy.X && LRConst.ZiList.indexOf(xy.X) >= 0) ? xy.X : (yueEff || getChartYue(chartObj));
@@ -3980,7 +4029,7 @@ function buildLiuRengCastOverride(chartObj, opts){
 		return null;
 	}
 	// actualYue=真实月将(yueEff):起课法只改 X(天盘起支)用于上下盘对齐;月将/时辰高亮与盘式仍以真实月将+真实占时为准。
-	return { yue: X, timeZhi: Y, isDiurnal, actualYue: yueEff };
+	return { yue: X, timeZhi: Y, isDiurnal, actualYue: yueEff, seHaiOpts, yinyangSystem };
 }
 
 function buildLiuRengLayout(chartObj, guirengType, castOverride){
@@ -4009,7 +4058,7 @@ function buildLiuRengLayout(chartObj, guirengType, castOverride){
 	}
 
 	const houseTianJiang = LRConst.TianJiang.slice(0);
-	const guizi = LRConst.getGuiZi(chartObj, guirengType, castOverride ? castOverride.isDiurnal : undefined);
+	const guizi = LRConst.getGuiZi(chartObj, guirengType, castOverride ? castOverride.isDiurnal : undefined, castOverride ? castOverride.yinyangSystem : undefined);
 	let houseidx = 0;
 	for(let i=0; i<12; i++){
 		const zi = LRConst.ZiList[yueIndexs[i]];
@@ -4134,7 +4183,7 @@ function buildKeData(layout, chartObj){
 	return result;
 }
 
-function buildSanChuanData(layout, keRaw, chartObj){
+function buildSanChuanData(layout, keRaw, chartObj, castOverride){
 	if(!layout || !keRaw || keRaw.length !== 4 || !chartObj || !chartObj.nongli){
 		return null;
 	}
@@ -4144,6 +4193,7 @@ function buildSanChuanData(layout, keRaw, chartObj){
 			chartObj: chartObj,
 			nongli: chartObj.nongli,
 			ke: keRaw,
+			seHaiOpts: castOverride ? castOverride.seHaiOpts : null,
 			liuRengChart: {
 				upZi: layout.upZi,
 				downZi: layout.downZi,
@@ -4186,12 +4236,17 @@ export function buildLiuRengSnapshotText(params, liureng, runyear, chartObj, gui
 		const cols = liureng.fourColumns;
 		lines.push(`四柱：${fmtValue(cols.year && cols.year.ganzi)}年 ${fmtValue(cols.month && cols.month.ganzi)}月 ${fmtValue(cols.day && cols.day.ganzi)}日 ${fmtValue(cols.time && cols.time.ganzi)}时`);
 	}
-	lines.push(`贵人体系：${guirengType === 0 ? '六壬法贵人' : (guirengType === 1 ? '遁甲法贵人' : '星占法贵人')}`);
+	lines.push(`贵人体系：${['六壬法贵人', '遁甲法贵人', '星占法贵人', '甲戊兼牛羊', '干合阳阴贵'][guirengType] || '星占法贵人'}`);
 	lines.push(`起课法：${(QI_METHODS.find((m)=>m.key === (_castOpts.castMethod || 'zheng')) || QI_METHODS[0]).name}`);
 	if(_castOpts.castMethod === 'xuanshi' && _castOpts.xuanShiZhi){ lines.push(`选时：${_castOpts.xuanShiZhi}时`); }
-	if(_castOpts.castMethod === 'yanshu' && (_castOpts.yanShuNum || _castOpts.yanShuNum === 0)){ lines.push(`演数：${_castOpts.yanShuNum}`); }
+	if((_castOpts.castMethod === 'yanshu' || _castOpts.castMethod === 'baoshu') && (_castOpts.yanShuNum || _castOpts.yanShuNum === 0)){ lines.push(`${_castOpts.castMethod === 'baoshu' ? '报数/端法(÷12定支)' : '演数'}：${_castOpts.yanShuNum}`); }
 	lines.push(`换将：${(YUE_JIANG_METHODS.find((m)=>m.key === (_castOpts.yueJiangMethod || 'zhongqi')) || YUE_JIANG_METHODS[0]).name}`);
 	lines.push(`分昼夜：${(FEN_ZHOU_YE_METHODS.find((m)=>m.key === (_castOpts.fenZhouYe || 'chenhun')) || FEN_ZHOU_YE_METHODS[0]).name}`);
+	if((_castOpts.seHaiMethod && _castOpts.seHaiMethod !== 'app') || (_castOpts.seHaiBoundary && _castOpts.seHaiBoundary !== 'app') || _castOpts.shiRuKe){
+		const _sm = { app: '仅下贼上(单向取)', standard: '标准深浅两向', mengzhongji: '直取孟仲季' }[_castOpts.seHaiMethod || 'app'];
+		const _sb = { app: '计起点不计本家', both: '两端皆计', neither: '皆不计' }[_castOpts.seHaiBoundary || 'app'];
+		lines.push(`涉害取舍：${_sm}·${_sb}${_castOpts.shiRuKe ? '·始入课单列(十法)' : ''}`);
+	}
 	lines.push(`十二长生五行：${fmtValue(zhangshengElem)}`);
 	lines.push(`十二盘式：${fmtValue(panStyle && panStyle.name ? panStyle.name : '')}`);
 	lines.push(`问测人性别：${xingbie}`);
@@ -4316,6 +4371,28 @@ export function buildLiuRengSnapshotText(params, liureng, runyear, chartObj, gui
 		}
 		lines.push('');
 
+		const yearSS = computeYearShenSha(_ctx.yearBranch, _castOpts.yearShenShaSort || 'sanyuan', _ctx.courseBranches);
+		const monthSS = computeMonthShenSha(_ctx.monthBranch, _ctx.courseBranches);
+		if(yearSS.length || monthSS.length){
+			// 段头独占一行(段头卫生:parseSectionTitleLine 仅认整行 [X]);年神序说明移正文行,否则段头带正文 → 认不出 → 整段并入上一段、且导出设置勾不到。
+			lines.push('[年月神煞]');
+			lines.push(`（年神＝${(_castOpts.yearShenShaSort === 'suigui') ? '太岁排轮' : '四利三元序'}）`);
+			yearSS.concat(monthSS).forEach((s)=>lines.push(`${s.name}：${s.branch}${s.inCourse ? '（入课传）' : ''}`));
+			lines.push('');
+		}
+		const jcS = detectJianChuan(_ctx.sanChuanBranches);
+		if(jcS){ lines.push('[课体结构]'); lines.push(`${jcS.name}（${jcS.kind}${jcS.wuxing ? '·' + jcS.wuxing : ''}${jcS.dir ? '·' + jcS.dir + '间' : ''}）：${jcS.text}`); lines.push(''); }
+		const _ws = (_ctx.sanChuanBranches || []).map((z, i) => { const wx = LRConst.GanZiWuXing[`${z || ''}`.trim().substring(0,1)] || ''; const w = liurengWangXiang(wx, _ctx.monthBranch, _castOpts.tuWangShuai); return w ? `${['初','中','末'][i]}传${z}${wx}${w}` : ''; }).filter(Boolean);
+		if(_ws.length){ lines.push('[三传旺衰]'); lines.push(`${_ws.join('、')}`); lines.push(''); }
+		const _kw = (_ctx.xunKongBranches || []).map((z) => { const wx = LRConst.GanZiWuXing[`${z||''}`.trim().substring(0,1)] || ''; const j = judgeKongWang(wx, _ctx.monthBranch, _castOpts.tuWangShuai); return j ? `${z}${wx}${j.kind}(${j.ws})` : ''; }).filter(Boolean);
+		if(_kw.length){ lines.push('[空亡真假]'); lines.push(`${_kw.join('、')}`); lines.push(''); }
+		const _kloc = analyzeKongLocations(_ctx);
+		if(_kloc.hits.length){ lines.push('[旬空落点]'); lines.push(`${_kloc.hits.map((h)=>`${h.pos}${h.branch}空（${h.note}）`).join('；')}${_kloc.allSanChuanKong ? '；三传全空，守干上旺禄勿动' : ''}`); lines.push(''); }
+		if(_kloc.xianKong.length){ lines.push('[陷空]'); lines.push(`${_kloc.xianKong.map((x)=>`${x.god}临地盘${x.seat}`).join('、')}（落于空地、虚而不实）`); lines.push(''); }
+		const _dun = analyzeDunGan(_ctx);
+		if(_dun.length){ lines.push('[遁干特殊]'); lines.push(`${_dun.map((d)=>`${d.pos}${d.branch}${d.gan ? '遁' + d.gan : ''}${d.flags.length ? '（' + d.flags.join('、') + '）' : ''}：${d.note}`).join('；')}`); lines.push(''); }
+		const _nm = analyzeNianMing(_ctx);
+		if(_nm.length){ lines.push('[年命上神]'); lines.push(`${_nm.map((n)=>`${n.label}${n.branch}——${n.note}`).join('；')}`); lines.push(''); }
 		const bifaHits = matchBiFa(_ctx);
 		lines.push('[毕法（已命中）]');
 		lines.push('（以下为机械命中之断诀，烈度须合时令旺衰、年命制化，非定数）');
@@ -4373,6 +4450,12 @@ class LiuRengMain extends Component{
 			yanShuNum: '',
 			yueJiangMethod: 'zhongqi',
 			fenZhouYe: 'chenhun',
+			seHaiMethod: 'app',     // 涉害取舍:app=仅下贼上(默认·已固定)/standard=标准深浅两向/mengzhongji=直取孟仲季
+			seHaiBoundary: 'app',   // 涉害起讫:app=计起点不计本家(默认)/both=两端皆计/neither=皆不计
+			shiRuKe: false,         // 始入课:false=并入重审(默认)/true=单一下贼上单列始入(九法变十法)
+			yearShenShaSort: 'sanyuan', // 年神排序:sanyuan=四利三元序(默认)/suigui=太岁排轮(太阴落宫异)
+			yinyangSystem: 'danmu',     // 昼夜阳阴归属:danmu=旦暮系(默认)/yinyang=星历考原阳阴系(A正法甲乙丙辛壬癸昼夜互换)
+			tuWangShuai: 'siji',        // 土旺衰:siji=四季月18日土旺(默认)/huotu=火土同宫(土随火)
 			calcFields: null,
 			calcChart: null,
 			rightPanelTab: 'dage',
@@ -4392,6 +4475,13 @@ class LiuRengMain extends Component{
 		this.godsInflight = new Map();
 		this.runYearServerCache = new Map();
 		this.runYearServerInflight = new Map();
+		// render 内派生缓存(单槽 last-result)。render() 每次都 buildLiuRengCastOverride(新对象!)+
+		// buildLiuRengReferenceBundle(~650行重算)。切右栏 tab(rightTab/activeTab 等)只改无关 state,却让二者整套重跑;
+		// 且 castOverride 每次新引用 → 透传给 LiuRengChart 的 CDU 恒判「变」→ d3 整树白重画(越用越卡的真凶)。
+		// 按各自实际消费的输入做签名缓存:签名全等 → 复用上次结果(引用稳定,byte-perfect 同输入同输出),
+		// LiuRengChart 拿到稳定 castOverride → CDU 不再误触发;任一变 → 真重算重画。kill-switch 复用 chartDrawGuard 闸。
+		this._castOverrideCache = null;
+		this._refBundleCache = null;
 
 		this.onFieldsChange = this.onFieldsChange.bind(this);
 		this.onBirthChange = this.onBirthChange.bind(this);
@@ -4682,6 +4772,13 @@ class LiuRengMain extends Component{
 				yueJiangMethod: this.state.yueJiangMethod,
 				fenZhouYe: this.state.fenZhouYe,
 				zhanCategory: this.state.zhanCategory,
+				seHaiMethod: this.state.seHaiMethod,
+				seHaiBoundary: this.state.seHaiBoundary,
+				shiRuKe: this.state.shiRuKe,
+				yearShenShaSort: this.state.yearShenShaSort,
+				yinyangSystem: this.state.yinyangSystem,
+				tuWangShuai: this.state.tuWangShuai,
+				solarYear: getSolarYearFromField(flds && flds.date ? flds.date : null),
 				...liurengBenmingXingnian(appliedBirth, runyear),
 			}
 		);
@@ -5054,6 +5151,12 @@ class LiuRengMain extends Component{
 			yanShuNum: this.state.yanShuNum,
 			yueJiangMethod: this.state.yueJiangMethod,
 			fenZhouYe: this.state.fenZhouYe,
+			seHaiMethod: this.state.seHaiMethod,
+			seHaiBoundary: this.state.seHaiBoundary,
+			shiRuKe: this.state.shiRuKe,
+			yearShenShaSort: this.state.yearShenShaSort,
+			yinyangSystem: this.state.yinyangSystem,
+			tuWangShuai: this.state.tuWangShuai,
 		};
 		if(this.props.dispatch){
 			this.props.dispatch({
@@ -5209,6 +5312,7 @@ class LiuRengMain extends Component{
 						{rows.map(([k, v], i)=>(<div key={i} style={{ lineHeight: '24px' }}><span style={labelStyle}>{k}</span><span>{v}</span></div>))}
 						{cx2.symbol ? (<><div style={sectionTitle}>类象</div><div style={sectionBody}>{cx2.symbol}</div></>) : null}
 						{cx2.relations && cx2.relations.length ? (<><div style={sectionTitle}>刑冲合害</div><div style={sectionBody}>{cx2.relations.join('　')}</div></>) : null}
+						{cx2.relationNotes && cx2.relationNotes.length ? (<><div style={sectionTitle}>刑冲破害合·断用</div><div style={sectionBody}>{cx2.relationNotes.map((r, i)=>(<div key={i} style={{ lineHeight: '20px' }}><span style={{ color: r.type === '蜜中砒霜' ? '#e2574c' : 'var(--horosa-accent, #d4a017)', fontWeight: 600 }}>{r.type}</span>：{r.note}</div>))}</div></>) : null}
 						{cx2.wuxingXiang ? (<><div style={sectionTitle}>五行取象</div><div style={sectionBody}>{`人物：${cx2.wuxingXiang.person}；身体：${cx2.wuxingXiang.body}；事：${cx2.wuxingXiang.affair}`}</div></>) : null}
 						<div style={{ ...muted, fontSize: 12, marginTop: 8 }}>再次点击同一元素可取消钉住。类象供参考，须合盘断之。</div>
 					</Card>
@@ -5223,9 +5327,124 @@ class LiuRengMain extends Component{
 		if(!refCtx || !refCtx.dayGan){ return null; }
 		const gui = detectGuiSpecials(refCtx);
 		const list = computeFrontendShenSha(refCtx.dayGan, refCtx.dayZhi, refCtx.courseBranches);
-		if(!gui.length && !list.length){ return null; }
+		// 年神(§19.2 四利三元/太岁排轮 by 左栏开关)+ 月神(§19.3),并入概览神煞区。
+		const ymList = computeYearShenSha(refCtx.yearBranch, this.state.yearShenShaSort || 'sanyuan', refCtx.courseBranches)
+			.concat(computeMonthShenSha(refCtx.monthBranch, refCtx.courseBranches));
+		const jc = detectJianChuan(refCtx.sanChuanBranches); // 间传24格/三合全局5局/三会方(§17)
+		// 三传旺相休囚死(§20.1,土旺衰 by 左栏开关)
+		const WS_COLOR = { '旺': '#3fa45b', '相': '#5fae6f', '休': 'var(--horosa-muted,#9a8f7d)', '囚': '#d08a3a', '死': '#e2574c' };
+		const wsList = (refCtx.sanChuanBranches || []).map((z, i) => {
+			const wx = LRConst.GanZiWuXing[`${z || ''}`.trim().substring(0, 1)] || '';
+			return { pos: ['初传', '中传', '末传'][i] || '', zhi: z, wx, ws: liurengWangXiang(wx, refCtx.monthBranch, this.state.tuWangShuai) };
+		}).filter((x) => x.ws);
+		// 空亡真假(§22.1):旬空二支按旺衰判真/假空(旺空假空·衰空真空)。
+		const kongList = (refCtx.xunKongBranches || []).map((z) => {
+			const wx = LRConst.GanZiWuXing[`${z || ''}`.trim().substring(0, 1)] || '';
+			const j = judgeKongWang(wx, refCtx.monthBranch, this.state.tuWangShuai);
+			return j ? { zhi: z, wx, kind: j.kind, ws: j.ws, basis: j.basis, inSanChuan: (refCtx.sanChuanBranches || []).indexOf(z) >= 0 } : null;
+		}).filter(Boolean);
+			const kongLoc = analyzeKongLocations(refCtx); // 旬空落点六处 + 陷空(§7.1/§22)
+			const dunList = analyzeDunGan(refCtx); // 三传遁干特殊:遁鬼/遁甲/遁癸/遁丁(§7.2)
+			const nmList = analyzeNianMing(refCtx); // 年命上神断(§7.3)
+			if(!gui.length && !list.length && !ymList.length && !jc && !wsList.length && !kongList.length && !(kongLoc.hits.length || kongLoc.xianKong.length) && !dunList.length && !nmList.length){ return null; }
+		const shenShaGrid = (items)=>(
+			<div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(76px, 1fr))', gap: 6 }}>
+				{items.map((s)=>(
+					<div key={s.name} title={`${s.brief}（起例所临：${s.branch}）`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '5px 2px', borderRadius: 8, background: s.inCourse ? 'rgba(212,160,23,0.12)' : 'var(--horosa-panel-soft, rgba(255,255,255,0.03))', border: s.inCourse ? '1px solid var(--horosa-accent, #d4a017)' : '1px solid var(--horosa-border, rgba(255,255,255,0.08))' }}>
+						<span style={{ fontSize: 12, color: s.color, fontWeight: 600 }}>{s.name}</span>
+						<span style={{ fontSize: 16, fontWeight: 700, color: 'var(--horosa-text, #d8d2c7)' }}>{s.branch}</span>
+					</div>
+				))}
+			</div>
+		);
 		return (
 			<>
+				{jc ? (
+					<Card size='small' style={{ marginBottom: 8 }}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+							<span style={{ fontWeight: 600 }}>课体结构 · {jc.name}</span>
+							<Tag color={jc.luck === 'good' ? 'green' : (jc.luck === 'bad' ? 'red' : 'gold')}>{jc.kind}{jc.wuxing ? `·${jc.wuxing}` : ''}{jc.dir ? `·${jc.dir}间` : ''}</Tag>
+						</div>
+						<div style={{ color: 'var(--horosa-text-soft, #595959)', lineHeight: '20px' }}>{jc.text}</div>
+					</Card>
+				) : null}
+				{wsList.length ? (
+					<Card size='small' style={{ marginBottom: 8 }}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+							<span style={{ fontWeight: 600 }}>三传旺衰</span>
+							<Tag color='gold'>以月令</Tag>
+						</div>
+						<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+							{wsList.map((w) => (
+								<div key={w.pos} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '5px 2px', borderRadius: 8, background: 'var(--horosa-panel-soft, rgba(255,255,255,0.03))', border: '1px solid var(--horosa-border, rgba(255,255,255,0.08))' }}>
+									<span style={{ fontSize: 11, color: 'var(--horosa-muted, #8c8c8c)' }}>{w.pos}·{w.zhi}{w.wx}</span>
+									<span style={{ fontSize: 16, fontWeight: 700, color: WS_COLOR[w.ws] || 'var(--horosa-text,#d8d2c7)' }}>{w.ws}</span>
+								</div>
+							))}
+						</div>
+						<div style={{ color: 'var(--horosa-muted, #8c8c8c)', fontSize: 12, marginTop: 6 }}>旺相=得令、休囚死=失令；土旺衰按左栏开关。</div>
+					</Card>
+				) : null}
+				{kongList.length ? (
+					<Card size='small' style={{ marginBottom: 8 }}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+							<span style={{ fontWeight: 600 }}>空亡真假</span>
+							<Tag color='gold'>旬空{kongList.map((k) => k.zhi).join('')}</Tag>
+						</div>
+						{kongList.map((k) => (
+							<div key={k.zhi} style={{ lineHeight: '20px' }}>
+								<span style={{ color: k.kind === '真空' ? '#e2574c' : '#3fa45b', fontWeight: 600 }}>{k.zhi}{k.wx}·{k.kind}</span>
+								<span style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>（{k.ws}{k.inSanChuan ? '·入传' : ''}）</span>
+								<span style={{ color: 'var(--horosa-text-soft, #595959)' }}>　{k.basis}</span>
+							</div>
+						))}
+						{kongLoc.hits.length ? (
+							<div style={{ borderTop: '1px dashed var(--horosa-border, rgba(255,255,255,0.12))', marginTop: 6, paddingTop: 6 }}>
+								<div style={{ fontSize: 12, color: 'var(--horosa-muted, #8c8c8c)', marginBottom: 2 }}>落空之处（六处）</div>
+								{kongLoc.hits.map((h) => (
+									<div key={h.pos} style={{ lineHeight: '20px' }}><span style={{ color: '#e2574c', fontWeight: 600 }}>{h.pos}{h.branch}空</span><span style={{ color: 'var(--horosa-text-soft, #595959)' }}>　{h.note}</span></div>
+								))}
+							</div>
+						) : null}
+						{kongLoc.xianKong.length ? (
+							<div style={{ fontSize: 12, color: 'var(--horosa-muted, #8c8c8c)', marginTop: 4 }}>陷空：{kongLoc.xianKong.map((x) => `${x.god}（临地盘${x.seat}）`).join('、')} 落于空地、虚而不实。</div>
+						) : null}
+						{kongLoc.allSanChuanKong ? (
+							<div style={{ fontSize: 12, color: '#e2574c', marginTop: 4 }}>三传全空——守干上旺禄、勿轻动。</div>
+						) : null}
+					</Card>
+				) : null}
+					{dunList.length ? (
+						<Card size='small' style={{ marginBottom: 8 }}>
+							<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+								<span style={{ fontWeight: 600 }}>遁干特殊</span>
+								<Tag color='volcano'>暗神</Tag>
+							</div>
+							{dunList.map((d) => (
+								<div key={d.pos} style={{ lineHeight: '22px' }}>
+									<span style={{ fontWeight: 600, color: 'var(--horosa-text, #d8d2c7)' }}>{d.pos}{d.branch}</span>
+									{d.gan ? (<span style={{ color: 'var(--horosa-muted, #8c8c8c)' }}>　遁{d.gan}{d.liuqin ? `·${d.liuqin}` : ''}</span>) : null}
+									{d.flags.map((f) => (<Tag key={f} color={f === '遁鬼' ? 'red' : 'orange'} style={{ marginLeft: 6, transform: 'scale(0.82)' }}>{f}</Tag>))}
+									<div style={{ color: 'var(--horosa-text-soft, #595959)', fontSize: 13 }}>{d.note}</div>
+								</div>
+							))}
+							<div style={{ color: 'var(--horosa-muted, #8c8c8c)', fontSize: 12, marginTop: 4 }}>遁干藏支下不显（暗）；遁鬼防隐险、遁甲主端绪、遁癸主闭塞、遁丁主动。</div>
+						</Card>
+					) : null}
+					{nmList.length ? (
+						<Card size='small' style={{ marginBottom: 8 }}>
+							<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+								<span style={{ fontWeight: 600 }}>年命上神</span>
+								<Tag color='gold'>行年·本命</Tag>
+							</div>
+							{nmList.map((n) => (
+								<div key={n.label} style={{ lineHeight: '22px' }}>
+									<span style={{ fontWeight: 600, color: n.isKong ? '#e2574c' : 'var(--horosa-text, #d8d2c7)' }}>{n.label}{n.branch}</span>
+									<span style={{ color: 'var(--horosa-text-soft, #595959)' }}>　{n.note}</span>
+								</div>
+							))}
+						</Card>
+					) : null}
 				{gui.length ? (
 					<Card size='small' style={{ marginBottom: 8 }}>
 						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -5250,6 +5469,16 @@ class LiuRengMain extends Component{
 							))}
 						</div>
 						<div style={{ color: 'var(--horosa-muted, #8c8c8c)', fontSize: 12, marginTop: 6 }}>金色边框＝该神煞所临之支已入课传。神煞仅供参考，须合盘断之。</div>
+					</Card>
+				) : null}
+				{ymList.length ? (
+					<Card size='small' style={{ marginBottom: 8 }}>
+						<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+							<span style={{ fontWeight: 600 }}>年月神煞</span>
+							<Tag color='gold'>按年支·月建</Tag>
+						</div>
+						{shenShaGrid(ymList)}
+						<div style={{ color: 'var(--horosa-muted, #8c8c8c)', fontSize: 12, marginTop: 6 }}>年神＝四利三元序（左栏可切太岁排轮）；月神＝以月建起。天德值或为天干。</div>
 					</Card>
 				) : null}
 			</>
@@ -5278,6 +5507,16 @@ class LiuRengMain extends Component{
 				)) : (<Card size='small'><div style={muted}>本盘暂未机械命中可判定之毕法（仅高置信条目自动命中）。</div></Card>)}
 				<div style={{ fontWeight: 600, margin: '12px 0 6px' }}>{`全部毕法（${BIFA_LIST.length} 条）`}</div>
 				<input value={this.state.bifaQuery} onChange={(e)=>this.setState({ bifaQuery: e.target.value })} placeholder='检索法名 / 关键词' style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--horosa-border, rgba(255,255,255,0.18))', background: 'transparent', color: 'var(--horosa-text, inherit)', marginBottom: 8 }} />
+					<Card size='small' style={{ marginBottom: 8, background: 'var(--horosa-panel-soft, rgba(255,255,255,0.03))' }}>
+						<div style={{ fontWeight: 600, marginBottom: 4 }}>异文校勘<Tag color='gold' style={{ marginLeft: 6, transform: 'scale(0.82)' }}>百法</Tag></div>
+						<div style={{ color: 'var(--horosa-text-soft, #595959)', fontSize: 13, lineHeight: '20px' }}>
+							各本于条数（一百）、次第、绝大多数文字高度一致，惟数处异文：<br />
+							· 第 8 法「不正」或作「不专」；<br />
+							· 第 37 法「三等论」或作「三等讼」（以「论」为正）；<br />
+							· 第 38 法「卦体」或作「课体」；<br />
+							· 第 51／52 法各本常误编，正为 51「魁度天门」、52「罡塞鬼户」。
+						</div>
+					</Card>
 				{all.map((item)=>(
 					<div key={`bf_${item.no}`} style={{ padding: '6px 0', borderBottom: '1px solid var(--horosa-border, rgba(255,255,255,0.06))' }}>
 						<div style={{ fontWeight: 600 }}>{`${item.no}. ${item.name}`}{XINJUE_NOS.indexOf(item.no) >= 0 ? (<span style={{ ...muted, fontSize: 11, marginInlineStart: 6 }}>（读法心诀·通则）</span>) : (item.tier !== 'A' ? (<span style={{ ...muted, fontSize: 11, marginInlineStart: 6 }}>（须人工核）</span>) : null)}</div>
@@ -5392,73 +5631,114 @@ class LiuRengMain extends Component{
 						<span>选项</span>
 					</div>
 					<div className="horosa-liureng-select-grid">
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>十二长生</span>
-							<Select value={this.state.wuxing} onChange={this.onWuXingChange}>
-								{wxdoms}
-							</Select>
-						</label>
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>贵人体系</span>
-							<Select value={this.state.guireng} onChange={this.onGuiRengChange}>
-								<Option value={0}>六壬法贵人</Option>
-								<Option value={1}>遁甲法贵人</Option>
-								<Option value={2}>星占法贵人</Option>
-							</Select>
-						</label>
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>起课法</span>
-							<Select value={this.state.castMethod} onChange={this.onCastMethodChange}>
-								{QI_METHODS.map((m)=>(<Option key={m.key} value={m.key}>{m.name}</Option>))}
-							</Select>
-						</label>
-						{this.state.castMethod === 'xuanshi' ? (
+							<label className="horosa-liureng-select-field">
+								<span>十二长生</span>
+								<Select value={this.state.wuxing} onChange={this.onWuXingChange} dropdownMatchSelectWidth={false}>
+									{wxdoms}
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>贵人体系</span>
+								<Select value={this.state.guireng} onChange={this.onGuiRengChange} dropdownMatchSelectWidth={false}>
+									<Option value={0}>六壬法贵人</Option>
+									<Option value={1}>遁甲法贵人</Option>
+									<Option value={2}>星占法贵人</Option>
+									<Option value={3}>甲戊兼牛羊</Option>
+									<Option value={4}>干合阳阴贵</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>起课法</span>
+								<Select value={this.state.castMethod} onChange={this.onCastMethodChange} dropdownMatchSelectWidth={false}>
+									{QI_METHODS.map((m)=>(<Option key={m.key} value={m.key}>{m.name}</Option>))}
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>换将</span>
+								<Select value={this.state.yueJiangMethod} onChange={(v)=>this.handleCastField('yueJiangMethod', v)} dropdownMatchSelectWidth={false}>
+									{YUE_JIANG_METHODS.map((m)=>(<Option key={m.key} value={m.key}>{m.name}</Option>))}
+								</Select>
+							</label>
+							{this.state.castMethod === 'xuanshi' ? (
 							<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
 								<span>选时·时辰</span>
-								<Select value={this.state.xuanShiZhi || ''} onChange={(v)=>this.handleCastField('xuanShiZhi', v)}>
+								<Select value={this.state.xuanShiZhi || ''} onChange={(v)=>this.handleCastField('xuanShiZhi', v)} dropdownMatchSelectWidth={false}>
 									<Option value=''>用正时</Option>
 									{LRConst.ZiList.map((z)=>(<Option key={z} value={z}>{z}时</Option>))}
 								</Select>
 							</label>
-						) : null}
-						{this.state.castMethod === 'yanshu' ? (
+							) : null}
+							{(this.state.castMethod === 'yanshu' || this.state.castMethod === 'baoshu') ? (
 							<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-								<span>演数·随感之数</span>
-								<input
-									type='number'
-									value={this.state.yanShuNum}
-									onChange={(e)=>this.handleCastField('yanShuNum', e.target.value)}
-									placeholder='输入数字'
-									style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--horosa-border, rgba(255,255,255,0.18))', background: 'transparent', color: 'var(--horosa-text, inherit)' }}
-								/>
+								<span>{this.state.castMethod === 'baoshu' ? '报数/字数/笔画' : '演数·随感之数'}</span>
+								<input type='number' value={this.state.yanShuNum} onChange={(e)=>this.handleCastField('yanShuNum', e.target.value)} placeholder='输入数字' style={{ width: '100%', padding: '4px 8px', borderRadius: 6, border: '1px solid var(--horosa-border, rgba(255,255,255,0.18))', background: 'transparent', color: 'var(--horosa-text, inherit)' }} />
 							</label>
-						) : null}
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>换将</span>
-							<Select value={this.state.yueJiangMethod} onChange={(v)=>this.handleCastField('yueJiangMethod', v)}>
-								{YUE_JIANG_METHODS.map((m)=>(<Option key={m.key} value={m.key}>{m.name}</Option>))}
-							</Select>
-						</label>
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>分昼夜</span>
-							<Select value={this.state.fenZhouYe} onChange={(v)=>this.handleCastField('fenZhouYe', v)}>
-								{FEN_ZHOU_YE_METHODS.map((m)=>(<Option key={m.key} value={m.key}>{m.name}</Option>))}
-							</Select>
-						</label>
-					</div>
-					<div className="horosa-liureng-select-grid">
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>取象</span>
-							<Switch checked={!!this.state.xiangOn} onChange={this.onToggleXiang} />
-						</label>
-						<label className="horosa-liureng-select-field horosa-liureng-select-field-wide">
-							<span>占事类型</span>
-							<Select value={this.state.zhanCategory} onChange={this.onZhanCategoryChange}>
-								{ZHANDUAN_CATEGORIES.map((c)=>(<Option key={c.key} value={c.key}>{c.name}</Option>))}
-							</Select>
-						</label>
-					</div>
-					<div className="horosa-liureng-action-row">
+							) : null}
+							<label className="horosa-liureng-select-field">
+								<span>分昼夜</span>
+								<Select value={this.state.fenZhouYe} onChange={(v)=>this.handleCastField('fenZhouYe', v)} dropdownMatchSelectWidth={false}>
+									{FEN_ZHOU_YE_METHODS.map((m)=>(<Option key={m.key} value={m.key}>{m.name}</Option>))}
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>涉害取舍</span>
+								<Select value={this.state.seHaiMethod} onChange={(v)=>this.handleCastField('seHaiMethod', v)} dropdownMatchSelectWidth={false}>
+									<Option value="app">仅下贼上(默认)</Option>
+									<Option value="standard">标准深浅两向</Option>
+									<Option value="mengzhongji">直取孟仲季</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>涉害起讫</span>
+								<Select value={this.state.seHaiBoundary} onChange={(v)=>this.handleCastField('seHaiBoundary', v)} dropdownMatchSelectWidth={false}>
+									<Option value="app">计起点不计本家(默认)</Option>
+									<Option value="both">两端皆计</Option>
+									<Option value="neither">皆不计</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>始入课</span>
+								<Select value={this.state.shiRuKe ? '1' : '0'} onChange={(v)=>this.handleCastField('shiRuKe', v === '1')} dropdownMatchSelectWidth={false}>
+									<Option value='0'>并入重审(默认)</Option>
+									<Option value='1'>单列·九法变十法</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>取象</span>
+								<Select value={this.state.xiangOn ? '1' : '0'} onChange={(v)=>this.onToggleXiang(v === '1')} dropdownMatchSelectWidth={false}>
+									<Option value='0'>关闭</Option>
+									<Option value='1'>开启</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>占事类型</span>
+								<Select value={this.state.zhanCategory} onChange={this.onZhanCategoryChange} dropdownMatchSelectWidth={false}>
+									{ZHANDUAN_CATEGORIES.map((c)=>(<Option key={c.key} value={c.key}>{c.name}</Option>))}
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>年神排序</span>
+								<Select value={this.state.yearShenShaSort} onChange={(v)=>this.handleCastField('yearShenShaSort', v)} dropdownMatchSelectWidth={false}>
+									<Option value="sanyuan">四利三元序(默认)</Option>
+									<Option value="suigui">太岁排轮(太阴异)</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>昼夜阳阴归属</span>
+								<Select value={this.state.yinyangSystem} onChange={(v)=>this.handleCastField('yinyangSystem', v)} dropdownMatchSelectWidth={false}>
+									<Option value="danmu">旦暮系(默认)</Option>
+									<Option value="yinyang">星历阳阴系</Option>
+								</Select>
+							</label>
+							<label className="horosa-liureng-select-field">
+								<span>土旺衰</span>
+								<Select value={this.state.tuWangShuai} onChange={(v)=>this.handleCastField('tuWangShuai', v)} dropdownMatchSelectWidth={false}>
+									<Option value="siji">四季月土旺(默认)</Option>
+									<Option value="huotu">火土同宫(土随火)</Option>
+								</Select>
+							</label>
+						</div>
+						<div className="horosa-liureng-action-row">
 						<Button type='primary' onClick={this.clickStartPaiPan}>起课</Button>
 						<Button onClick={this.clickSaveCase}>保存</Button>
 					</div>
@@ -5762,8 +6042,44 @@ class LiuRengMain extends Component{
 		const appliedBirth = getAppliedBirth(this.state);
 		const displayRunYear = resolveDisplayRunYear(this.state.runyear, appliedBirth, chartFields);
 		const _lrExtra = liurengBenmingXingnian(appliedBirth, displayRunYear);
-		const castOverride = buildLiuRengCastOverride(chart, { ...this.state, benmingZhi: _lrExtra.benmingZhi, xingnianZhi: _lrExtra.xingnianZhi });
-		const refBundle = buildLiuRengReferenceBundle(this.state.liureng, chart, this.state.guireng, displayRunYear, castOverride);
+		const _solarYear = getSolarYearFromField(chartFields && chartFields.date ? chartFields.date : null);
+		const _guardOn = chartDrawGuardEnabled();
+
+		// ① castOverride 缓存:签名 = chart 引用 + buildLiuRengCastOverride/computeQiXY 实际消费的全部 opts 标量。
+		//    全等 → 复用上次实例(引用稳定)→ 透传 LiuRengChart 的 CDU 不再误判变、d3 不白重画;任一变 → 真重算。
+		const _castSig = [
+			chart,
+			this.state.castMethod, this.state.yueJiangMethod, this.state.fenZhouYe,
+			this.state.seHaiMethod, this.state.seHaiBoundary, this.state.shiRuKe,
+			this.state.yinyangSystem, _solarYear,
+			this.state.xuanShiZhi, this.state.yanShuNum,
+			_lrExtra.benmingZhi, _lrExtra.xingnianZhi,
+		];
+		let castOverride;
+		if(_guardOn && this._castOverrideCache && sameLRSigArr(this._castOverrideCache.sig, _castSig)){
+			castOverride = this._castOverrideCache.data;
+		}else{
+			castOverride = buildLiuRengCastOverride(chart, { ...this.state, benmingZhi: _lrExtra.benmingZhi, xingnianZhi: _lrExtra.xingnianZhi, solarYear: _solarYear });
+			if(_guardOn){
+				this._castOverrideCache = { sig: _castSig, data: castOverride };
+			}
+		}
+
+		// ② refBundle 缓存:签名 = liureng/chart 引用 + guireng + 行年(仅消费 runyear.year)+ castOverride 引用(①已稳定)。
+		//    切右栏 tab 不动这些 → 跳过 ~650 行参考体系重算;重排盘/换流派/换贵神/换行年 → 真重算。
+		const _refSig = [
+			this.state.liureng, chart, this.state.guireng,
+			(displayRunYear && displayRunYear.year) || '', castOverride,
+		];
+		let refBundle;
+		if(_guardOn && this._refBundleCache && sameLRSigArr(this._refBundleCache.sig, _refSig)){
+			refBundle = this._refBundleCache.data;
+		}else{
+			refBundle = buildLiuRengReferenceBundle(this.state.liureng, chart, this.state.guireng, displayRunYear, castOverride);
+			if(_guardOn){
+				this._refBundleCache = { sig: _refSig, data: refBundle };
+			}
+		}
 		const refContext = refBundle.context || {};
 		const panStyleName = refContext.panStyle && refContext.panStyle.name ? refContext.panStyle.name : '';
 		const xiaojuAllItems = Array.isArray(refBundle.xiaoju) ? refBundle.xiaoju : [];
@@ -5856,6 +6172,9 @@ export {
 	buildOverviewReferenceText,
 	XIAO_JU_REFERENCE_TAB_KEYS,
 	liurengChouBranch,
+	buildQiZhengItems,
+	QIZHENG_PLANET_COLOR,
+	QIZHENG_WUXING_COLOR,
 };
 
 export default LiuRengMain;

@@ -9,8 +9,11 @@ export const GUOLAO_LIFE_MODE_KEY = 'horosaGuolaoLifeMode';
 export const GUOLAO_NODE_MODE_KEY = 'horosaGuolaoNodeMode';
 export const GUOLAO_DEFAULT_SU28_MODE = 2;
 export const GUOLAO_LIFE_MODE_ASC = 'asc';
-export const GUOLAO_LIFE_MODE_YUMAO = 'yumao';
+export const GUOLAO_LIFE_MODE_YUMAO = 'yumao';       // 日出安命(实际日出)
 export const GUOLAO_LIFE_MODE_COTRANS = 'cotrans';
+export const GUOLAO_LIFE_MODE_GUMAO = 'gumao';       // 遇卯安命(古法时加太阳顺数至卯)
+export const GUOLAO_LIFE_MODE_CUSTOM = 'custom';     // 自定命宫(手动子~亥)
+export const GUOLAO_DIZHI = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
 export const GUOLAO_NODE_MODE_NORTH_KETU = 'northKetuSouthRahu';
 export const GUOLAO_NODE_MODE_NORTH_RAHU = 'northRahuSouthKetu';
 
@@ -60,12 +63,12 @@ export function getStoredGuolaoSu28Mode(){
 		return GUOLAO_DEFAULT_SU28_MODE;
 	}
 	const val = Number(raw);
-	return [0, 1, 2, 3, 4].indexOf(val) >= 0 ? val : GUOLAO_DEFAULT_SU28_MODE;
+	return [0, 1, 2, 3, 4, 5, 6, 7].indexOf(val) >= 0 ? val : GUOLAO_DEFAULT_SU28_MODE;
 }
 
 export function setStoredGuolaoSu28Mode(val){
 	const next = Number(val);
-	const mode = [0, 1, 2, 3, 4].indexOf(next) >= 0 ? next : GUOLAO_DEFAULT_SU28_MODE;
+	const mode = [0, 1, 2, 3, 4, 5, 6, 7].indexOf(next) >= 0 ? next : GUOLAO_DEFAULT_SU28_MODE;
 	writeItem(GUOLAO_SU28_MODE_KEY, `${mode}`);
 	return mode;
 }
@@ -77,7 +80,21 @@ export function normalizeGuolaoLifeMode(val){
 	if(val === GUOLAO_LIFE_MODE_COTRANS){
 		return GUOLAO_LIFE_MODE_COTRANS;
 	}
+	if(val === GUOLAO_LIFE_MODE_GUMAO){
+		return GUOLAO_LIFE_MODE_GUMAO;
+	}
+	// R2 自定命宫:命度法值=地支(子~亥)即手动命宫,后端按地支当 custom 算。
+	if(GUOLAO_DIZHI.indexOf(val) >= 0){
+		return val;
+	}
 	return GUOLAO_LIFE_MODE_ASC;
+}
+
+// R3 身宫法:taiyin/youjin 或 地支(子~亥=自定身宫)。
+export function normalizeGuolaoBodyMode(val){
+	if(val === 'youjin'){ return 'youjin'; }
+	if(GUOLAO_DIZHI.indexOf(val) >= 0){ return val; }
+	return 'taiyin';
 }
 
 export function getStoredGuolaoLifeMode(){
@@ -107,6 +124,112 @@ export function setStoredGuolaoNodeMode(val){
 	return mode;
 }
 
+// 恒星制岁差(ayanāṃśa,G2):空=郑氏默认(零回归);否则 47 制式之 key,仅恒星/赤道宿度制生效。
+export const GUOLAO_AYANAMSA_KEY = 'horosaGuolaoAyanamsa';
+export function getStoredGuolaoAyanamsa(){
+	return readItem(GUOLAO_AYANAMSA_KEY) || '';
+}
+export function setStoredGuolaoAyanamsa(val){
+	const v = val ? String(val) : '';
+	writeItem(GUOLAO_AYANAMSA_KEY, v);
+	return v;
+}
+
+// G6 报时星太阳时:true=真(默认零回归)/mean=平/off=钟表。
+export const GUOLAO_TRUE_SOLAR_TIME_KEY = 'horosaGuolaoTrueSolarTime';
+export function getStoredGuolaoTrueSolarTime(){
+	const v = readItem(GUOLAO_TRUE_SOLAR_TIME_KEY);
+	return (v === 'mean' || v === 'off') ? v : 'true';
+}
+export function setStoredGuolaoTrueSolarTime(val){
+	const v = (val === 'mean' || val === 'off') ? val : 'true';
+	writeItem(GUOLAO_TRUE_SOLAR_TIME_KEY, v);
+	return v;
+}
+
+// G10-13 四余取法:罗计交点 mean/true、月孛远地点 mean/true、紫炁 real(今法真算)/tablet(28年立成)。默认皆现状零回归。
+export const GUOLAO_NODE_TYPE_KEY = 'horosaGuolaoNodeType';
+export function getStoredGuolaoNodeType(){
+	return readItem(GUOLAO_NODE_TYPE_KEY) === 'true' ? 'true' : 'mean';
+}
+export function setStoredGuolaoNodeType(val){
+	const v = val === 'true' ? 'true' : 'mean';
+	writeItem(GUOLAO_NODE_TYPE_KEY, v);
+	return v;
+}
+export const GUOLAO_LILITH_TYPE_KEY = 'horosaGuolaoLilithType';
+export function getStoredGuolaoLilithType(){
+	return readItem(GUOLAO_LILITH_TYPE_KEY) === 'true' ? 'true' : 'mean';
+}
+export function setStoredGuolaoLilithType(val){
+	const v = val === 'true' ? 'true' : 'mean';
+	writeItem(GUOLAO_LILITH_TYPE_KEY, v);
+	return v;
+}
+export const GUOLAO_ZIQI_MODE_KEY = 'horosaGuolaoZiqiMode';
+// 紫炁取法当前只有 'real' 一档生效;'tablet'(28年立成)是后端零消费的假档,已从 UI 隐藏。
+// 旧用户 localStorage 可能残留 'tablet',此处一律归一回 'real',防止透传死参导致落宫异常。
+export function getStoredGuolaoZiqiMode(){
+	return 'real';
+}
+export function setStoredGuolaoZiqiMode(){
+	writeItem(GUOLAO_ZIQI_MODE_KEY, 'real');
+	return 'real';
+}
+// WP-D 授时历古法(用制 6)推变黄道术法:jiyuan=纪元闭式(默认)/jintui=进退/huiyuan=会圆球面近似。仅 mode6 生效。
+export const GUOLAO_TUIBIAN_METHOD_KEY = 'horosaGuolaoTuibianMethod';
+export function getStoredGuolaoTuibianMethod(){
+	const v = readItem(GUOLAO_TUIBIAN_METHOD_KEY);
+	return (v === 'jintui' || v === 'huiyuan') ? v : 'jiyuan';
+}
+export function setStoredGuolaoTuibianMethod(val){
+	const v = (val === 'jintui' || val === 'huiyuan') ? val : 'jiyuan';
+	writeItem(GUOLAO_TUIBIAN_METHOD_KEY, v);
+	return v;
+}
+// WP-D 授时历古法 古宿随岁差:0=宿界钉死元时(默认·永不变盘)/1=宿界东移≈50.29″/年。仅 mode6 生效。
+export const GUOLAO_GUFA_PRECESS_KEY = 'horosaGuolaoGufaPrecess';
+export function getStoredGuolaoGufaPrecess(){
+	return readItem(GUOLAO_GUFA_PRECESS_KEY) === '1' ? 1 : 0;
+}
+export function setStoredGuolaoGufaPrecess(val){
+	const v = (val === 1 || val === '1' || val === true) ? 1 : 0;
+	writeItem(GUOLAO_GUFA_PRECESS_KEY, String(v));
+	return v;
+}
+// 额外档·赤道回归制(用制 7)黄道零点锚定:dongzhi 牛前冬至(默认)/ chunfen 春分壁2.3。仅 mode7 生效。
+export const GUOLAO_EQ_TROPICAL_ANCHOR_KEY = 'horosaGuolaoEqTropicalAnchor';
+export function getStoredGuolaoEqTropicalAnchor(){
+	return readItem(GUOLAO_EQ_TROPICAL_ANCHOR_KEY) === 'chunfen' ? 'chunfen' : 'dongzhi';
+}
+export function setStoredGuolaoEqTropicalAnchor(val){
+	const v = val === 'chunfen' ? 'chunfen' : 'dongzhi';
+	writeItem(GUOLAO_EQ_TROPICAL_ANCHOR_KEY, v);
+	return v;
+}
+
+// G34 流派预设(一键套各开关组合,依手册各派特征 §1.3/§11;选后回 custom 可微调)。
+// fields=类A(透传重算) display=类B(纯显示)。琴堂逢酉重八字/果老专度主洞微/天官化曜年干/弧角天星赤道真太阳。
+export const GUOLAO_SCHOOL_PRESETS = {
+	qintang: { fields: { guolaoLifeMode: 'yumao', guolaoBodyMode: 'youjin', guolaoTrueSolarTime: 'mean', doubingSu28: 2 }, display: { lifeMasterMode: 'gong', minorLimitType: '' } },
+	guolao: { fields: { guolaoLifeMode: 'yumao', guolaoBodyMode: 'taiyin', guolaoTrueSolarTime: 'true', doubingSu28: 2 }, display: { lifeMasterMode: 'dudegrade', minorLimitType: 'dongwei', motionState: true } },
+	tianguan: { fields: { guolaoLifeMode: 'cotrans', guolaoBodyMode: 'taiyin', guolaoNodeType: 'true', guolaoTrueSolarTime: 'true', doubingSu28: 2 }, display: { lifeMasterMode: 'du', minorLimitType: '' } },
+	huujiao: { fields: { guolaoLifeMode: 'asc', guolaoBodyMode: 'taiyin', guolaoNodeType: 'true', guolaoTrueSolarTime: 'true', doubingSu28: 5 }, display: { lifeMasterMode: 'gong', minorLimitType: '', motionState: true } },
+};
+
+// G20 身宫法:taiyin=太阴落宫(果老,默认零回归)/youjin=逢酉(琴堂)。类A(进 moira params,QizhengMoira 重算身宫/格局)。
+export const GUOLAO_BODY_MODE_KEY = 'horosaGuolaoBodyMode';
+export function getStoredGuolaoBodyMode(){
+	return normalizeGuolaoBodyMode(readItem(GUOLAO_BODY_MODE_KEY));
+}
+export function setStoredGuolaoBodyMode(val){
+	const v = normalizeGuolaoBodyMode(val);
+	writeItem(GUOLAO_BODY_MODE_KEY, v);
+	return v;
+}
+
+// G15 sunrise 命度法 已并入 guolaoLifeMode(asc/yumao/cotrans/sunrise);此处仅身宫法独立键。
+
 export function getStoredMoiraTransitGodsVisible(){
 	return readItem(GUOLAO_MOIRA_TRANSIT_GODS_KEY) !== '0';
 }
@@ -120,13 +243,31 @@ export function setStoredMoiraTransitGodsVisible(visible){
 // 命盘轮显示偏好（纯前端、即时联动、不触发后端重取）
 export const GUOLAO_DISPLAY_KEY = 'horosaGuolaoDisplay';
 export const GUOLAO_ALL_ASPECTS = ['會', '衝', '刑', '合', '半合', '半刑', '四合'];
+// lifeMasterMode 命主取法(gong宫主默认/du度主);minorLimitType 行运法(''古度默认/dongwei洞微/xiaoxian小限/yuexian月限/tongxian童限);
+// motionState 留伏迟疾 / mingGan 五虎遁配干 / huayao 化曜圈 / dignityExtended 庙旺扩展多选 —— 均类B 纯前端显示偏好。
+export const GUOLAO_LIFE_MASTER_MODES = ['gong', 'du', 'dudegrade'];
+export const GUOLAO_MINOR_LIMIT_TYPES = ['', 'minor', 'month', 'tong', 'dongwei'];
+export const GUOLAO_DIGNITY_EXT_KEYS = ['exalt', 'triplicity', 'term', 'face'];
+export const GUOLAO_TONGXIAN_BASES = ['tong10', 'gu9', 'xu11'];   // 童限基数(类B):tong10通行十年默认/gu9古九岁/xu11虚十一
 export const GUOLAO_DEFAULT_DISPLAY = {
 	aspects: ['會', '衝', '刑', '合', '半合'],
 	dignity: true,
 	mountains: false,
 	birthGods: true,
 	ageRing: true,
+	lifeMasterMode: 'gong',
+	minorLimitType: '',
+	motionState: false,
+	mingGan: false,
+	huayao: false,
+	dignityExtended: [],
+	tongxianBase: 'tong10',
 };
+
+function normLifeMasterMode(v){ return GUOLAO_LIFE_MASTER_MODES.indexOf(v) >= 0 ? v : 'gong'; }
+function normMinorLimitType(v){ return GUOLAO_MINOR_LIMIT_TYPES.indexOf(v) >= 0 ? v : ''; }
+function normDignityExt(v){ return Array.isArray(v) ? v.filter((k)=>GUOLAO_DIGNITY_EXT_KEYS.indexOf(k) >= 0) : []; }
+function normTongxianBase(v){ return GUOLAO_TONGXIAN_BASES.indexOf(v) >= 0 ? v : 'tong10'; }
 
 function cloneDefaultDisplay(){
 	return {
@@ -135,6 +276,13 @@ function cloneDefaultDisplay(){
 		mountains: GUOLAO_DEFAULT_DISPLAY.mountains,
 		birthGods: GUOLAO_DEFAULT_DISPLAY.birthGods,
 		ageRing: GUOLAO_DEFAULT_DISPLAY.ageRing,
+		lifeMasterMode: GUOLAO_DEFAULT_DISPLAY.lifeMasterMode,
+		minorLimitType: GUOLAO_DEFAULT_DISPLAY.minorLimitType,
+		motionState: GUOLAO_DEFAULT_DISPLAY.motionState,
+		mingGan: GUOLAO_DEFAULT_DISPLAY.mingGan,
+		huayao: GUOLAO_DEFAULT_DISPLAY.huayao,
+		dignityExtended: [...GUOLAO_DEFAULT_DISPLAY.dignityExtended],
+		tongxianBase: GUOLAO_DEFAULT_DISPLAY.tongxianBase,
 	};
 }
 
@@ -153,6 +301,13 @@ export function getStoredGuolaoDisplay(){
 			mountains: parsed.mountains === true,
 			birthGods: parsed.birthGods !== false,
 			ageRing: parsed.ageRing !== false,
+			lifeMasterMode: normLifeMasterMode(parsed.lifeMasterMode),
+			minorLimitType: normMinorLimitType(parsed.minorLimitType),
+			motionState: parsed.motionState === true,
+			mingGan: parsed.mingGan === true,
+			huayao: parsed.huayao === true,
+			dignityExtended: normDignityExt(parsed.dignityExtended),
+			tongxianBase: normTongxianBase(parsed.tongxianBase),
 		};
 	}catch(e){
 		return cloneDefaultDisplay();
@@ -168,6 +323,13 @@ export function setStoredGuolaoDisplay(next){
 		mountains: !!(next && next.mountains === true),
 		birthGods: !(next && next.birthGods === false),
 		ageRing: !(next && next.ageRing === false),
+		lifeMasterMode: normLifeMasterMode(next && next.lifeMasterMode),
+		minorLimitType: normMinorLimitType(next && next.minorLimitType),
+		motionState: !!(next && next.motionState === true),
+		mingGan: !!(next && next.mingGan === true),
+		huayao: !!(next && next.huayao === true),
+		dignityExtended: normDignityExt(next && next.dignityExtended),
+		tongxianBase: normTongxianBase(next && next.tongxianBase),
 	};
 	writeItem(GUOLAO_DISPLAY_KEY, JSON.stringify(safe));
 	return safe;

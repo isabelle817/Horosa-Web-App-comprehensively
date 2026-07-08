@@ -121,9 +121,10 @@ public class RealSunTimeOffset {
 	
 	public static int getOffset(String monthday, double gpsLon, double baseLon) {
 		String[] parts = StringUtility.splitString(monthday, ' ');
-		String mday = parts[0];
-		
-		int realsun = (int)offsetMap.get(mday);
+		String mday = parts.length > 0 ? parts[0] : monthday;
+
+		Integer realsunObj = offsetMap.get(mday);
+		int realsun = realsunObj != null ? realsunObj.intValue() : 0;
 		double lonTmDelta = (gpsLon - baseLon) * 240;
 		return ConvertUtility.getValueAsInt(lonTmDelta + realsun);
 	}
@@ -154,9 +155,11 @@ public class RealSunTimeOffset {
 			String[] parts = StringUtility.splitString(birth, ' ');			
 			monthday = parts[0];
 		}
-		String[] parts = StringUtility.splitString(monthday, '-');	
+		String[] parts = StringUtility.splitString(monthday, '-');
 		int lastidx = parts.length - 1;
-		monthday = String.format("%s-%s", parts[lastidx - 1], parts[lastidx]);
+		if(lastidx >= 1){
+			monthday = String.format("%s-%s", parts[lastidx - 1], parts[lastidx]);
+		}
 		
 		int timeOffset = getOffset(monthday, lon, baseLon);
 		return timeOffset;

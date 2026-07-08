@@ -75,12 +75,12 @@ describe('紫微挂载 round-trip：四化流派 + 运限', () => {
 		mockState.lastRequestBody = null;
 	});
 
-	it('默认（无 sihuaSchool / 无 period）：含[宫位总览]大限、不含[运限]段，四化流派=北派·飞星', async () => {
+	it('默认（无 sihuaSchool / 无 period）：含[宫位总览]大限、不含[运限]段，四化流派=通用·飞星', async () => {
 		const text = await buildZiweiSnapshotForParams({ ...BASE_PARAMS });
 		expect(text).toContain('[宫位总览]');
 		expect(text).toContain('大限=');            // 大限逐宫区间一直都有
 		expect(text).not.toContain('[运限]');        // 默认不追加运限段
-		expect(text).toContain('四化流派：北派·飞星');
+		expect(text).toContain('四化流派：通用·飞星');   // 规格正名:现状表实为通用/飞星(非北派天相忌)
 		// sihuaSchool / period 不应泄漏到后端请求体（仅前端本地消费）。
 		expect(mockState.lastRequestBody).toBeTruthy();
 		expect(mockState.lastRequestBody.sihuaSchool).toBeUndefined();
@@ -104,10 +104,11 @@ describe('紫微挂载 round-trip：四化流派 + 运限', () => {
 		expect(text).not.toContain('流月：');
 	});
 
-	it('多选 liunian：[运限]段含「流年：」（每年一段）', async () => {
+	it('多选 liunian：[运限]段含「流年小限：」层，并并入小限行（需求2/6）', async () => {
 		const text = await buildZiweiSnapshotForParams({ ...BASE_PARAMS, period: { daxian: [], liunian: [1996], liuyue: [], liuri: [], liushi: [] } });
 		expect(text).toContain('[运限]');
-		expect(text).toContain('流年：');
+		expect(text).toContain('流年小限：');   // 合并层标签（原「流年」→「流年小限」）
+		expect(text).toContain('小限：');        // 小限随流年并出（同年按虚岁对齐）
 	});
 
 	it('流年×流月笛卡尔：选 2 年×2 月 → 4 个流月段', async () => {
@@ -115,8 +116,8 @@ describe('紫微挂载 round-trip：四化流派 + 运限', () => {
 		// 流月段数 = years × months = 4。
 		const liuyueCount = (text.match(/流月：/g) || []).length;
 		expect(liuyueCount).toBe(4);
-		// 流年段也各一（2 个）。
-		expect((text.match(/流年：/g) || []).length).toBe(2);
+		// 流年小限段也各一（2 个）。
+		expect((text.match(/流年小限：/g) || []).length).toBe(2);
 	});
 
 	it('流日/流时锚定首个上层：选多日多时 → 各一段，不做笛卡尔爆炸', async () => {

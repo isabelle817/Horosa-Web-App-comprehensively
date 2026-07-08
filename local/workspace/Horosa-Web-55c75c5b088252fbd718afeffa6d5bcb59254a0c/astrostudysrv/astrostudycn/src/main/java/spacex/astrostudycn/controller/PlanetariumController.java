@@ -77,6 +77,14 @@ public class PlanetariumController {
 		if(TransData.containsParam("pos")) {
 			params.put("pos", TransData.get("pos"));
 		}
+		// 行星轨迹 / 升落时刻门控:仅当前端开启对应图层才带此 flag,透传给 Python(_build_trails / _build_rise_set);
+		// 默认不带 → 请求体与原状字节一致(零回归)。此前未登记白名单 → Java 静默丢 → 行星轨迹/升落时刻全失效。
+		if(TransData.containsParam("includeTrails")) {
+			params.put("includeTrails", TransData.getValueAsInt("includeTrails", 0));
+		}
+		if(TransData.containsParam("includeRiseSet")) {
+			params.put("includeRiseSet", TransData.getValueAsInt("includeRiseSet", 0));
+		}
 		return params;
 	}
 }

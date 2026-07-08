@@ -172,14 +172,34 @@ public class QizhengMoiraRuleService {
 		Map<String, Map<String, Object>> houseById = indexHouses(houses);
 
 		String lifeMode = lifeMode(params);
-		Map<String, Object> lifeObj = (LIFE_MODE_YUMAO.equals(lifeMode) || LIFE_MODE_COTRANS.equals(lifeMode))
+		// yumao/cotrans/gumao(古法遇卯)/地支(自定命宫)均以 BaZi 算出的 LifeMasterDeg74 为命度;asc 才优先上升点。
+		boolean lifeMasterFirst = LIFE_MODE_YUMAO.equals(lifeMode) || LIFE_MODE_COTRANS.equals(lifeMode)
+			|| "gumao".equals(lifeMode)
+			|| (lifeMode != null && lifeMode.length() == 1 && "子丑寅卯辰巳午未申酉戌亥".contains(lifeMode));
+		Map<String, Object> lifeObj = lifeMasterFirst
 			? firstPresent(byId, "LifeMasterDeg74", "Asc", "Sun")
 			: firstPresent(byId, "Asc", "LifeMasterDeg74", "Sun");
 		Map<String, Object> selfObj = firstPresent(byId, "Moon", "LifeMasterDeg74", "Asc");
 		double lifeLon = normalizeDegree(position(lifeObj));
-		double selfLon = normalizeDegree(position(selfObj));
 		int lifeSignIndex = signIndex(lifeLon);
-		int selfSignIndex = signIndex(selfLon);
+		// G20/R3 身宫法:taiyin=太阴落宫(果老,默认零回归)/youjin=逢酉(琴堂)/custom=自定身宫(手动子~亥)。
+		double moonLon = normalizeDegree(position(selfObj));
+		int moonSignIndex = signIndex(moonLon);
+		double selfLon;
+		int selfSignIndex;
+		String bm = bodyMode(params);
+		int customBodyIdx = ziToSign(bm);   // bm 为地支时即自定身宫宫序;否则 -1
+		if("youjin".equals(bm)) {
+			int hourBranch = guolaoHourBranch(params);
+			selfSignIndex = wrap(moonSignIndex + 9 - hourBranch, 12);
+			selfLon = selfSignIndex * 30.0;
+		} else if(customBodyIdx >= 0) {
+			selfSignIndex = customBodyIdx;
+			selfLon = selfSignIndex * 30.0;
+		} else {
+			selfSignIndex = moonSignIndex;
+			selfLon = moonLon;
+		}
 
 		List<Map<String, Object>> moiraHouses = buildMoiraHouses(lifeSignIndex);
 		List<Map<String, Object>> planets = buildPlanetRows(byId, houseById, lifeSignIndex);
@@ -626,17 +646,53 @@ public class QizhengMoiraRuleService {
 		if(LIFE_MODE_COTRANS.equals(raw)) {
 			return LIFE_MODE_COTRANS;
 		}
+		if("gumao".equals(raw)) {
+			return "gumao";
+		}
+		if(raw != null && raw.length() == 1 && "子丑寅卯辰巳午未申酉戌亥".contains(raw)) {
+			return raw;   // R2 自定命宫地支:命度走 LifeMasterDeg74(BaZi 已算)
+		}
 		return LIFE_MODE_ASC;
 	}
 
 	private String lifeModeName(String mode) {
 		if(LIFE_MODE_YUMAO.equals(mode)) {
-			return "遇卯安命";
+			return "日出安命";
 		}
 		if(LIFE_MODE_COTRANS.equals(mode)) {
 			return "赤黄转换";
 		}
+		if("gumao".equals(mode)) {
+			return "遇卯安命(古法)";
+		}
+		if(mode != null && mode.length() == 1 && "子丑寅卯辰巳午未申酉戌亥".contains(mode)) {
+			return "自定命宫·" + mode;
+		}
 		return "占星上升";
+	}
+
+	// G20/R3 身宫法:taiyin=太阴落宫(果老,默认)/youjin=逢酉(琴堂)/地支(子~亥)=自定身宫。
+	private String bodyMode(Map<String, Object> params) {
+		String raw = str(params == null ? null : params.get("guolaoBodyMode"), "taiyin");
+		if("youjin".equals(raw)) {
+			return "youjin";
+		}
+		if(raw != null && raw.length() == 1 && "子丑寅卯辰巳午未申酉戌亥".contains(raw)) {
+			return raw;   // 自定身宫地支
+		}
+		return "taiyin";
+	}
+
+	// 生时地支序(子=0):floor((钟表时+1)/2)%12,与 build_qzsy「生时支序=MOD(INT((H+1)/2),12)」一致(23点→子)。
+	private int guolaoHourBranch(Map<String, Object> params) {
+		String time = str(params == null ? null : params.get("time"), "12:00:00");
+		int hour = 12;
+		try {
+			hour = Integer.parseInt(time.split(":")[0].trim());
+		}catch(Exception e) {
+			hour = 12;
+		}
+		return wrap((hour + 1) / 2, 12);
 	}
 
 	private double position(Map<String, Object> obj) {

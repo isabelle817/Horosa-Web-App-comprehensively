@@ -2,7 +2,8 @@ import { Component, createRef } from 'react';
 import { Row, Col, Slider, InputNumber, Empty, Collapse, Tooltip } from 'antd';
 import { XQButton, XQToggle, XQSegmented, XQSelect, XQTabs } from '../xq-ui';
 import FengShuiEngine, { MARKER_TYPES, BAGUA_MARKER_TYPES, DISK_SKINS } from './fengshuiEngine';
-import { saveModuleAISnapshot } from '../../utils/moduleAiSnapshot';
+import { saveModuleAISnapshot, loadModuleAISnapshot } from '../../utils/moduleAiSnapshot';
+import LiqiWorkspace, { SCHOOL_CN } from './LiqiWorkspace';
 
 const { TabPane } = XQTabs;
 const { Option } = XQSelect;
@@ -11,6 +12,24 @@ const { Panel } = Collapse;
 const MODE_OPTIONS = [
 	{ value: 'naqi', label: '纳气盘法' },
 	{ value: 'bagua', label: '八卦阳宅法' },
+];
+
+// 理气起盘六派（纯坐向/元运排盘，不依赖户型图）。
+const LIQI_SCHOOLS = ['bazhai', 'xuankong', 'sanhe', 'jinsuo', 'qiankun', 'zibai'];
+const LIQI_SET = new Set(LIQI_SCHOOLS);
+const SCHOOL_GROUPS = [
+	{ label: '户型图阳宅（标注）', items: [
+		{ value: 'naqi', label: '纳气盘法' },
+		{ value: 'bagua', label: '八卦阳宅法' },
+	] },
+	{ label: '理气起盘（罗盘）', items: [
+		{ value: 'bazhai', label: '八宅 · 大游年' },
+		{ value: 'xuankong', label: '玄空飞星' },
+		{ value: 'sanhe', label: '三合 · 十二长生水法' },
+		{ value: 'jinsuo', label: '金锁玉关' },
+		{ value: 'qiankun', label: '乾坤国宝' },
+		{ value: 'zibai', label: '紫白飞星' },
+	] },
 ];
 
 const FILTERS = [
@@ -35,9 +54,9 @@ const BAGUA_TIPS = [
 	'卦象、应期、升降、四类象吉凶都会自动在右侧「卦象」面板生成。',
 ];
 
-const MEMBER_RULE = '成員以在家中的「名分」定卦（倪海厦阳宅法）：① 有子女→父(乾)/母(坤)（含已婚之夫/妻、未婚生子、离婚有子）；② 未婚第一子/女→长子(震)/长女(巽)；③ 自己未婚、上有 1 个未婚兄/姐→次子(坎)/次女(离)；④ 上有 2 个未婚兄/姐→三子(艮)/三女(兑)；⑤ 兄姐婚嫁后排序顺延（如姐出嫁，次女升长女）；⑥ 子女多于三者「三个一组」循环对应 1·4 / 2·5 / 3·6（即第 4 子当长子、第 4 女当长女）。';
+const MEMBER_RULE = '成員以在家中的「名分」定卦（传统八卦阳宅法）：① 有子女→父(乾)/母(坤)（含已婚之夫/妻、未婚生子、离婚有子）；② 未婚第一子/女→长子(震)/长女(巽)；③ 自己未婚、上有 1 个未婚兄/姐→次子(坎)/次女(离)；④ 上有 2 个未婚兄/姐→三子(艮)/三女(兑)；⑤ 兄姐婚嫁后排序顺延（如姐出嫁，次女升长女）；⑥ 子女多于三者「三个一组」循环对应 1·4 / 2·5 / 3·6（即第 4 子当长子、第 4 女当长女）。';
 
-// 倪海厦阳宅·判定方法与特例（忠实概括，非照抄原文）。
+// 传统八卦阳宅·判定方法与特例。
 const BAGUA_METHODS = [
 	'取卦法：名在上（人在家名分之本命卦）× 位在下（卧房在整层正中·太极点所看的方位卦）→ 得一 64 卦，依此卦之卦象读断其人事吉凶。',
 	'成員定義：有子女＝父(乾)/母(坤)；未婚第一子女＝长子(震)/长女(巽)；自己未婚、上有 1 未婚兄/姐＝次子(坎)/次女(离)，上有 2 个＝三子(艮)/三女(兑)；兄姐婚嫁后顺延。',
@@ -70,7 +89,7 @@ const TAG_LABEL = { auspicious: '吉', mild: '小吉', neutral: '中性', cautio
 class FengShuiMain extends Component {
 	constructor(props) {
 		super(props);
-		this.state = { vm: null, controlTab: 'base', workspaceTab: 'canvas' };
+		this.state = { vm: null, controlTab: 'base', workspaceTab: 'canvas', school: 'naqi' };
 		this.canvasRef = createRef();
 		this.fileInputRef = createRef();
 		this.engine = null;
@@ -118,6 +137,12 @@ class FengShuiMain extends Component {
 
 	handleSnapshotRefreshRequest(evt) {
 		if (!evt || !evt.detail || evt.detail.module !== 'fengshui') return;
+		// 理气派：快照由 LiqiWorkspace 实时维护，勿用画布引擎覆盖；回填现有快照供同步刷新路径取用。
+		if (LIQI_SET.has(this.state.school)) {
+			const existing = loadModuleAISnapshot('fengshui');
+			if (existing && existing.content && typeof evt.detail === 'object') evt.detail.snapshotText = existing.content;
+			return;
+		}
 		if (!this.engine) return;
 		const text = this.engine.buildAiSnapshotText();
 		if (text) {
@@ -132,25 +157,49 @@ class FengShuiMain extends Component {
 		e.target.value = '';
 	}
 
+	// 流派切换：理气派走纯前端 LiqiWorkspace；户型图两法同步引擎 techMode 并重算画布尺寸。
+	onSchoolChange(v) {
+		this.setState({ school: v });
+		if (v === 'naqi' || v === 'bagua') {
+			if (this.engine) {
+				this.engine.setTechMode(v);
+				setTimeout(() => this.engine && this.engine.resize(), 0);
+			}
+		}
+	}
+
 	renderQuickbar(vm) {
 		const e = this.engine;
 		const dis = !vm.imgLoaded;
 		const isNaqi = vm.techMode !== 'bagua';
+		const isLiqi = LIQI_SET.has(this.state.school);
 		return (
 			<div className="horosa-fengshui-quickbar">
-				<XQButton type="primary" size="small" onClick={() => this.fileInputRef.current && this.fileInputRef.current.click()}>上传户型图</XQButton>
-				<XQButton size="small" disabled={dis} onClick={() => e.startDrawRect()}>框选房屋</XQButton>
-				{isNaqi
-					? <XQButton size="small" disabled={dis} onClick={() => e.startDrawDoor()}>画入户门</XQButton>
-					: <XQButton size="small" disabled={dis} onClick={() => e.startBaguaNorth()}>画正北</XQButton>}
-				<XQButton size="small" disabled={dis} onClick={() => e.startPlaceMarker()}>放置标记</XQButton>
-				<XQButton size="small" variant="ghost" disabled={!vm.canUndo} onClick={() => e.undo()}>撤销</XQButton>
-				<XQButton size="small" variant="ghost" disabled={!vm.canRedo} onClick={() => e.redo()}>重做</XQButton>
-				<XQButton size="small" variant="ghost" disabled={dis} onClick={() => e.exportPng()}>导出 PNG</XQButton>
+				{!isLiqi ? (
+					<>
+						<XQButton type="primary" size="small" onClick={() => this.fileInputRef.current && this.fileInputRef.current.click()}>上传户型图</XQButton>
+						<XQButton size="small" disabled={dis} onClick={() => e.startDrawRect()}>框选房屋</XQButton>
+						{isNaqi
+							? <XQButton size="small" disabled={dis} onClick={() => e.startDrawDoor()}>画入户门</XQButton>
+							: <XQButton size="small" disabled={dis} onClick={() => e.startBaguaNorth()}>画正北</XQButton>}
+						<XQButton size="small" disabled={dis} onClick={() => e.startPlaceMarker()}>放置标记</XQButton>
+						<XQButton size="small" variant="ghost" disabled={!vm.canUndo} onClick={() => e.undo()}>撤销</XQButton>
+						<XQButton size="small" variant="ghost" disabled={!vm.canRedo} onClick={() => e.redo()}>重做</XQButton>
+						<XQButton size="small" variant="ghost" disabled={dis} onClick={() => e.exportPng()}>导出 PNG</XQButton>
+					</>
+				) : (
+					<span className="horosa-fengshui-liqi-quickhint">理气起盘 · {SCHOOL_CN[this.state.school] || ''} — 在左栏设定坐向/元运即时排盘（无需户型图）</span>
+				)}
 				<div className="horosa-fengshui-quickbar-center">
-					<XQSegmented value={vm.techMode} options={MODE_OPTIONS} onChange={(ev) => e.setTechMode(ev.target.value)} />
+					<XQSelect size="small" value={this.state.school} onChange={(v) => this.onSchoolChange(v)} dropdownMatchSelectWidth={false} style={{ minWidth: 148 }}>
+						{SCHOOL_GROUPS.map((g) => (
+							<XQSelect.OptGroup key={g.label} label={g.label}>
+								{g.items.map((it) => <Option key={it.value} value={it.value}>{it.label}</Option>)}
+							</XQSelect.OptGroup>
+						))}
+					</XQSelect>
 				</div>
-				<span className="horosa-fengshui-status">{vm.status}</span>
+				<span className="horosa-fengshui-status">{isLiqi ? '理气盘 · 纯坐向/元运起盘' : vm.status}</span>
 			</div>
 		);
 	}
@@ -501,7 +550,7 @@ class FengShuiMain extends Component {
 					))}
 				</div>
 				<Collapse ghost size="small" className="horosa-fengshui-tips-collapse">
-					<Panel header="判定方法与特例（倪海厦阳宅法）" key="methods">
+					<Panel header="判定方法与特例（传统八卦阳宅法）" key="methods">
 						<ul className="horosa-fengshui-tips">{BAGUA_METHODS.map((t, i) => <li key={i}>{t}</li>)}</ul>
 					</Panel>
 				</Collapse>
@@ -520,12 +569,15 @@ class FengShuiMain extends Component {
 		};
 		const e = this.engine;
 		const isNaqi = vm.techMode !== 'bagua';
+		const isLiqi = LIQI_SET.has(this.state.school);
 		let height = this.props.height ? this.props.height : '100%';
 		if (typeof height === 'number') height = `${height}px`;
 		return (
 			<div className="horosa-fengshui-app" style={{ height }}>
 				<input ref={this.fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(ev) => this.onFile(ev)} />
 				{this.renderQuickbar(vm)}
+				{isLiqi ? <LiqiWorkspace school={this.state.school} /> : null}
+				<div className="horosa-fengshui-canvas-body" style={isLiqi ? { display: 'none' } : { display: 'contents' }}>
 				<Row gutter={8} className="horosa-fengshui-layout">
 					<Col span={6} className="horosa-fengshui-side">
 						{isNaqi ? (
@@ -567,6 +619,7 @@ class FengShuiMain extends Component {
 						</XQTabs>
 					</Col>
 				</Row>
+				</div>
 			</div>
 		);
 	}

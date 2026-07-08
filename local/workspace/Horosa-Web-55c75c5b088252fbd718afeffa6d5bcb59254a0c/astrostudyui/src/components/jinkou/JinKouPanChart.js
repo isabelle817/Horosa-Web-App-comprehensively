@@ -114,6 +114,13 @@ class JinKouPanChart {
 		const realW = width - this.margin * 2;
 		const realH = height - this.margin * 2;
 
+		// 调色板(明暗主题)在每次 draw 时重读,而非构造时缓存一次——
+		// 否则盘底(bgColor)/描边(color)/标签底(labelBg)停在「图表对象构造那一刻」的旧主题,
+		// 切暗黑后整块盘底仍是白色(很丑)。配合 JinKouChart 的 appearance observer 重绘,主题即时跟随。
+		this.bgColor = AstroConst.AstroColor.Fill;
+		this.color = AstroConst.AstroColor.Stroke;
+		this.labelBg = LRConst.getHouseColor(0);
+
 		const svgid = `#${this.chartId}`;
 		this.svg = d3.select(svgid);
 		this.svg.html('');
@@ -392,7 +399,7 @@ class JinKouPanChart {
 			});
 			return;
 		}
-		const widths = [0.14, 0.09, 0.15, 0.15, 0.21, 0.26];
+		const widths = [0.13, 0.09, 0.13, 0.07, 0.14, 0.19, 0.25];
 		const rowH = h / rows.length;
 		const xs = [x];
 		for(let i=0; i<widths.length; i++){
@@ -408,10 +415,13 @@ class JinKouPanChart {
 		for(let i=0; i<rows.length; i++){
 			const row = rows[i];
 			const showContent = cleanVal(row.content);
+			// 阴阳列(紧邻干支)：阳=+、阴=−，与干支同色，旺衰列不再连写正负号。
+			const ynSign = row.sign === '+' ? '+' : (row.sign === '-' ? '−' : '');
 			const data = [
 				{ text: row.label, color: AstroConst.AstroColor.TextStroke, align: 'center' },
 				{ text: cleanVal(row.gan), color: this.resolveTextColor(row.ganColor), align: 'center' },
 				{ text: showContent, color: this.resolveTextColor(row.contentColor), align: 'center' },
+				{ text: ynSign, color: this.resolveTextColor(row.contentColor), align: 'center' },
 				{ text: cleanVal(row.shenjiang), color: this.getColorByToken(showContent, '#5b3f91'), align: 'center' },
 				{ text: cleanVal(row.power), color: this.resolveTextColor(row.powerColor), align: 'center' },
 				{ text: shortKong(row.kong), color: row.kong && row.kong !== '—' ? AstroConst.AstroColor.MC : AstroConst.AstroColor.Stroke, align: 'center' },

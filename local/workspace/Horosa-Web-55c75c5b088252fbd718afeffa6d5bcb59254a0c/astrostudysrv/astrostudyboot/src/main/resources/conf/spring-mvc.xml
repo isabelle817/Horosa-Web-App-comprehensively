@@ -88,8 +88,9 @@
 
             <mvc:exclude-mapping path="/common/**"/> 
             <mvc:exclude-mapping path="/chart"/> 
-            <mvc:exclude-mapping path="/chart13"/> 
-            <mvc:exclude-mapping path="/allowedcharts"/> 
+            <mvc:exclude-mapping path="/chart13"/>
+            <mvc:exclude-mapping path="/chart12"/>
+            <mvc:exclude-mapping path="/allowedcharts"/>
             <mvc:exclude-mapping path="/chart/**"/> 
             <mvc:exclude-mapping path="/modern/**"/> 
             <mvc:exclude-mapping path="/india/**"/> 
@@ -117,9 +118,9 @@
             <mvc:exclude-mapping path="/user/check"/> 
             <mvc:exclude-mapping path="/calc/**"/> 
             <mvc:exclude-mapping path="/live/**"/> 
-            <mvc:exclude-mapping path="/astromedia/**"/> 
+            <mvc:exclude-mapping path="/astromedia/**"/>
             <mvc:exclude-mapping path="/aianalysis/**"/>
-            
+
 	        <bean class="spacex.astrostudy.interceptor.PermissionInterceptor" />
         </mvc:interceptor>
                 

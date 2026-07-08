@@ -24,6 +24,33 @@ const NATAL_LINE_IDS = new Set([
 	AstroConst.NORTH_NODE, AstroConst.SOUTH_NODE, AstroConst.ASC, AstroConst.MC,
 ]);
 
+// 图形星历专用「行星配色」:全站主题色板(AstroColor)在多数主题下行星为单色(#3b3b3b/#333),
+// 折线全挤成一团难分辨。这里给每颗参与星一组中等饱和度、明暗两主题都清晰可辨的固定色——
+// 折线 stroke 与右侧字形 fill 共用同一映射,确保「线↔字形」永远同色(任务 E)。纯视觉,不动计算。
+const GEPHEM_PLANET_TONE = {
+	[AstroConst.SUN]: '#e0a52e',        // 日 金黄
+	[AstroConst.MOON]: '#6f8fd0',       // 月 蓝银
+	[AstroConst.MERCURY]: '#e07b39',    // 水 橙
+	[AstroConst.VENUS]: '#3f9e6a',      // 金 绿
+	[AstroConst.MARS]: '#d24b46',       // 火 红
+	[AstroConst.JUPITER]: '#7b5cbc',    // 木 紫
+	[AstroConst.SATURN]: '#8a6d3b',     // 土 褐
+	[AstroConst.URANUS]: '#2f9e9e',     // 天 青
+	[AstroConst.NEPTUNE]: '#4a78c2',    // 海 靛
+	[AstroConst.PLUTO]: '#a85aa8',      // 冥 品红
+	[AstroConst.NORTH_NODE]: '#9a8f5a', // 北交 黄褐
+	[AstroConst.SOUTH_NODE]: '#9a8f5a', // 南交 黄褐
+	[AstroConst.ASC]: '#5f9e8a',        // 升 灰青
+	[AstroConst.MC]: '#5f9e8a',         // 中天 灰青
+};
+// 星名(行运线 hover tooltip 用):TNP 缩写;白羊点取 Aries;其余取中文名 fallback 英文 id。
+function planetName(id){
+	if (AstroText.isUranian(id) && id !== AstroConst.ARIES_POINT) return AstroText.uranianGlyph(id);
+	return AstroText.AstroMsgCN[id] || id;
+}
+// 折线/字形取色:优先专用色板,缺则回落全站主题色,再回落柔和文字色。
+function toneOf(id, fallback){ return GEPHEM_PLANET_TONE[id] || AstroConst.AstroColor[id] || fallback || '#888'; }
+
 const fold = (lon, base) => (((Number(lon) % base) + base) % base);
 const fv = (fields, key) => { const f = fields && fields[key]; return f ? f.value : undefined; };
 const fmt = (val, pattern) => ((val && typeof val.format === 'function') ? val.format(pattern) : undefined);
@@ -76,17 +103,23 @@ export default class UranianGraphicEphemeris extends Component {
 			vw: typeof window !== 'undefined' ? window.innerWidth : 1200,
 			vh: typeof window !== 'undefined' ? window.innerHeight : 900,
 			cw: 0, // 实测容器内宽(像素空间渲染用)
+			tip: null, // 线 hover 弹窗(任务 B:像 ACG 地图,state 驱动 absolute div)
 		};
 		this.unmounted = false;
 		this.requestData = this.requestData.bind(this);
 		this._onResize = this._onResize.bind(this);
 		this._measure = this._measure.bind(this);
+		this.showTip = this.showTip.bind(this);
+		this.hideTip = this.hideTip.bind(this);
 		if (this.props.hook) this.props.hook.fun = () => { if (!this.unmounted) this.requestData(); };
 	}
 	componentDidMount(){ this.unmounted = false; this.requestData(); this._measure(); if (typeof window !== 'undefined') window.addEventListener('resize', this._onResize); }
 	componentWillUnmount(){ this.unmounted = true; if (typeof window !== 'undefined') window.removeEventListener('resize', this._onResize); }
 	componentDidUpdate(prev){ if (prev.fields !== this.props.fields) this.requestData(); this._measure(); }
 	_onResize(){ if (!this.unmounted) { this.setState({ vw: window.innerWidth, vh: window.innerHeight }); this._measure(); } }
+	// 线 hover 弹窗(任务 B):鼠标移到行运折线/本命参考线 → 显「色点 + 星名(本命/行运)」,像 ACG 地图;state 驱动 absolute div,host 须 position:relative。
+	showTip(e, id, kind){ if (this.unmounted || !this._tipHost) return; const r = this._tipHost.getBoundingClientRect(); this.setState({ tip: { x: e.clientX - r.left + 14, y: e.clientY - r.top + 14, id, kind, color: toneOf(id, '#888') } }); }
+	hideTip(){ if (!this.unmounted && this.state.tip) this.setState({ tip: null }); }
 	_measure(){ if (this.unmounted || !this._wrap) return; const w = this._wrap.clientWidth - 16; if (w > 0 && Math.abs(w - this.state.cw) > 2) this.setState({ cw: w }); }
 
 	saveDisp(patch, cb){ this.setState(patch, cb); try { const cur = JSON.parse(localStorage.getItem('horosa.uranian.gephem.v1') || '{}') || {}; localStorage.setItem('horosa.uranian.gephem.v1', JSON.stringify({ ...cur, ...patch })); } catch (e) { /* noop */ } }
@@ -127,7 +160,7 @@ export default class UranianGraphicEphemeris extends Component {
 		const W = Math.max(680, Math.round(this.state.cw || ((this.state.vw || 1280) - 220)));
 		// 高度:占满分配高度(减去顶部控件行 + 底部说明行),并以 vh 兜底防底部 Dock 遮挡(对齐中点盘口径)。
 		const H = Math.max(340, Math.round(Math.min(height - 66, vh - 286)));
-		const mL = 46, mR = 64, mT = 14, mB = 30; // 右留双列字形(本命内列 / 行运外列)
+		const mL = 46, mR = 84, mT = 14, mB = 30; // 右留双列【放大】字形(本命内列 / 行运外列);字形变大→右边距加宽
 		const plotW = W - mL - mR, plotH = H - mT - mB;
 		const n = rows.length;
 		const xAt = (i) => mL + (n <= 1 ? 0 : (i / (n - 1)) * plotW);
@@ -135,7 +168,7 @@ export default class UranianGraphicEphemeris extends Component {
 
 		// 行运折线:每星折叠后按日连线,跨 0/base 边界(相邻样本差 > base/2)断开重接。
 		const series = planets.map((pid) => {
-			const color = AstroConst.AstroColor[pid] || '#888';
+			const color = toneOf(pid);
 			const segs = []; let cur = [];
 			for (let i = 0; i < n; i++){
 				const pos = rows[i].positions && rows[i].positions[pid];
@@ -172,9 +205,9 @@ export default class UranianGraphicEphemeris extends Component {
 			return s;
 		};
 		const softTone = 'var(--horosa-text-soft)';
-		// 本命字形=内列(x=plot 右缘+6);行运字形=外列(x=+26)。各自避让,互不挤。
-		const natLabels = vspread(nat.map((p) => ({ id: p.id, y: yAt(fold(p.lon, base)), color: AstroConst.AstroColor[p.id] || softTone })), 13, mT + 2, mT + plotH - 2);
-		const traLabels = vspread(series.filter((s) => s.endY != null).map((s) => ({ id: s.pid, y: s.endY, color: s.color })), 13, mT + 2, mT + plotH - 2);
+		// 本命字形=内列(x=plot 右缘+8);行运字形=外列。各自避让,互不挤。字形放大→避让间距同步加大(minGap 13→18)。
+		const natLabels = vspread(nat.map((p) => ({ id: p.id, y: yAt(fold(p.lon, base)), color: toneOf(p.id, softTone) })), 18, mT + 2, mT + plotH - 2);
+		const traLabels = vspread(series.filter((s) => s.endY != null).map((s) => ({ id: s.pid, y: s.endY, color: s.color })), 18, mT + 2, mT + plotH - 2);
 
 		const stroke = 'var(--horosa-chart-stroke, currentColor)';
 		const soft = 'var(--horosa-text-soft)';
@@ -192,8 +225,8 @@ export default class UranianGraphicEphemeris extends Component {
 			</div>
 		);
 
-		const natX = mL + plotW + 6;   // 本命字形内列
-		const traX = mL + plotW + 26;  // 行运字形外列
+		const natX = mL + plotW + 8;   // 本命字形内列(字形放大→略外移)
+		const traX = mL + plotW + 32;  // 行运字形外列(与内列拉开间距,放大后不互叠)
 
 		if (this.state.note){
 			return <div ref={(el) => { this._wrap = el; }} className="horosa-uranian-gephem" style={{ padding: '4px 8px' }}>{controls}<Empty description={this.state.note} /></div>;
@@ -203,7 +236,7 @@ export default class UranianGraphicEphemeris extends Component {
 			<div ref={(el) => { this._wrap = el; }} className="horosa-uranian-gephem" style={{ padding: '4px 8px' }}>
 				{controls}
 				<Spin spinning={this.state.loading}>
-					<div style={{ width: '100%' }}>
+					<div style={{ width: '100%', position: 'relative' }} ref={(el) => { this._tipHost = el; }}>
 						<svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} style={{ display: 'block', maxWidth: '100%', color: stroke }}
 							className="xq-chart-renderer xq-chart-renderer-astro">
 							{/* 外框 */}
@@ -225,32 +258,53 @@ export default class UranianGraphicEphemeris extends Component {
 							{/* 本命参考线(水平虚线) */}
 							{nat.map((p, i) => {
 								const y = yAt(fold(p.lon, base));
-								const color = AstroConst.AstroColor[p.id] || soft;
-								return <line key={`n${i}`} x1={mL} y1={y} x2={mL + plotW} y2={y} stroke={color} strokeWidth="0.9" strokeDasharray="3,3" opacity="0.45" />;
+								const color = toneOf(p.id, soft);
+								return (
+									<g key={`n${i}`}>
+										{/* 加宽透明命中条 + title:hover 本命参考线显星名(任务 F)。 */}
+										<line x1={mL} y1={y} x2={mL + plotW} y2={y} stroke="transparent" strokeWidth="7" style={{ cursor: 'pointer' }} onMouseMove={(e) => this.showTip(e, p.id, '本命')} onMouseLeave={this.hideTip} />
+										<line x1={mL} y1={y} x2={mL + plotW} y2={y} stroke={color} strokeWidth="0.9" strokeDasharray="3,3" opacity="0.45" style={{ pointerEvents: 'none' }} />
+									</g>
+								);
 							})}
-							{/* 行运折线 */}
+							{/* 行运折线:加宽透明命中路径承载 hover title(任务 F),可见线在其上;CSS hover 加粗高亮。 */}
 							{series.map((s, i) => (
-								<path key={`s${i}`} d={s.d} fill="none" stroke={s.color} strokeWidth="1.5" opacity="0.92" />
+								<g key={`s${i}`} className="horosa-gephem-line">
+									{s.d ? <path d={s.d} fill="none" stroke="transparent" strokeWidth="9" strokeLinejoin="round" style={{ cursor: 'pointer' }} onMouseMove={(e) => this.showTip(e, s.pid, '行运')} onMouseLeave={this.hideTip} /> : null}
+									<path className="horosa-gephem-line-vis" d={s.d} fill="none" stroke={s.color} strokeWidth="1.6" opacity="0.92" style={{ pointerEvents: 'none' }} />
+								</g>
 							))}
-							{/* 本命字形(内列,避让 + 连线回真位) */}
+							{/* 本命字形(内列,避让 + 连线回真位);字形放大 12→17,hover 显星名。 */}
 							{natLabels.map((l, i) => (
 								<g key={`nl${i}`}>
 									{Math.abs(l.labelY - l.y) > 1 ? <line x1={mL + plotW} y1={l.y} x2={natX - 1} y2={l.labelY} stroke={l.color} strokeWidth="0.5" opacity="0.4" /> : null}
-									<text x={natX} y={l.labelY} dy="0.32em" textAnchor="start" fontSize="12" fill={l.color} opacity="0.85">{planetGlyph(l.id, l.color)}</text>
+									<text x={natX} y={l.labelY} dy="0.32em" textAnchor="start" fontSize="17" fill={l.color} stroke="none" opacity="0.9" style={{ cursor: 'default', paintOrder: 'fill' }}>
+										<title>{`${planetName(l.id)}（本命）`}</title>
+										{planetGlyph(l.id, l.color)}
+									</text>
 								</g>
 							))}
 							{/* 行运字形(外列,粗,避让 + 连线回末端) */}
 							{traLabels.map((l, i) => (
 								<g key={`tl${i}`}>
 									{Math.abs(l.labelY - l.y) > 1 ? <line x1={mL + plotW} y1={l.y} x2={traX - 1} y2={l.labelY} stroke={l.color} strokeWidth="0.5" opacity="0.5" /> : null}
-									<text x={traX} y={l.labelY} dy="0.32em" textAnchor="start" fontSize="13" fontWeight="600" fill={l.color}>{planetGlyph(l.id, l.color)}</text>
+									<text x={traX} y={l.labelY} dy="0.32em" textAnchor="start" fontSize="19" fontWeight="600" fill={l.color} stroke="none" style={{ cursor: 'default', paintOrder: 'fill' }}>
+										<title>{`${planetName(l.id)}（行运）`}</title>
+										{planetGlyph(l.id, l.color)}
+									</text>
 								</g>
 							))}
 						</svg>
+						{this.state.tip ? (
+							<div style={{ position: 'absolute', left: this.state.tip.x, top: this.state.tip.y, pointerEvents: 'none', zIndex: 6, background: 'var(--horosa-surface-raised)', color: 'var(--horosa-text)', border: '1px solid var(--horosa-border)', borderRadius: 6, padding: '3px 9px', fontSize: 13, whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '0 2px 10px rgba(0,0,0,0.18)' }}>
+								<span style={{ width: 9, height: 9, borderRadius: '50%', background: this.state.tip.color, display: 'inline-block', flex: '0 0 auto' }} />
+								<span>{planetName(this.state.tip.id)}（{this.state.tip.kind}）</span>
+							</div>
+						) : null}
 					</div>
 				</Spin>
 				<div style={{ color: soft, fontSize: 11, marginTop: 6 }}>
-					实线=行运行星(折叠盘基);虚线=本命参考。右侧内列=本命字形、外列=行运字形(均自动避让)。折叠位相交即该硬相位(0/90/180/270)触发期。月亮默认不画(过快)。
+					实线=行运行星(折叠盘基);虚线=本命参考。右侧内列=本命字形、外列=行运字形(均自动避让,按行星配色)。悬停线或字形显星名。折叠位相交即该硬相位(0/90/180/270)触发期。月亮默认不画(过快)。
 				</div>
 			</div>
 		);

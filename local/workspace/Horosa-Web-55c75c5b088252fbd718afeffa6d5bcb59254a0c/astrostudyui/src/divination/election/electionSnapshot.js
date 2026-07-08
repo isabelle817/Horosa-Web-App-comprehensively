@@ -19,7 +19,8 @@ export function buildElectionSnapshot(j){
 		(s.findings || []).forEach((f) => L.push('  · ' + (f.text_zh || f.message)));
 	});
 	if(j.topicPack && j.topicPack.items && j.topicPack.items.length){
-		L.push(`[用事专属]（满足 ${j.topicPack.passed}/${j.topicPack.total}）`);
+		L.push('[用事专属]');
+		L.push(`（满足 ${j.topicPack.passed}/${j.topicPack.total}）`);
 		j.topicPack.items.forEach((it) => L.push(`- ${it.pass ? '✓' : '✗'} ${it.kind === 'avoid' ? '忌' : '宜'}：${it.label}`));
 		if(j.topicPack.notes) L.push('注：' + j.topicPack.notes);
 	}

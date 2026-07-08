@@ -4,6 +4,7 @@ import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import * as AstroHelper from './AstroHelper';
 import { buildMeaningTipByCategory, } from './AstroMeaningData';
+import { termsTableForVariant } from '../../divination/data/hellenisticData';
 import { isMeaningEnabled, wrapWithMeaning, } from './AstroMeaningPopover';
 import styles from '../../css/styles.less';
 import { XQCard as Card } from '../xq-ui';
@@ -60,6 +61,11 @@ class AstroLots extends Component{
 
 	genLotsDom(chartObj){
 		let doms = [];
+		// 界主按所选界系(含迦勒底,按昼夜),与中间盘界环 / 后端尊贵同口径。
+		let _termsTable = termsTableForVariant(
+			chartObj.params && chartObj.params.termsVariant,
+			chartObj.chart && chartObj.chart.isDiurnal,
+			AstroConst.TERMS_TABLES_BY_VARIANT, AstroConst.EGYPTIAN_TERMS);
 		for(let i=0; i<AstroConst.LOTS.length; i++){
 			let objid = AstroConst.LOTS[i];
 			let obj = AstroHelper.getObject(chartObj, objid);
@@ -108,7 +114,7 @@ class AstroLots extends Component{
 											), obj.sign)}
 											<span>{signdeg[1]+"'；"}</span>
 											{this.withSignMeaning((
-												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.sign, signdeg[0])}&nbsp;界</span>
+												<span style={{fontFamily: AstroConst.AstroFont}}>位于&nbsp;{AstroHelper.whichTerm(obj.sign, signdeg[0], _termsTable)}&nbsp;界</span>
 											), obj.sign)}
 										</div>
 									</Col>

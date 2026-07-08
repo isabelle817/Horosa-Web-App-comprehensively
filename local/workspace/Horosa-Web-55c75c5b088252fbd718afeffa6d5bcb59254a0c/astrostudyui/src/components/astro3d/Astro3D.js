@@ -814,6 +814,13 @@ class Astro3D {
 			this.renderer.dispose();
 			this.renderer.forceContextLoss();
 		}
+		if(this.orbits && this.orbits.dispose){
+			this.orbits.dispose();   // OrbitControls 在 canvas 上挂的 pointer/wheel/contextmenu 监听器,不释放则闭包吊住整个 Astro3D 实例,连带其图形资源不被 GC
+			this.orbits = null;
+		}
+		if(this.gui && this.gui.destroy){ this.gui.destroy(); this.gui = null; }
+		if(this.stats && this.stats.dom && this.stats.dom.parentNode){ this.stats.dom.parentNode.removeChild(this.stats.dom); }
+		this.stats = null;
 		this.planetMeshMap.forEach((itm)=>{
 			itm.geometry.dispose();
 			itm.material.dispose();

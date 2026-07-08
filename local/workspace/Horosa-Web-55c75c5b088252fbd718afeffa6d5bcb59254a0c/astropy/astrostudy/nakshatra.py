@@ -31,6 +31,9 @@ def nakshatra_from_lon(lon):
     progress = (value - idx * span) / span
     pada = min(4, int(progress * 4) + 1)
     name, label, lord = NAKSHATRAS[idx]
+    # 28 宿口径(Abhijit)附加信息——27 宿主字段不变(Vimshottari/月宿/navamsa 仍按 27 宿)。
+    from astrostudy.india.primitives import is_abhijit, nakshatra_number_28, ABHIJIT_NAME, ABHIJIT_LABEL
+    abhijit = is_abhijit(value)
     return {
         'index': idx + 1,
         'name': name,
@@ -39,4 +42,8 @@ def nakshatra_from_lon(lon):
         'pada': pada,
         'progress': progress,
         'remainingRatio': 1 - progress,
+        'isAbhijit': abhijit,
+        'nak28Index': nakshatra_number_28(value, idx + 1),
+        'nak28Name': ABHIJIT_NAME if abhijit else name,
+        'nak28Label': ABHIJIT_LABEL if abhijit else label,
     }

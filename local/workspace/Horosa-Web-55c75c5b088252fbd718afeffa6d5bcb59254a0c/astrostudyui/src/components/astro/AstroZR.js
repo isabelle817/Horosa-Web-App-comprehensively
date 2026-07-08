@@ -9,6 +9,7 @@ import request from '../../utils/request';
 import * as Constants from '../../utils/constants';
 import { randomStr, } from '../../utils/helper';
 import { saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
+import { fetchChart } from '../../services/astro';
 import styles from '../../css/styles.less';
 import { XQSelect as Select } from '../xq-ui';
 
@@ -342,6 +343,7 @@ class AstroZR extends Component{
 		this.requestDirection = this.requestDirection.bind(this);
 		this.genNatalParams = this.genNatalParams.bind(this);
 		this.requestData = this.requestData.bind(this);
+		this.loadWholeSignChart = this.loadWholeSignChart.bind(this);
 		this.changeAIMode = this.changeAIMode.bind(this);
 		this.changeAIL1 = this.changeAIL1.bind(this);
 		this.changeAIL2 = this.changeAIL2.bind(this);
@@ -362,6 +364,8 @@ class AstroZR extends Component{
 			},
 			basePoint: AstroConst.PARS_FORTUNA,
 			list: [],
+			selectedSign: null,   // 点运高亮:当前点选的 ZR 期所在星座(传 AstroChart 高亮本座+4/7/10座)
+			wsChartObj: null,     // 整宫制专盘:黄道星释默认用整宫制(hsys=0),只喂本视图盘,其它盘零影响
 			aiMode: AI_MODE_L1_ALL,
 			aiL1Idx: 0,
 			aiL2Idx: 0,
@@ -378,6 +382,7 @@ class AstroZR extends Component{
 					...this.state.params,
 					...param,
 				};
+				this.loadWholeSignChart(chartObj);
 				this.setState({
 					params: params
 				}, ()=>{
@@ -390,6 +395,7 @@ class AstroZR extends Component{
 	componentDidMount(){
 		this.unmounted = false;
 		this.requestData();
+		this.loadWholeSignChart(this.props.value);
 		this.saveAISnapshot();
 		if(typeof window !== 'undefined'){
 			window.addEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
@@ -397,6 +403,9 @@ class AstroZR extends Component{
 	}
 
 	componentDidUpdate(prevProps, prevState){
+		if(prevProps.value !== this.props.value){
+			this.loadWholeSignChart(this.props.value);
+		}
 		if(
 			prevProps.value !== this.props.value ||
 			prevState.basePoint !== this.state.basePoint ||
@@ -412,18 +421,49 @@ class AstroZR extends Component{
 
 	componentWillUnmount(){
 		this.unmounted = true;
+		if(this._deepTimer){ clearTimeout(this._deepTimer); this._deepTimer = null; }
 		if(typeof window !== 'undefined'){
+			if(window.cancelIdleCallback && this._deepIdle){ window.cancelIdleCallback(this._deepIdle); this._deepIdle = null; }
 			window.removeEventListener('horosa:refresh-module-snapshot', this.handleSnapshotRefreshRequest);
 		}
 	}
 
 	requestData(){
-		let params = {
-			...this.state.params
+		if(!this.props.value){ return; }
+		// 性能:打开/切基点时先只算 L1(stopLevelIdx=0,秒出),页面稳定(idle)后再后台补全 L2–L4(stopLevelIdx=3)。
+		// 原先一次算满 4 层递归 → 打开明显卡。
+		this.requestDirection({ ...this.state.params, stopLevelIdx: 0 }, true);
+	}
+
+	scheduleDeepFetch(){
+		if(typeof window !== 'undefined' && window.cancelIdleCallback && this._deepIdle){ window.cancelIdleCallback(this._deepIdle); this._deepIdle = null; }
+		if(this._deepTimer){ clearTimeout(this._deepTimer); this._deepTimer = null; }
+		const run = ()=>{
+			if(this.unmounted || !this.props.value){ return; }
+			this.requestDirection({ ...this.state.params, stopLevelIdx: 3 }, false);
 		};
-		if(this.props.value){
-			this.requestDirection(params);
+		if(typeof window !== 'undefined' && window.requestIdleCallback){
+			this._deepIdle = window.requestIdleCallback(run, { timeout: 1500 });
+		}else{
+			this._deepTimer = setTimeout(run, 350);
 		}
+	}
+
+	// #2 整宫制:黄道星释是依星座(整宫)释放的希腊化时主技法,盘面理应用整宫制(每座=一宫,宫线落座界)。
+	// 但绝不改本命盘/其它任何盘——这里照本命起盘参数原样另起一张 hsys=0 的专盘(仅覆盖宫制,ad/southchart 等全保留),
+	// 只喂给本视图的 AstroChart;fetchChart 按 params 缓存(hsys=0 与本命 hsys 不同键,互不污染)。失败则回退本命盘(graceful)。
+	loadWholeSignChart(chartObj){
+		if(!chartObj || !chartObj.params){ return; }
+		const raw = chartObj.params || {};
+		const natal = this.genNatalParams(chartObj);   // 由 birth 规整出 date/time,保证齐全
+		const wsParams = { ...raw, ...natal, hsys: 0 };
+		// fetchChart 回的是信封 {ResultCode, Result, headers};真正盘对象在 Result(本命盘 this.props.value 亦是已解包的 Result)。
+		// 必须解包 rsp[ResultKey] 再取 .chart——直接读 rsp.chart 恒 undefined 会静默回退本命盘(本命非整宫 → 宫线不落座界)。
+		fetchChart(wsParams).then((rsp)=>{
+			const result = rsp && rsp[Constants.ResultKey];
+			if(this.unmounted || !result || !result.chart || result.err){ return; }
+			this.setState({ wsChartObj: result });
+		}).catch(()=>{ /* 回退本命盘 */ });
 	}
 
 	genNatalParams(chartObj){
@@ -447,20 +487,20 @@ class AstroZR extends Component{
 		return params;
 	}
 
-	async requestDirection(params){
+	async requestDirection(params, isQuick){
 		const data = await request(`${Constants.ServerRoot}/predict/zr`, {
 			body: JSON.stringify(params),
 		});
+		if(this.unmounted){ return; }
 		const result = data[Constants.ResultKey] || {};
 
-		const st = {
+		this.setState({
 			list: Array.isArray(result.zr) ? result.zr : [],
-			params: {
-				...params,
-			},
-		};
-
-		this.setState(st);
+			// state.params 恒保 stopLevelIdx=3(全深目标);仅快取那次临时下发 0。保 3 供 AI 快照/再切基点取全深一致。
+			params: { ...params, stopLevelIdx: 3 },
+		}, ()=>{
+			if(isQuick){ this.scheduleDeepFetch(); }
+		});
 	}
 
 	saveAISnapshot(){
@@ -516,14 +556,22 @@ class AstroZR extends Component{
 		if(this.props.value === undefined || this.props.value === null){
 			return;
 		}
-		let pnt = AstroHelper.getObject(this.props.value, e.target.value);
+		const v = e.target.value;
+		let startSign;
+		if(AstroConst.LIST_SIGNS.indexOf(v) >= 0){
+			startSign = v;   // 12 星座基点:直接从该座释放(后端 /predict/zr 直吃 startSign)
+		}else{
+			const pnt = AstroHelper.getObject(this.props.value, v);
+			startSign = pnt ? pnt.sign : null;
+		}
 		let params = {
 			...this.state.params,
-			startSign: pnt.sign,
+			startSign: startSign,
 		};
 		this.setState({
 			params: params,
-			basePoint: e.target.value,
+			basePoint: v,
+			selectedSign: null,   // 切基点清掉点运高亮
 			aiL1Idx: 0,
 			aiL2Idx: 0,
 			aiL3Idx: 0,
@@ -565,9 +613,11 @@ class AstroZR extends Component{
 	genConditionDom(){
 		const radioStyle = {
 			display: 'block',
-			height: '30px',
-			lineHeight: '30px',
+			height: '28px',
+			lineHeight: '28px',
+			whiteSpace: 'nowrap',
 		};
+		const colHead = { fontSize: 11, opacity: 0.55, marginBottom: 2, letterSpacing: '0.04em' };
 
 		let pnts = [
 			AstroConst.PARS_FORTUNA, AstroConst.PARS_SPIRIT, AstroConst.PARS_MERCURY,
@@ -576,18 +626,26 @@ class AstroZR extends Component{
 			AstroConst.ASC, AstroConst.DESC, AstroConst.MC, AstroConst.IC
 		];
 
-		let radios = pnts.map((item)=>{
-			return (
-				<Radio style={radioStyle} value={item} key={randomStr(8)}>
-					<span style={{fontFamily: AstroConst.AstroFont}}>{AstroText.AstroMsg[item]}&nbsp;</span>
-					<span style={{fontFamily: AstroConst.NormalFont}}>{AstroText.AstroTxtMsg[item]}&nbsp;</span>
-				</Radio>
-			);
-		});
+		const mkRadio = (item)=>(
+			<Radio style={radioStyle} value={item} key={`zrbp_${item}`}>
+				<span style={{fontFamily: AstroConst.AstroFont}}>{AstroText.AstroMsg[item]}&nbsp;</span>
+				<span style={{fontFamily: AstroConst.NormalFont}}>{AstroText.AstroTxtMsg[item]}</span>
+			</Radio>
+		);
 
+		// 第二列:十二星座基点(glyph + 两字座名,如「白羊」),用户可从任意星座释放;不占额外纵向空间。
 		return (
-			<RadioGroup onChange={this.changePoint} value={this.state.basePoint}>
-				{radios}
+			<RadioGroup onChange={this.changePoint} value={this.state.basePoint} style={{ width: '100%' }}>
+				<Row gutter={6}>
+					<Col span={12}>
+						<div style={colHead}>福点 / 行星 / 四轴</div>
+						{pnts.map(mkRadio)}
+					</Col>
+					<Col span={12}>
+						<div style={colHead}>十二星座</div>
+						{AstroConst.LIST_SIGNS.map(mkRadio)}
+					</Col>
+				</Row>
 			</RadioGroup>
 		);
 	}
@@ -661,11 +719,13 @@ class AstroZR extends Component{
 			<div>
 				<Row gutter={6}>
 					<Col span={14}>
-							<AstroChart value={this.props.value}
+							<AstroChart value={this.state.wsChartObj || this.props.value}
 								chartDisplay={this.props.chartDisplay}
 								planetDisplay={this.props.planetDisplay}
 								lotsDisplay={this.props.lotsDisplay}
 								showAstroMeaning={this.props.showAstroMeaning}
+								zrHighlightSign={this.state.selectedSign}
+								chartStyle={AstroConst.CHART_STYLE_ORIGINAL}
 								height={height}
 							/>
 
@@ -675,6 +735,8 @@ class AstroZR extends Component{
 						<ZodiacalRelease
 							height={height}
 							value={this.state.list}
+							onSignClick={(sign)=>this.setState({ selectedSign: sign })}
+							selectedSign={this.state.selectedSign}
 						/>
 					</Col>
 					<Col span={4}>

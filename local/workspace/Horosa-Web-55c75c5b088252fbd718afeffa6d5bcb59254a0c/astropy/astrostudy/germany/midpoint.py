@@ -12,6 +12,11 @@ def takeLon(obj):
     return obj['lon']
 
 
+# 个人点核心五点(宇宙生物学 Basic Five):Asc/MC/日/月/北交。
+# personalOrb 仅作用于「相位目标」落在这五点时的放宽(宇宙生物学个人点宽容许度)。
+BASIC_FIVE = (const.ASC, const.MC, const.SUN, const.MOON, const.NORTH_NODE)
+
+
 class MidPoint:
     # uranian=False(默认):与历史实现逐字节一致,供合盘(modern/chartcomp.py)复用,绝不改其输出。
     # uranian=True(量化盘 /germany/midpoint 专用):
@@ -19,7 +24,12 @@ class MidPoint:
     #   ② 无序对各算一个近中点(短弧),消除原 A-B/B-A 双算 + 浮点精确去重导致的近/远重复;
     #   ③ 相位判断跨 0° 归一(修原 abs 差未归一致 mid≈359、obj≈0 漏判);orb 可配;
     #   ④ TNP 也作相位目标(捕获 TNP 落中点轴)。
-    def __init__(self, perchart: PerChart, orb=1.0, uranian=False):
+    #
+    # includeTnp / personalOrb 仅 uranian=True 分支生效,默认=现行为(零回归):
+    #   includeTnp=False  → 8 颗 TNP 既不入中点对、也不作相位目标(宇宙生物学不用虚星);
+    #   personalOrb=None  → 无分叉,全程用 self.orb;给定数值时仅「相位目标落 Basic Five」放宽到该值。
+    # uranian=False(合盘 modern/chartcomp.py 复用)逐字节不变:tnpObjs 恒空,这两个参数完全无作用。
+    def __init__(self, perchart: PerChart, orb=1.0, uranian=False, includeTnp=True, personalOrb=None):
         self.perchart = perchart
         self.uranian = bool(uranian)
         try:
@@ -28,16 +38,27 @@ class MidPoint:
             self.orb = 1.0
         if not (0 < self.orb <= 10):
             self.orb = 1.0
+        self.includeTnp = bool(includeTnp)
+        # personalOrb=None → 不分叉;否则校验为合法正容许度(同 orb 口径),非法则回退 None(无分叉)。
+        self.personalOrb = None
+        if personalOrb is not None:
+            try:
+                po = float(personalOrb)
+                if 0 < po <= 30:
+                    self.personalOrb = po
+            except (TypeError, ValueError):
+                self.personalOrb = None
         self.objects = [self.perchart.chart.getObject(id) for id in LIST_OBJ]
         self.tnpObjs = []
         if self.uranian:
             chart = perchart.chart
             angleObjs = [a for a in chart.angles if a.id in (const.ASC, const.MC)]
-            for uid in const.LIST_URANIAN:
-                try:
-                    self.tnpObjs.append(flatlib_ephem.getObject(uid, perchart.dateTime, perchart.pos))
-                except Exception:
-                    pass
+            if self.includeTnp:
+                for uid in const.LIST_URANIAN:
+                    try:
+                        self.tnpObjs.append(flatlib_ephem.getObject(uid, perchart.dateTime, perchart.pos))
+                    except Exception:
+                        pass
             self.objects = self.objects + angleObjs + self.tnpObjs
 
     def getAspects(self, obj, mids):
@@ -71,7 +92,9 @@ class MidPoint:
         return asps
 
     def _getAspectsUranian(self, obj, mids):
-        orb = self.orb
+        # 相位目标 obj 落 Basic Five(Asc/MC/日/月/北交)且 personalOrb 给定 → 用放宽容许度;
+        # 否则用通用 orb。personalOrb=None 时全程 orb,无任何分叉(零回归)。
+        orb = self.personalOrb if (self.personalOrb is not None and obj.id in BASIC_FIVE) else self.orb
         asps = {obj.id: []}
         for mid in mids:
             d = abs(mid['lon'] - obj.lon) % 360.0   # 跨 0° 归一到 0..180

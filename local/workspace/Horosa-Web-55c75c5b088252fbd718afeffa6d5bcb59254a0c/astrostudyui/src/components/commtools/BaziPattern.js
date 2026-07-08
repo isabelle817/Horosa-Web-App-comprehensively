@@ -2,20 +2,50 @@ import { Component } from 'react';
 import { Row, Col, Divider, Popconfirm, message} from 'antd';
 import { XQButton as Button, XQInput as Input, XQSelect as Select } from '../xq-ui';
 import { randomStr, isNumber } from '../../utils/helper';
-import request from '../../utils/request';
-import * as Constants from '../../utils/constants';
+// 八字格局完全本地化(localStorage 存读),不再依赖后端 → 删除 request/Constants 引用
+import { safeLocalStorageGet, safeLocalStorageSet } from '../../utils/safeStorage';
 import {BaziMonthTime, SixtyJiaZi} from '../../constants/ZWConst';
 import RichEditor from '../RichEditor';
 
 const { Option } = Select;
 
 const BaziPatternKey = 'baziPattern';
+// 🆕 本地八字格局模板:6 个属性维度,在 UI 中以下拉显示;type 0=三选数量(没有/一个/多个),type 1=是否(否/是)。
+// 用户填写后存到 localStorage(按「年月日时柱+性别」作 key)→ 永久本地可用,完全脱离后端登录依赖。
+const LOCAL_BAZI_PATTERN_ATTRS = [
+    { key: '配偶数', type: 0 },
+    { key: '有孩子', type: 0 },
+    { key: '有儿子', type: 0 },
+    { key: '易受伤', type: 1 },
+    { key: '易生病', type: 1 },
+    { key: '易牢狱', type: 1 },
+];
+function localPatternStorageKey(year, month, date, time, gender){
+    return `baziPattern_local::${year}_${month}_${date}_${time}::g${gender}`;
+}
+function loadLocalPattern(year, month, date, time, gender){
+    const raw = safeLocalStorageGet(localPatternStorageKey(year, month, date, time, gender));
+    if(!raw) return null;
+    try{
+        return JSON.parse(raw);
+    }catch(e){
+        return null;
+    }
+}
+function saveLocalPattern(year, month, date, time, gender, data){
+    try{
+        return safeLocalStorageSet(localPatternStorageKey(year, month, date, time, gender), JSON.stringify(data));
+    }catch(e){
+        return false;
+    }
+}
 
 export default class BaziPattern extends Component{
 	constructor(props) {
 		super(props);
 
-        let json = localStorage.getItem(BaziPatternKey);
+        // 🛡 safeStorage(下同):浏览器存储配额满 / 隐私模式不抛错让组件崩。
+        let json = safeLocalStorageGet(BaziPatternKey);
         let st = {};
         if(json){
             try{
@@ -80,12 +110,14 @@ export default class BaziPattern extends Component{
     }
 
     saveState(){
-        let json = JSON.stringify(this.state);
-        localStorage.setItem(BaziPatternKey, json);
+        try{
+            const json = JSON.stringify(this.state);
+            safeLocalStorageSet(BaziPatternKey, json);
+        }catch(e){ /* 静默,绝不让 setState callback 抛 quota 错给 ErrorBoundary */ }
         this.newval = false;
     }
 
-	async updatePattern(){
+	updatePattern(){
         let st = this.state;
         if(st.year === undefined || st.year === null){
             message.error('年柱不能为空');
@@ -104,34 +136,37 @@ export default class BaziPattern extends Component{
             return;
         }
 
-        let params = {
-            year: st.year,
-            month: st.month,
-            date: st.date,
-            time: st.time,
+        // 🆕 完全本地化:存 localStorage(按「年月日时柱+性别」作 key)。
+        // 男女各存一份,gender=-1(不区分) 时同时存男女两份。永久本地可用,完全脱离后端登录依赖。
+        const data = {
             '格局': st['格局'],
             '格局码': st['格局码'],
             '格局成立': st['格局成立'],
             '格局级别': st['格局级别'],
             '描述': st['描述'],
-        }
-
-        st.attrs.map((item, idx)=>{
-            params[item.key] = st[item.key];
+        };
+        (st.attrs || LOCAL_BAZI_PATTERN_ATTRS).forEach((item)=>{
+            data[item.key] = st[item.key];
         });
-
-        if(st.gender !== -1){
-            params['性别'] = st.gender;
+        const genders = (st.gender === -1) ? [0, 1] : [st.gender];
+        let okCount = 0;
+        genders.forEach((g)=>{
+            if(saveLocalPattern(st.year, st.month, st.date, st.time, g, data)){
+                okCount++;
+            }
+        });
+        // 🛡 即便 safeLocalStorageSet 返回 false(配额满 / 隐私模式 SecurityError),
+        //   组件 saveState 在每次输入 setState callback 里已经写过当前 state 快照(baziPattern 主 key),
+        //   本会话 React state 也仍保有用户填写的全部内容 → 不该弹「失败」让用户以为白填了。
+        //   持久化失败给 warning 友好提示告知"下次启动可能需重填"即可,不再阻塞使用。
+        if(okCount > 0){
+            message.success('八字格局已保存到本机');
+        }else{
+            message.warning('八字格局已暂存当前会话(浏览器存储空间满,下次启动可能需重填)');
         }
-
-		const data = await request(`${Constants.ServerRoot}/bazi/pattern/update`, {
-			body: JSON.stringify(params),
-		});
-		const result = data[Constants.ResultKey];
-        message.info('八字格局说明提交成功');
 	}
 
-	async requestPattern(){
+	requestPattern(){
         let st = this.state;
         if(st.year === undefined || st.year === null){
             message.error('年柱不能为空');
@@ -150,45 +185,40 @@ export default class BaziPattern extends Component{
             return;
         }
 
-        let params = {
-            year: st.year,
-            month: st.month,
-            date: st.date,
-            time: st.time,
-        }
-
-		const data = await request(`${Constants.ServerRoot}/bazi/pattern`, {
-			body: JSON.stringify(params),
-		});
-		const result = data[Constants.ResultKey];
-        let female = result.Female;
-        let male = result.Male;
-        let attrs = result.Attributes;
-
-        let resst = {
+        // 🆕 完全本地化:用固定 attrs 模板 + 从 localStorage 读已存数据(按「年月日时柱+性别」)。
+        // 男女各读一份;未存过时给空白默认值,让用户填表后提交保存。永久本地可用,完全脱离后端。
+        const attrs = LOCAL_BAZI_PATTERN_ATTRS;
+        const male = loadLocalPattern(st.year, st.month, st.date, st.time, 1);
+        const female = loadLocalPattern(st.year, st.month, st.date, st.time, 0);
+        const resst = {
             female: female,
             male: male,
             attrs: attrs,
-            readonly: result.readonly === 1 ? true : false,
-        }
-        let pat = male;
-        if(st.gender === 0){
-            pat = female;
-        }
+            readonly: false,
+        };
+        let pat = (st.gender === 0) ? female : male;
         if(pat){
             resst['格局'] = pat['格局'];
             resst['格局码'] = pat['格局码'];
             resst['格局级别'] = pat['格局级别'];
             resst['格局成立'] = pat['格局成立'];
             resst['描述'] = pat['描述'];
-
-            attrs.map((item, idx)=>{
+            attrs.forEach((item)=>{
                 resst[item.key] = pat[item.key];
-            });  
+            });
+        }else{
+            // 没读到 → 给空白默认让用户填
+            resst['格局'] = null;
+            resst['格局码'] = -1;
+            resst['格局级别'] = -1;
+            resst['格局成立'] = -1;
+            resst['描述'] = null;
+            attrs.forEach((item)=>{
+                resst[item.key] = -1;
+            });
         }
 
         this.newval = true;
-
         this.setState(resst, ()=>{
             this.saveState();
         });

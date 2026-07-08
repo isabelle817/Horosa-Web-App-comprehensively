@@ -50,6 +50,8 @@ export default class GuaSym extends Component{
     }
 
     genSymList(list){
+        // 🔒 防黑屏:类象某分类值非数组(数据缺/半成品)时 list.map 抛 TypeError → 无边界即整页空白。
+        if(!Array.isArray(list)){ return null; }
         let lis = list.map((item, idx)=>{
             return (
                 <li key={randomStr(8)}>

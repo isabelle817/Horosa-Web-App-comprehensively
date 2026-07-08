@@ -1,4 +1,4 @@
-import { projectToDial, midpoint, dialSeparation, cursorReadout, midpointTree, spreadDialAngles, antiscion, contraAntiscion, planetaryPictures, midpointList, spiegelContacts } from '../uranianDial';
+import { projectToDial, midpoint, dialSeparation, cursorReadout, midpointTree, spreadDialAngles, antiscion, contraAntiscion, planetaryPictures, midpointList, spiegelContacts, equalHouseFramework, planetHouse, sumPoint, arcOpening, sumList, differenceList, solarArcDirections, SA_RATE, crossContacts, rectificationHits } from '../uranianDial';
 
 test('90°盘投影 = lon mod 90 映 0..360', () => {
 	expect(projectToDial(207.958, 90)).toBeCloseTo(27.958 / 90 * 360, 2); // Cupido fixture ≈111.832
@@ -136,4 +136,244 @@ test('映点接触 Spiegelpunkt(回照折叠)', () => {
 	expect(spiegelContacts([{ id: 'A', lon: 30 }, { id: 'B', lon: 330 }], 90, 1, {}).length).toBe(1);
 	// 无接触:A=30、B=200(折叠位 20,远离 60)→ 空。
 	expect(spiegelContacts([{ id: 'A', lon: 30 }, { id: 'B', lon: 200 }], 90, 1, {}).length).toBe(0);
+});
+
+test('六宫框 equalHouseFramework:12 宫头、每宫 30°、跨 0° 归一', () => {
+	const c = equalHouseFramework(10);
+	expect(c.length).toBe(12);
+	expect(c[0]).toBeCloseTo(10, 6);
+	expect(c[1]).toBeCloseTo(40, 6);
+	// 1 宫头=350 → 360-1 跨 0° 归一:c[1]=20、c[11]=320。
+	const w = equalHouseFramework(350);
+	expect(w[0]).toBeCloseTo(350, 6);
+	expect(w[1]).toBeCloseTo(20, 6);
+	expect(w[11]).toBeCloseTo(320, 6);
+	// 每宫恒 30°(模 360)。
+	for (let i = 0; i < 12; i++){ expect(((c[(i + 1) % 12] - c[i]) % 360 + 360) % 360).toBeCloseTo(30, 6); }
+});
+
+test('六宫框 planetHouse:落宫(含跨 0° 与不等距 cusps)', () => {
+	const c = equalHouseFramework(0); // 宫头 0,30,60,...
+	expect(planetHouse(0, c)).toBe(1);
+	expect(planetHouse(29.9, c)).toBe(1);
+	expect(planetHouse(30, c)).toBe(2);
+	expect(planetHouse(359.9, c)).toBe(12);
+	// 跨 0°:1 宫头=350,lon=5 落 1 宫、lon=355 落 1 宫、lon=25 落 2 宫、lon=349 落 12 宫。
+	const w = equalHouseFramework(350);
+	expect(planetHouse(5, w)).toBe(1);
+	expect(planetHouse(355, w)).toBe(1);
+	expect(planetHouse(25, w)).toBe(2);
+	expect(planetHouse(349, w)).toBe(12);
+	// 不等距 cusps(模拟子午局后端给):[0,40,70,...] → lon=35 落 1、lon=50 落 2。
+	const ne = [0, 40, 70, 100, 130, 160, 190, 220, 250, 280, 310, 340];
+	expect(planetHouse(35, ne)).toBe(1);
+	expect(planetHouse(50, ne)).toBe(2);
+	expect(planetHouse(345, ne)).toBe(12);
+});
+
+// ───────────────────────── WP-5 和点/差点读数(additive opts) ─────────────────────────
+
+test('WP-5 sumPoint / arcOpening 公式', () => {
+	expect(sumPoint(10, 50)).toBeCloseTo(60, 6);       // A+B=60
+	expect(sumPoint(350, 30)).toBeCloseTo(20, 6);      // 380→20(折回 0..360)
+	expect(arcOpening(10, 50)).toBeCloseTo(40, 6);     // 最短差距 40
+	expect(arcOpening(0, 200)).toBeCloseTo(160, 6);    // 360-200=160(取短弧)
+});
+
+test('WP-5 cursorReadout(opts.sum) 追加和点项命中', () => {
+	// A=10,B=50 → 和点 60；指针落 60° → 应出现一条 kind:sum 的 A+B。
+	const P = [{ id: 'A', lon: 10 }, { id: 'B', lon: 50 }];
+	const hits = cursorReadout(P, 60, 90, 1, { sum: true });
+	expect(hits.some((h) => h.kind === 'sum' && ((h.a === 'A' && h.b === 'B') || (h.a === 'B' && h.b === 'A')))).toBe(true);
+});
+
+test('WP-5 cursorReadout(opts.arc) 追加差距项命中', () => {
+	// A=10,B=50 → 差距 40；指针落 40° → 应出现一条 kind:arc。
+	const P = [{ id: 'A', lon: 10 }, { id: 'B', lon: 50 }];
+	const hits = cursorReadout(P, 40, 90, 1, { arc: true });
+	expect(hits.some((h) => h.kind === 'arc')).toBe(true);
+	// 不开 arc 时同指针位无 arc 项(防默认泄漏)。
+	expect(cursorReadout(P, 40, 90, 1).some((h) => h.kind === 'arc')).toBe(false);
+});
+
+test('WP-5 回归硬证:不传 opts 时 cursorReadout 仅产出 body/mid 两类(逐位不变)', () => {
+	// 任何不带 sum/arc 的调用,结果集只含历史的 body/mid——和上面 18 例的口径完全一致。
+	const P = [{ id: 'a', lon: 0 }, { id: 'b', lon: 80 }, { id: 'c', lon: 30 }, { id: 'd', lon: 50 }];
+	const baseline = cursorReadout(P, 40, 90, 1);
+	expect(baseline.every((h) => h.kind === 'body' || h.kind === 'mid')).toBe(true);
+	// 与显式 {sum:false, arc:false} 完全等价(JSON 逐位)。
+	expect(JSON.stringify(cursorReadout(P, 40, 90, 1, { sum: false, arc: false }))).toBe(JSON.stringify(baseline));
+});
+
+test('WP-5 sumList / differenceList 扁平表', () => {
+	const personal = new Set(['Sun']);
+	const P = [{ id: 'Sun', lon: 10 }, { id: 'Moon', lon: 50 }, { id: 'X', lon: 200 }];
+	const sl = sumList(P, 90, { personal });
+	expect(sl.length).toBe(3); // C(3,2)
+	const sm = sl.find((m) => (m.a === 'Sun' && m.b === 'Moon') || (m.a === 'Moon' && m.b === 'Sun'));
+	expect(sm.lon).toBeCloseTo(60, 6); // Sun+Moon 和点 = 60
+	expect(sl[0].a === 'Sun' || sl[0].b === 'Sun').toBe(true); // 含个人点排前
+	const dl = differenceList(P, 90, { personal });
+	const dm = dl.find((m) => (m.a === 'Sun' && m.b === 'Moon') || (m.a === 'Moon' && m.b === 'Sun'));
+	expect(dm.arc).toBeCloseTo(40, 6); // 差距 40
+	expect(dl[0].arc <= dl[dl.length - 1].arc).toBe(true); // 按差距升序
+});
+
+test('WP-5 midpointList(includeSum) 追加和点字段、不动既有', () => {
+	const P = [{ id: 'A', lon: 10 }, { id: 'B', lon: 50 }];
+	const withSum = midpointList(P, 90, { includeSum: true });
+	expect(withSum[0].lon).toBeCloseTo(30, 6);       // 既有中点字段不变
+	expect(withSum[0].sumLon).toBeCloseTo(60, 6);    // 追加和点黄经
+	// 默认不带 includeSum 时无 sumLon(零回归)。
+	expect(midpointList(P, 90, {})[0].sumLon).toBeUndefined();
+});
+
+// ───────────────────────── WP-3 太阳弧到期 差值表 ─────────────────────────
+
+test('WP-3 SA_RATE 常量', () => {
+	expect(SA_RATE.naibod).toBeCloseTo(0.9856473, 7);
+	expect(SA_RATE.oneDeg).toBe(1.0);
+});
+
+test('WP-3 solarArcDirections:30° 对的全/半/倍到期年龄(naibod)', () => {
+	const P = [{ id: 'A', lon: 0 }, { id: 'B', lon: 30 }]; // arc=30
+	const rows = solarArcDirections(P, 90, {});
+	const prim = (t) => rows.find((r) => r.b === 'B' && r.type === t && r.fold === undefined);
+	expect(prim('full').age).toBeCloseTo(30.44, 1);   // 30/0.9856473
+	expect(prim('half').age).toBeCloseTo(15.22, 1);   // 15/rate
+	expect(prim('double').age).toBeCloseTo(60.87, 1); // 60/rate
+	// {90−a} 折叠项存在。
+	expect(rows.some((r) => r.b === 'B' && r.fold === '90-a')).toBe(true);
+	// 按 age 升序。
+	expect(rows.every((r, i) => i === 0 || rows[i - 1].age <= r.age)).toBe(true);
+});
+
+test('WP-3 solarArcDirections:targetAge 命中 due + maxAge 截断', () => {
+	const P = [{ id: 'A', lon: 0 }, { id: 'B', lon: 30 }];
+	// targetAge=30、win=1 → full 主接触(30.44)落 due。
+	expect(solarArcDirections(P, 90, { targetAge: 30, win: 1 }).some((r) => r.due)).toBe(true);
+	// 远离目标则无 due(target=5,win=1 时 30.44/15.22/… 均不命中)。
+	expect(solarArcDirections(P, 90, { targetAge: 5, win: 1 }).some((r) => r.due)).toBe(false);
+	// maxAge=20 截断:所有 age<=20。
+	const cut = solarArcDirections(P, 90, { maxAge: 20 });
+	expect(cut.length).toBeGreaterThan(0);
+	expect(cut.every((r) => r.age <= 20)).toBe(true);
+});
+
+test('WP-3 solarArcDirections:oneDeg 换算 + aries 单因子档', () => {
+	const P = [{ id: 'A', lon: 0 }, { id: 'B', lon: 30 }];
+	// 1°/年:30° 对的 full 主接触 age=30。
+	const rows = solarArcDirections(P, 90, { saKey: 'oneDeg' });
+	const full = rows.find((r) => r.b === 'B' && r.type === 'full' && r.fold === undefined);
+	expect(full.age).toBeCloseTo(30, 6);
+	// aries 单因子:B(lon=30) 定向到 0° 轴 age=30(oneDeg)。
+	expect(rows.some((r) => r.type === 'aries' && r.a === 'B' && r.b === null && Math.abs(r.age - 30) < 1e-6)).toBe(true);
+});
+
+// ───────────────────────── WP-9 合盘接触法 crossContacts ─────────────────────────
+
+test('WP-9 crossContacts:B 落 A 单点 + 落 A 中点轴', () => {
+	// A 有日月:Sun=0、Moon=60 → 中点轴 30。
+	const A = [{ id: 'Sun', lon: 0 }, { id: 'Moon', lon: 60 }];
+	// B1 落 A 的日月中点(30),B2 落 A 单点 Sun(0)。
+	const B = [{ id: 'bMars', lon: 30 }, { id: 'bVenus', lon: 0 }];
+	const cs = crossContacts(A, B, 90, 1);
+	// ① 中点轴命中:bMars 落 Sun/Moon 中点(a2 非空,两端=Moon/Sun)。
+	const mid = cs.find((c) => c.b === 'bMars' && c.a2 != null);
+	expect(mid).toBeTruthy();
+	expect([mid.a1, mid.a2].sort().join(',')).toBe(['Moon', 'Sun'].sort().join(','));
+	expect(mid.sep).toBeCloseTo(0, 6);
+	// ② 单点命中:bVenus 落 A 的 Sun(a2=null)。
+	expect(cs.some((c) => c.b === 'bVenus' && c.a1 === 'Sun' && c.a2 === null && c.sep < 1e-6)).toBe(true);
+	// 按 sep 升序。
+	expect(cs.every((c, i) => i === 0 || cs[i - 1].sep <= c.sep)).toBe(true);
+});
+
+test('WP-9 crossContacts:容许度外不命中 + 空盘安全', () => {
+	const A = [{ id: 'Sun', lon: 0 }, { id: 'Moon', lon: 60 }];
+	// B 落 45(远离单点 0/60 与中点 30,90°盘最近距 15)→ orb1 内无命中。
+	expect(crossContacts(A, [{ id: 'bX', lon: 45 }], 90, 1).length).toBe(0);
+	// 空盘/缺参不抛错。
+	expect(crossContacts(null, null, 90, 1)).toEqual([]);
+	expect(crossContacts(A, [{ id: 'bBad', lon: NaN }], 90, 1)).toEqual([]);
+});
+
+// ───────────────────────── WP-10 校时命中 rectificationHits ─────────────────────────
+
+test('WP-10 rectificationHits:事件年→弧→命中本命因子', () => {
+	// 本命 MC=0;事件 30 岁 → 弧=30°(oneDeg) → MC 推进到 30° → 命中本命 lon=30 的因子。
+	const natal = [{ id: 'Saturn', lon: 30 }, { id: 'Mars', lon: 200 }];
+	const res = rectificationHits([{ label: '婚', years: 30 }], { mc: 0 }, natal, 90, 1, SA_RATE.oneDeg);
+	expect(res.length).toBe(1);
+	expect(res[0].event).toBe('婚');
+	expect(res[0].arc).toBeCloseTo(30, 6);
+	expect(res[0].hits.some((h) => h.factor === 'Saturn' && h.angle === 'MC' && h.sep < 1e-6)).toBe(true);
+	// 远离的本命因子(Mars=200)不命中。
+	expect(res[0].hits.some((h) => h.factor === 'Mars')).toBe(false);
+});
+
+test('WP-10 rectificationHits:Asc 轴 + Naibod 换算 + 多事件保序', () => {
+	// Asc=10;事件 20 弧年,Naibod rate≈0.9856 → 弧≈19.71° → Asc 推进到≈29.71° → 命中本命 lon≈29.71。
+	const arc = 20 * SA_RATE.naibod;
+	const natal = [{ id: 'Venus', lon: 10 + arc }];
+	const res = rectificationHits(
+		[{ years: 0 }, { label: '迁', years: 20 }],
+		{ asc: 10 }, natal, 90, 0.5, SA_RATE.naibod,
+	);
+	// 两事件保序(索引串 '0' 在前,'迁' 在后)。
+	expect(res.map((r) => r.event)).toEqual(['0', '迁']);
+	expect(res[1].arc).toBeCloseTo(arc, 6);
+	expect(res[1].hits.some((h) => h.factor === 'Venus' && h.angle === 'Asc')).toBe(true);
+	// 默认 rate(不传)= oneDeg。
+	const def = rectificationHits([{ years: 30 }], { mc: 0 }, [{ id: 'X', lon: 30 }], 90, 1);
+	expect(def[0].arc).toBeCloseTo(30, 6);
+	// 非有限 years → 空 hits、arc=NaN,不抛错。
+	const bad = rectificationHits([{ years: NaN }], { mc: 0 }, natal, 90, 1, 1);
+	expect(bad[0].hits).toEqual([]);
+	expect(Number.isNaN(bad[0].arc)).toBe(true);
+});
+
+// ──────── 真位盘(模数/宇宙图)十字指针副臂几何 1:1 ────────
+// 模数/宇宙图盘是真位盘:cursorReadout 收【真实黄经】内部按 base 折叠。折叠盘视觉 ±22.5°/±67.5° 副臂
+// 在真位盘等价于真实 cursor 偏移 δ = off·base/360(base=90 → ±5.625°/±16.875°)。下证该偏移读到的因子族正确,
+// 且 crossPointer 关(仅主臂[0])时读数与单臂逐项等价(零回归)。
+const norm360t = (x) => ((x % 360) + 360) % 360;
+
+test('真位盘副臂 δ=off·base/360:主臂漏的折叠侧位由副臂读到', () => {
+	const base = 90;
+	const cursorLon = 10;                 // 真实黄经指针位 → 折叠位 10°
+	// 因子 c1 落折叠位 10(主臂命中);c2 落折叠位 10+5.625=15.625(主臂漏、δ=5.625 副臂命中);
+	// c3 落折叠位 10+16.875=26.875(δ=16.875 副臂命中)。
+	const P = [{ id: 'c1', lon: 10 }, { id: 'c2', lon: 15.625 }, { id: 'c3', lon: 26.875 }];
+	const main = cursorReadout(P, norm360t(cursorLon), base, 0.5);
+	expect(main.some((h) => h.id === 'c1')).toBe(true);
+	expect(main.some((h) => h.id === 'c2')).toBe(false);  // 主臂 orb0.5 内漏
+	expect(main.some((h) => h.id === 'c3')).toBe(false);
+	// 副臂偏移(视觉 22.5/67.5 → 真位 5.625/16.875)。
+	const arm225 = cursorReadout(P, norm360t(cursorLon + 22.5 * base / 360), base, 0.5);
+	const arm675 = cursorReadout(P, norm360t(cursorLon + 67.5 * base / 360), base, 0.5);
+	expect(arm225.some((h) => h.id === 'c2')).toBe(true);  // 5.625 副臂命中 c2
+	expect(arm675.some((h) => h.id === 'c3')).toBe(true);  // 16.875 副臂命中 c3
+});
+
+test('真位盘副臂折叠周期性:δ 落同一折叠位则主/副读同因子族(base 周期内一致)', () => {
+	const base = 90;
+	// 折叠位相同(differ by base)的两真位:100 与 10 折叠都=10。副臂偏移对二者读到同一折叠因子。
+	const P = [{ id: 'x', lon: 15.625 }];
+	const a = cursorReadout(P, norm360t(10 + 22.5 * base / 360), base, 0.3);
+	const b = cursorReadout(P, norm360t(100 + 22.5 * base / 360), base, 0.3);
+	expect(a.some((h) => h.id === 'x')).toBe(true);
+	expect(b.some((h) => h.id === 'x')).toBe(true);
+});
+
+test('真位盘 crossPointer 关(仅主臂[0])= 单臂读数逐项等价(零回归)', () => {
+	const base = 90;
+	const P = [{ id: 'c1', lon: 10 }, { id: 'c2', lon: 15.625 }, { id: 'c3', lon: 73.4221 }];
+	const cursorLon = 10;
+	// 组件关时 armOffsets=[0]→ 等价直接单臂 cursorReadout(无合并去重)。
+	const single = cursorReadout(P, norm360t(cursorLon), base, 1);
+	const armOff0 = [0].map((o) => o * base / 360);
+	const raw = [];
+	armOff0.forEach((off) => cursorReadout(P, norm360t(cursorLon + off), base, 1).forEach((h) => raw.push(h)));
+	expect(raw).toEqual(single);
 });

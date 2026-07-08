@@ -51,7 +51,7 @@ export function fetchChart(values, requestOptions){
 		return chartInflight.get(key).then((rsp)=>clonePlain(rsp));
 	}
 	const req = request(`${ServerRoot}/chart`, {
-		// 排盘是幂等纯计算(后端无写库 ChartController),对「本地服务未就绪/重启窗口」做透明退避重试:
+		// 排盘是幂等纯计算(服务端无写库),对「本地服务未就绪/重启窗口」做透明退避重试:
 		// 仅在连接被拒(后端不可达,见 fetchWithRetryConnRefused)时退避重试,HTTP 4xx/5xx 不重试、原样返回。
 		// 否则慢启动或服务重启瞬间第一次连接失败就硬弹「排盘失败:本地服务未就绪」(Win issue #14 同因,前端 Mac/Win 共享)。
 		// caller 的 opts.retry 可覆盖(如某些场景想关重试)。

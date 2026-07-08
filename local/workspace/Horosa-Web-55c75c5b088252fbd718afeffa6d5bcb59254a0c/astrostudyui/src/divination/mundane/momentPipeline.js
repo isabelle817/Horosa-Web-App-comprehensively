@@ -45,6 +45,24 @@ export function ingressDurationMonths(ascSignKey){
 	return 3; // cardinal 或缺省
 }
 
+// 入境主管(§8.3):按规则集 + 白羊入境盘四轴(ASC)座模式判定主管时长与须补起的季盘。
+// quarterly(Ptolemaic/Medieval):四轴基本→只首季(3月,须夏至/秋分/冬至)、变动→半年(6月,须秋分天秤)、固定→整年。
+// aries_annual(现代默认):白羊全年。capricorn_year(摩羯优先派):冬至为年首、全年。
+export function ingressGovernance(ascSignKey, ingressRule){
+	const rule = ingressRule || 'aries_annual';
+	const sign = ascSignKey ? SIGNS[ascSignKey] : null;
+	const mod = (sign && sign.modality) || null;
+	if(rule === 'quarterly'){
+		if(mod === 'fixed'){ return { rule, modality: 'fixed', spanMonths: 12, needSeasonal: [], note: '四轴固定座 → 白羊盘主管整年' }; }
+		if(mod === 'mutable'){ return { rule, modality: 'mutable', spanMonths: 6, needSeasonal: ['libra'], note: '四轴变动座 → 白羊盘主管半年,须再起秋分(天秤)入境' }; }
+		return { rule, modality: 'cardinal', spanMonths: 3, needSeasonal: ['cancer', 'libra', 'capricorn'], note: '四轴基本座 → 白羊盘只管首季,须再起夏至/秋分/冬至三盘' };
+	}
+	if(rule === 'capricorn_year'){
+		return { rule, modality: mod, spanMonths: 12, needSeasonal: [], note: '摩羯入境(冬至)为政治/财政年首,主管全年' };
+	}
+	return { rule, modality: mod, spanMonths: 12, needSeasonal: [], note: '白羊入境盘主管全年(其余三盘作分季补充,非必需)' };
+}
+
 // 扫描一段时间内的世俗事件。opts: {startDate:'YYYY-MM-DD', endDate, zone, lat, lon, gpsLat, gpsLon, kinds?:[...]}。
 // kinds 省略 = 全要。返回归一化的 {lunations, eclipses, ingresses, stations, err}。
 export async function fetchMundaneEvents(opts){
@@ -154,4 +172,4 @@ export async function chartAtMoment(momentStr, fieldsLike){
 	}
 }
 
-export default { fetchMundaneEvents, fetchLunations, chartAtMoment, momentToDateTime, ingressDurationMonths, nodeDistance, signKeyFromLon };
+export default { fetchMundaneEvents, fetchLunations, chartAtMoment, momentToDateTime, ingressDurationMonths, ingressGovernance, nodeDistance, signKeyFromLon };

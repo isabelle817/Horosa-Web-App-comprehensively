@@ -3,6 +3,8 @@
 // 输入 buildFacts(chart) 的 facts；输出可直接渲染的判词行。判词措辞中性、不带任何出处人名/书名。
 import { buildFacts } from '../engine/chartFacts';
 import { SIGNS } from '../data/signs';
+import { computeAlmuten } from '../lifespan/lifespanEngine';
+import { rulesetConfig } from './ruleset';
 
 // 行星的世俗象征（社会阶层 / 领域）。
 export const PLANET_SIGNIFICATION = {
@@ -211,6 +213,118 @@ export const ECLIPSE_DECAN = {
 	pisces: ['海事水患、欺瞒丑闻。', '瘟疫毒害、精神之困。', '隐秘消散、虚妄迷茫。'],
 };
 
+// ═══════════ §13 世运判读真值源(WP-3;措辞中性,无人名书名;高转录风险表标 TODO 待校)═══════════
+
+// §13.1 十二宫世运义(三栏:国家本体 / 机构团体 / 事务·所断)。
+export const MUNDANE_HOUSE_FULL = {
+	1: { body: '国家/全体国民、国势总貌、国民健康与士气', institution: '—', affairs: '国家总体状态、声誉、人口、公共卫生总览' },
+	2: { body: '国家财政/经济/财富、货币', institution: '银行、国库、证券(财富面)', affairs: 'GDP、贸易收入、币值、国家流动性、税收所得' },
+	3: { body: '通讯、交通、邻国', institution: '媒体/报刊、铁路公路、邮电、基础教育', affairs: '流言舆论、国内交通、与邻国往来、短途运输' },
+	4: { body: '国土、土地、农业、矿产、不动产', institution: '在野党/反对派、内政、气候收成', affairs: '房地产、矿业、领土、事情的结局、反对势力' },
+	5: { body: '出生率、儿童、享乐', institution: '娱乐/剧院/体育、证券交易/投机', affairs: '国民生育、文体活动、社交、青少年、投机风潮' },
+	6: { body: '公共卫生/疾病、劳工', institution: '军队(服役面)、公务员、工会、卫生系统', affairs: '疫病、罢工、劳资、军需后勤、底层民生' },
+	7: { body: '外交、战与和、公开的敌人', institution: '条约、国际关系、外国', affairs: '战争/和平、外交纠纷、外国势力、国际诉讼、联姻' },
+	8: { body: '死亡率、国债、涉外财务', institution: '税务(涉外)、利率、保险', affairs: '国民死亡、外债、利率、危机、神秘/隐秘事务' },
+	9: { body: '宗教、法律、司法、高等教育', institution: '教会、法院/法官、大学、远洋外贸', affairs: '信仰、长途/国际、科学、出版、公共道德、航运' },
+	10: { body: '政府、元首(君主/总统)、执政当局', institution: '当权派、最高权威、国家声望', affairs: '国运走向、政权、王朝、当局威信(最重)' },
+	11: { body: '立法机构(议会/国会)、盟友', institution: '地方议会、友邦、社团', affairs: '立法、国家目标/愿景、结盟、改革诉求' },
+	12: { body: '监狱、医院、收容机构、暗敌', institution: '间谍、社会福利、秘密机关', affairs: '隐患、阴谋、犯罪、流放、自我消耗、瘟疫隔离' },
+};
+
+// §13.2 十曜世运义(两栏:人·权力 / 领域·行业·群体)。
+export const PLANET_MUNDANE_FULL = {
+	sun: { powerRole: '元首/君主/总统、政府权威、国家活力', domains: '显贵、领导阶层、国家整体' },
+	moon: { powerRole: '平民/大众、公众情绪与舆论、女性', domains: '民生、家庭、人口流动、生育、日常用品、海事(潮)' },
+	mercury: { powerRole: '媒体/新闻、青年、文书', domains: '报刊、贸易、交通、通讯、教育、文学、条约文件' },
+	venus: { powerRole: '外交/和平、青年女性', domains: '艺术/文化、货币、娱乐、时尚、社会和谐、结盟' },
+	mars: { powerRole: '军队/军人、警察', domains: '战争/暴力、工业制造、罢工动乱、火灾事故、外科、能源' },
+	jupiter: { powerRole: '司法/法官、神职/教会、贵族富人', domains: '法律、银行金融、扩张繁荣、外贸、乐观、保险' },
+	saturn: { powerRole: '劳工/工人阶级、老年、当权的旧秩序', domains: '国土/农业/矿业、死亡、紧缩/萧条、限制、基建、国家机器' },
+	uranus: { powerRole: '革命者/激进派、改革者', domains: '革命/政变、航空航天、科技/电力/电子、突变、独立运动、罢工' },
+	neptune: { powerRole: '理想主义者、社会主义/共产主义', domains: '石油/天然气、海洋/海军、丑闻腐败欺诈、影视、毒品瘟疫、化工、意识形态幻象' },
+	pluto: { powerRole: '极权/独裁、地下势力、群众运动', domains: '核/原子、权力剧变、有组织犯罪、人口/世代力量、恐怖主义、深层重构' },
+};
+
+// §13.3 十二座世运气质(模式·元素 + 气质)。
+export const SIGN_MUNDANE_TEMPER = {
+	aries: { modeElement: '基本·火', temper: '开创、军事、冲动、战争与新政权的发起' },
+	taurus: { modeElement: '固定·土', temper: '财富、土地、农业、货币稳定、固执' },
+	gemini: { modeElement: '变动·风', temper: '媒体舆论、交通、贸易、谈判、善变' },
+	cancer: { modeElement: '基本·水', temper: '民众情绪、国土家园、民族主义、海事' },
+	leo: { modeElement: '固定·火', temper: '王权/元首、威望、专制、娱乐与盛典' },
+	virgo: { modeElement: '变动·土', temper: '劳工、公共卫生、官僚、批评、效率' },
+	libra: { modeElement: '基本·风', temper: '外交、法律、条约、和平/战争的均衡' },
+	scorpio: { modeElement: '固定·水', temper: '危机、税收/国债、隐秘权力、死亡与重生' },
+	sagittarius: { modeElement: '变动·火', temper: '宗教、司法、外贸、远方、扩张与理想' },
+	capricorn: { modeElement: '基本·土', temper: '国家结构、当权、紧缩、传统建制' },
+	aquarius: { modeElement: '固定·风', temper: '革命、立法、科技、群众、理想社会' },
+	pisces: { modeElement: '变动·水', temper: '意识形态、瓦解、瘟疫、海洋、牺牲与混沌' },
+};
+
+const _SIGN_BASE = { aries: 0, taurus: 30, gemini: 60, cancer: 90, leo: 120, virgo: 150, libra: 180, scorpio: 210, sagittarius: 240, capricorn: 270, aquarius: 300, pisces: 330 };
+
+// §13.4 世运恒星(22 主星;sign+signlon 为 ≈2000 回归黄经位置;royal=四王星方位。lon2000 = 座基+座内度)。
+// ⚠ 高转录风险:黄经按手册 ≈2000 现值,用时以 mundaneStarLon 按盘日岁差(~50.29″/yr)校正。
+export const MUNDANE_FIXED_STARS = [
+	{ key: 'algol', nameCn: '大陵五', name: 'Algol', sign: 'taurus', signlon: 26 + 10 / 60, nature: '♄/♃', meaning: '最凶之星;失首、暴力、群体灾祸', royal: null },
+	{ key: 'alcyone', nameCn: '昴宿(七姊妹)', name: 'Alcyone', sign: 'gemini', signlon: 0, nature: '☽/♂', meaning: '哭泣、失明、悲伤、群体之殇', royal: null },
+	{ key: 'aldebaran', nameCn: '毕宿五', name: 'Aldebaran', sign: 'gemini', signlon: 9 + 47 / 60, nature: '♂', meaning: '荣誉正直、军功;受克则暴力倾覆', royal: '东' },
+	{ key: 'rigel', nameCn: '参宿七', name: 'Rigel', sign: 'gemini', signlon: 16 + 50 / 60, nature: '♃/♄', meaning: '技术/军事显赫、财富', royal: null },
+	{ key: 'bellatrix', nameCn: '参宿五', name: 'Bellatrix', sign: 'gemini', signlon: 20 + 57 / 60, nature: '♂/☿', meaning: '决断、军功、事故', royal: null },
+	{ key: 'capella', nameCn: '五车二', name: 'Capella', sign: 'gemini', signlon: 21 + 51 / 60, nature: '♂/☿', meaning: '好奇、显位', royal: null },
+	{ key: 'betelgeuse', nameCn: '参宿四', name: 'Betelgeuse', sign: 'gemini', signlon: 28 + 45 / 60, nature: '♂/☿', meaning: '武功、好运', royal: null },
+	{ key: 'sirius', nameCn: '天狼', name: 'Sirius', sign: 'cancer', signlon: 14 + 5 / 60, nature: '♃/♂', meaning: '荣名、财富、灼热', royal: null },
+	{ key: 'castor', nameCn: '北河二', name: 'Castor', sign: 'cancer', signlon: 20 + 14 / 60, nature: '☿', meaning: '文才、骤起骤落', royal: null },
+	{ key: 'pollux', nameCn: '北河三', name: 'Pollux', sign: 'cancer', signlon: 23 + 13 / 60, nature: '♂', meaning: '恶少年、争斗、暴力', royal: null },
+	{ key: 'procyon', nameCn: '南河三', name: 'Procyon', sign: 'cancer', signlon: 25 + 47 / 60, nature: '☿/♂', meaning: '骤升后跌、躁动', royal: null },
+	{ key: 'praesepe', nameCn: '鬼宿星团', name: 'Praesepe', sign: 'leo', signlon: 7 + 20 / 60, nature: '♂/☽', meaning: '眼疾、群体不幸', royal: null },
+	{ key: 'regulus', nameCn: '轩辕十四', name: 'Regulus', sign: 'leo', signlon: 29 + 50 / 60, nature: '♂/♃', meaning: '王权、军功、权位;报复则倾覆', royal: '北' },
+	{ key: 'vindemiatrix', nameCn: '东次将', name: 'Vindemiatrix', sign: 'libra', signlon: 9 + 57 / 60, nature: '♄/☿', meaning: '寡妇制造者、损失', royal: null },
+	{ key: 'spica', nameCn: '角宿一', name: 'Spica', sign: 'libra', signlon: 23 + 50 / 60, nature: '♀/♂', meaning: '最吉之星;天赋、繁荣、护佑', royal: null },
+	{ key: 'arcturus', nameCn: '大角', name: 'Arcturus', sign: 'libra', signlon: 24 + 14 / 60, nature: '♂/♃', meaning: '远行致富、新路', royal: null },
+	{ key: 'antares', nameCn: '心宿二', name: 'Antares', sign: 'sagittarius', signlon: 9 + 46 / 60, nature: '♂/♃', meaning: '武勋;鲁莽、毁灭、极端', royal: '西' },
+	{ key: 'vega', nameCn: '织女一', name: 'Vega', sign: 'capricorn', signlon: 15 + 19 / 60, nature: '♀/☿', meaning: '艺术、魅力、易逝', royal: null },
+	{ key: 'altair', nameCn: '河鼓二(牛郎)', name: 'Altair', sign: 'aquarius', signlon: 1 + 47 / 60, nature: '♂/♃', meaning: '大胆、骤名、危险', royal: null },
+	{ key: 'fomalhaut', nameCn: '北落师门', name: 'Fomalhaut', sign: 'pisces', signlon: 3 + 52 / 60, nature: '♀/☿', meaning: '名望、理想;亦可堕落', royal: '南' },
+	{ key: 'markab', nameCn: '室宿一', name: 'Markab', sign: 'pisces', signlon: 23 + 29 / 60, nature: '♂/☿', meaning: '火器/兵刃之险', royal: null },
+	{ key: 'scheat', nameCn: '室宿二', name: 'Scheat', sign: 'pisces', signlon: 29 + 22 / 60, nature: '♂/☿(♄)', meaning: '灾难、溺水、极端不幸', royal: null },
+].map((st) => Object.assign(st, { lon2000: (_SIGN_BASE[st.sign] + st.signlon) % 360 }));
+
+// §13.5 相位世运框(硬/软、入/出相、紧密 orb)。
+export const MUNDANE_ASPECT_FRAME = {
+	hard: '合/对分/四分(硬相位):事件、张力、冲突、转折;凶星(♂♄)及外行星(♅♆♇)硬相位克四轴/日月 → 危机、动荡、灾害。',
+	soft: '三分/六分(软相位):顺遂、缓和、机遇、建设。',
+	applying: '入相位(applying)定未发将发与应期;出相位(separating)表已过之事。',
+	tight: '世运重紧密容许度(≤1–3°)与触发时点(流运精确合/克地区盘或入境盘关键点的日期)。',
+};
+
+// 恒星按盘日岁差校正后的当前黄经(2000→year,线性 ~50.29″/yr ≈ 1°/71.6 年前移)。
+export function mundaneStarLon(star, year){
+	if(!star){ return null; }
+	const base = (typeof star.lon2000 === 'number') ? star.lon2000 : (_SIGN_BASE[star.sign] + (star.signlon || 0));
+	const y = (typeof year === 'number' && isFinite(year)) ? year : 2000;
+	return ((base + (y - 2000) * (50.29 / 3600)) % 360 + 360) % 360;
+}
+
+// 给定若干「点」{key,lon}(行星/四轴),返回每点合恒星的命中(默认 orb 1.5°,按盘年岁差校正)。
+export function mundaneFixedStarHits(points, year, orb){
+	const o = (typeof orb === 'number' && orb > 0) ? orb : 1.5;
+	const hits = [];
+	(points || []).forEach((pt) => {
+		if(!pt || typeof pt.lon !== 'number'){ return; }
+		MUNDANE_FIXED_STARS.forEach((st) => {
+			const slon = mundaneStarLon(st, year);
+			let d = Math.abs(((pt.lon - slon + 180) % 360 + 360) % 360 - 180);
+			if(d <= o){
+				hits.push({ point: pt.key, pointCn: pt.cn || pt.key, star: st.key, starCn: st.nameCn,
+					nature: st.nature, meaning: st.meaning, royal: st.royal, orb: Math.round(d * 100) / 100, starLon: slon });
+			}
+		});
+	});
+	return hits;
+}
+
+
 const MUNDANE_PLANET_KEYS = ['sun', 'moon', 'mercury', 'venus', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune', 'pluto'];
 
 // 描述一张世俗盘：逐个行星落宫的世俗判词。返回行数组。
@@ -228,14 +342,87 @@ export function describeMundaneChart(facts){
 			planetCn: PLANET_CN[k] || k,
 			planetGlyph: PLANET_GLYPH[k] || '',
 			signification: PLANET_SIGNIFICATION[k] || '',
+			planetMundane: PLANET_MUNDANE_FULL[k] || null,
+			sign: p.sign,
+			signTemper: p.sign ? SIGN_MUNDANE_TEMPER[p.sign] || null : null,
 			house: p.house,
 			houseMeaning,
+			houseFull: MUNDANE_HOUSE_FULL[p.house] || null,
 			angularity: p.angularity,
 			retro: p.retro,
 			text,
 		});
 	});
 	return rows;
+}
+
+// 从 facts 取 10 行星 + 上升/天顶 各点(供 §13.4 恒星命中检测)。
+export function buildMundaneStarPoints(facts){
+	if(!facts || !facts.planets){ return []; }
+	const pts = [];
+	MUNDANE_PLANET_KEYS.forEach((k) => {
+		const pl = facts.planets[k];
+		if(pl && pl.lon != null){ pts.push({ key: k, cn: PLANET_CN[k] || k, lon: pl.lon }); }
+	});
+	const lons = facts.lons || {};
+	if(lons.asc != null){ pts.push({ key: 'asc', cn: '上升', lon: lons.asc }); }
+	if(lons.mc != null){ pts.push({ key: 'mc', cn: '天顶', lon: lons.mc }); }
+	return pts;
+}
+
+// §16.2 年主/盘主 victor:5 hylegiacal 点(ASC/☉/☽/福点/产前朔望)各 5 重尊贵(庙5旺4三分3界2外观1)累加 + 偶然(宫位)
+// → 累分最高者 = 年主/盘主。复用主限法 computeAlmuten(同一尊贵引擎);缺福点/产前朔望则按可用点累计,不臆造。
+// rulesetKey(可选)：传入世运规则集 → 按其 termsVariant/triplicityVariant 给 computeAlmuten 换界主/三分主表;
+// 缺省=默认现状(modern=埃及界+多罗修斯,零回归)。中世纪档 termsVariant='ptolemaic' → 界主换托勒密界、
+// 年主/盘主据之重算(切档真换 victor);三分各档暂皆多罗修斯(换表机制已打通,供日后档位选用)。
+export function describeMundaneVictor(facts, rulesetKey){
+	if(!facts || !facts.planets || !facts.meta){ return null; }
+	const cfg = rulesetConfig(rulesetKey);
+	const variants = { termsVariant: cfg.termsVariant, triplicityVariant: cfg.triplicityVariant };
+	let alm = null;
+	try{ alm = computeAlmuten(facts, variants); }catch(e){ return null; }
+	if(!alm || !alm.winner){ return null; }
+	const scores = Object.keys(alm.totals || {})
+		.map((k) => ({ planet: k, cn: PLANET_CN[k] || k, glyph: PLANET_GLYPH[k] || '', score: alm.totals[k] }))
+		.sort((a, b) => b.score - a.score);
+	const POINT_CN = { asc: '上升', sun: '太阳', moon: '月亮', fortune: '福点', syzygy: '产前朔望' };
+	return {
+		victor: alm.winner, victorCn: PLANET_CN[alm.winner] || alm.winner, victorGlyph: PLANET_GLYPH[alm.winner] || '',
+		victorMundane: PLANET_MUNDANE_FULL[alm.winner] || null,
+		scores,
+		points: (alm.points || []).map((pt) => POINT_CN[pt] || pt),
+		maxScore: scores.length ? scores[0].score : 0,
+	};
+}
+
+// §8.5 入境盘判读骨架:上升座+主星(状态) / 第10宫主星+太阳=政权 / 月亮=民生 / 临四轴星(凶星标红) / 外行星落宫。
+export function describeIngressSkeleton(facts){
+	if(!facts || !facts.planets){ return null; }
+	const P = facts.planets;
+	const H = facts.houses || {};
+	const ascSign = (facts.meta && facts.meta.ascSign) || (H[1] && H[1].sign) || null;
+	const ascMeta = ascSign ? SIGNS[ascSign] : null;
+	const ascRulerKey = ascMeta ? ascMeta.domicile : null;
+	const arP = ascRulerKey ? P[ascRulerKey] : null;
+	const tenthRuler = H[10] ? H[10].ruler : null;
+	const tenthRulerP = tenthRuler ? P[tenthRuler] : null;
+	const hInfo = (pl) => (pl && pl.house) ? { house: pl.house, houseMeaning: MUNDANE_HOUSE_MEANINGS[pl.house] || '', sign: pl.sign } : null;
+	const angular = MUNDANE_PLANET_KEYS.filter((k) => P[k] && P[k].angularity === 'angular');
+	const outers = ['uranus', 'neptune', 'pluto'].filter((k) => P[k] && P[k].house)
+		.map((k) => ({ key: k, cn: PLANET_CN[k] || k, house: P[k].house, houseMeaning: MUNDANE_HOUSE_MEANINGS[P[k].house] || '', sign: P[k].sign }));
+	return {
+		ascSign, ascSignCn: ascMeta ? ascMeta.cn : ascSign,
+		ascTemper: ascSign ? SIGN_MUNDANE_TEMPER[ascSign] || null : null,
+		ascRuler: ascRulerKey, ascRulerCn: PLANET_CN[ascRulerKey] || ascRulerKey,
+		ascRulerHouse: arP ? arP.house : null, ascRulerSign: arP ? arP.sign : null,
+		ascRulerAngular: !!(arP && arP.angularity === 'angular'), ascRulerRetro: !!(arP && arP.retro),
+		sun: hInfo(P.sun), moon: hInfo(P.moon),
+		tenthRuler, tenthRulerCn: PLANET_CN[tenthRuler] || tenthRuler,
+		tenthRulerHouse: tenthRulerP ? tenthRulerP.house : null,
+		tenthPlanets: ((H[10] && H[10].planets) || []).map((k) => ({ key: k, cn: PLANET_CN[k] || k })),
+		angular: angular.map((k) => ({ key: k, cn: PLANET_CN[k] || k, house: P[k].house, malefic: k === 'mars' || k === 'saturn' })),
+		outers,
+	};
 }
 
 // 描述一张食盘：被食光体（日食看太阳、月食看月亮）的元素 + 分度判词。
@@ -265,9 +452,106 @@ export function describeEclipse(facts, kind){
 	};
 }
 
+// §10.3 食增强:受冲行星(对食点 合/刑/冲 硬相位,凶星标红)+ 食点落宫。受冲星定受影响主题。
+// orbScheme(可选):'by_aspect'(现代,默认 ≤3° — 零回归) / 'moiety'(古典 moiety,收紧至 ≤2°,更严择受冲星)。
+const ECLIPSE_ORB_BY_SCHEME = { by_aspect: 3, moiety: 2 };
+export function describeEclipseAfflictions(facts, kind, orbScheme){
+	if(!facts || !facts.planets){ return null; }
+	const lumKey = kind === 'lunar' ? 'moon' : 'sun';
+	const lum = facts.planets[lumKey];
+	if(!lum || lum.lon == null){ return null; }
+	const eLon = lum.lon;
+	const maxOrb = ECLIPSE_ORB_BY_SCHEME[orbScheme] != null ? ECLIPSE_ORB_BY_SCHEME[orbScheme] : ECLIPSE_ORB_BY_SCHEME.by_aspect;
+	const ASP = [{ deg: 0, cn: '合' }, { deg: 90, cn: '刑' }, { deg: 180, cn: '冲' }];
+	const MAL = ['mars', 'saturn', 'uranus', 'neptune', 'pluto'];
+	const afflictors = [];
+	['mars', 'saturn', 'jupiter', 'venus', 'mercury', 'uranus', 'neptune', 'pluto'].forEach((k) => {
+		if(k === lumKey){ return; }
+		const p = facts.planets[k];
+		if(!p || p.lon == null){ return; }
+		const d = Math.abs(((p.lon - eLon + 180) % 360 + 360) % 360 - 180);
+		let best = null;
+		ASP.forEach((a) => { const orb = Math.abs(d - a.deg); if(orb <= maxOrb && (!best || orb < best.orb)){ best = { aspect: a.cn, orb: Math.round(orb * 10) / 10 }; } });
+		if(best){ afflictors.push({ planet: k, cn: PLANET_CN[k] || k, glyph: PLANET_GLYPH[k] || '', aspect: best.aspect, orb: best.orb, malefic: MAL.indexOf(k) >= 0 }); }
+	});
+	afflictors.sort((a, b) => a.orb - b.orb);
+	return { afflictors, house: lum.house || null, houseMeaning: lum.house ? (MUNDANE_HOUSE_MEANINGS[lum.house] || '') : '', orbScheme: orbScheme || 'by_aspect', maxOrb };
+}
+
+// §14.2 托勒密天气占星(astrometeorology,best-effort):入境/朔望盘中「临角」或「合月(≤12°)」之行星 → 该季/旬天气倾向。
+const WEATHER_PLANET = {
+	saturn: '寒冷·阴湿·霜雪', mars: '炎热·干旱·雷火', jupiter: '温和·多风·晴好', venus: '多云·阵雨·和暖',
+	mercury: '多变·疾风·骤雨', sun: '合于时令·偏燥', moon: '潮湿·多雨·雾',
+};
+const WEATHER_KEYS = ['saturn', 'mars', 'jupiter', 'venus', 'mercury', 'sun', 'moon'];
+export function describeMundaneWeather(facts){
+	if(!facts || !facts.planets){ return null; }
+	const P = facts.planets;
+	const moonLon = (P.moon && P.moon.lon != null) ? P.moon.lon : null;
+	const sep = (a, b) => Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
+	const factors = [];
+	WEATHER_KEYS.forEach((k) => {
+		const p = P[k];
+		if(!p){ return; }
+		const angular = p.angularity === 'angular';
+		const nearMoon = (k !== 'moon' && moonLon != null && p.lon != null) ? (sep(p.lon, moonLon) <= 12) : false;
+		if(angular || nearMoon){
+			factors.push({ key: k, cn: PLANET_CN[k] || k, weather: WEATHER_PLANET[k], angular, nearMoon, malefic: (k === 'saturn' || k === 'mars') });
+		}
+	});
+	if(!factors.length){ return null; }
+	return { factors };
+}
+
+// §8.4 产前朔望:入境/盘前最近一次新/满月(后端 Result 已含 Syzygy 对象;victor 定局已取其度,此处独立展示)。
+export function describeMundaneSyzygy(facts){
+	if(!facts || !facts.result){ return null; }
+	const r = facts.result;
+	let o = (r.objectMap && r.objectMap.Syzygy) || null;
+	if(!o){ const objs = (r.chart && r.chart.objects) || []; for(let i = 0; i < objs.length; i++){ if(objs[i].id === 'Syzygy'){ o = objs[i]; break; } } }
+	if(!o || o.lon == null){ return null; }
+	const sign = o.sign ? String(o.sign).toLowerCase() : Object.keys(_SIGN_BASE)[Math.floor((((o.lon % 360) + 360) % 360) / 30)];
+	const signlon = (o.signlon != null) ? o.signlon : (((o.lon % 30) + 30) % 30);
+	const phase = (facts.meta && facts.meta.moonPhase) ? facts.meta.moonPhase.phase : null;
+	// 渐盈(waxing)→ 盘前最近朔望=新月(日月合);渐亏(waning)→ 满月(日月冲)。
+	const kind = (phase === 'waxing') ? '新月(日月合)' : (phase === 'waning' ? '满月(日月冲)' : null);
+	return { sign, signCn: sign ? ((SIGNS[sign] || {}).cn || sign) : null, signlon, lon: o.lon, kind };
+}
+
+// §16.3 会合盘指示星:木/土谁在会合座更得力 → 该纪元偏吉(扩张)/凶(紧缩);会合座元素 → 气候与领域。
+const ELEMENT_CLIMATE = {
+	fire: '炎热干旱、能源与战事、行动激进而易躁',
+	earth: '务实保守、农业土地与财经、稳定而变革迟缓',
+	air: '思潮舆论、外交通讯与科技、多议而善变',
+	water: '民情危机、水患疫病、情绪与意识形态主导',
+};
+export function mundaneConjunctionIndicator(facts){
+	if(!facts || !facts.planets){ return null; }
+	const J = facts.planets.jupiter, S = facts.planets.saturn;
+	if(!J || !S || J.lon == null || S.lon == null){ return null; }
+	const sep = Math.abs(((J.lon - S.lon + 180) % 360 + 360) % 360 - 180);
+	if(sep > 12){ return null; }   // 仅木土会合盘(角距 ≤12°)显示指示星
+	const signKey = J.sign || Object.keys(_SIGN_BASE)[Math.floor((((J.lon % 360) + 360) % 360) / 30)];
+	const meta = SIGNS[signKey] || {};
+	const exP = meta.exaltation ? meta.exaltation.planet : null;
+	let stronger = null;
+	if(meta.domicile === 'jupiter' || exP === 'jupiter'){ stronger = 'jupiter'; }
+	else if(meta.domicile === 'saturn' || exP === 'saturn'){ stronger = 'saturn'; }
+	let tone, toneText;
+	if(stronger === 'jupiter'){ tone = '吉'; toneText = '木星得力 → 该纪元偏扩张繁荣、法制与宗教昌明、外贸金融活跃。'; }
+	else if(stronger === 'saturn'){ tone = '凶'; toneText = '土星得力 → 该纪元偏紧缩萧条、旧秩序强化、结构性限制与危机。'; }
+	else { tone = '平'; toneText = '木土均无本质尊贵 → 吉凶相参,主导力量看落宫与所受相位。'; }
+	return {
+		sep: +sep.toFixed(2), signKey, signCn: meta.cn || signKey,
+		element: meta.element || '', climate: meta.element ? ELEMENT_CLIMATE[meta.element] : '',
+		stronger, strongerCn: stronger ? (PLANET_CN[stronger] || stronger) : '木土均势',
+		tone, toneText,
+	};
+}
+
 // 便捷：直接传 chart（Result）。
 export function describeMundaneFromChart(chart){
 	try{ return describeMundaneChart(buildFacts(chart)); }catch(e){ return []; }
 }
 
-export default { describeMundaneChart, describeEclipse, describeMundaneFromChart, MUNDANE_HOUSE_MEANINGS, PLANET_IN_MUNDANE_HOUSE, PLANET_SIGNIFICATION, ECLIPSE_ELEMENT, ECLIPSE_DECAN };
+export default { describeMundaneChart, mundaneConjunctionIndicator, describeEclipse, describeEclipseAfflictions, describeMundaneWeather, describeMundaneSyzygy, describeMundaneFromChart, describeIngressSkeleton, describeMundaneVictor, buildMundaneStarPoints, mundaneFixedStarHits, mundaneStarLon, MUNDANE_HOUSE_MEANINGS, MUNDANE_HOUSE_FULL, PLANET_IN_MUNDANE_HOUSE, PLANET_SIGNIFICATION, PLANET_MUNDANE_FULL, SIGN_MUNDANE_TEMPER, MUNDANE_FIXED_STARS, MUNDANE_ASPECT_FRAME, ECLIPSE_ELEMENT, ECLIPSE_DECAN };

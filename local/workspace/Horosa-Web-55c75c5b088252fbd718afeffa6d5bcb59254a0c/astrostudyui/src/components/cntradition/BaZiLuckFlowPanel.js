@@ -3,6 +3,7 @@ import { Spin } from 'antd';
 import { Solar, SolarMonth } from 'lunar-javascript';
 import { BaziMonthTime, NaYin, SixtyJiaZi } from '../../constants/ZWConst';
 import { fetchPreciseJieqiYear } from '../../utils/preciseCalcBridge';
+import { buildFlowMonthsByYear } from '../../utils/baziLunarLocal';
 
 const GANS = ['甲', '乙', '丙', '丁', '戊', '己', '庚', '辛', '壬', '癸'];
 const ZHIS = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'];
@@ -208,22 +209,27 @@ function birthYearFrom(value){
 	return match ? Number(match[1]) : new Date().getFullYear();
 }
 
-function buildLuckItems(value, dayStem){
+// 虚岁(默认,与原星阙梯位一致,出生=1岁) / 周岁(real=虚岁-1,出生=0岁)。仅展示层换算。
+function ageNum(age, ageStyle){
+	return ageStyle === 'real' ? Math.max(0, Number(age) - 1) : Number(age);
+}
+
+function buildLuckItems(value, dayStem, showXiaoyun, ageStyle){
 	const dirs = Array.isArray(value.direction) ? value.direction : [];
 	const birthYear = birthYearFrom(value);
 	const items = [];
-	if(dirs.length){
+	if(dirs.length && showXiaoyun !== false){
 		const firstStart = num(dirs[0].startYear, birthYear);
 		const firstAge = Math.max(1, num(dirs[0].age, firstStart - birthYear + 1) - 1);
 		items.push({
 			id: 'small',
 			type: 'small',
 			top: `${birthYear}`,
-			sub: `1-${firstAge}岁`,
+			sub: `${ageNum(1, ageStyle)}-${ageNum(firstAge, ageStyle)}岁`,
 			labelOnly: ['小', '运'],
 			startYear: birthYear,
 			age: 1,
-			years: buildSmallYears(value, birthYear, firstStart, dayStem),
+			years: buildSmallYears(value, birthYear, firstStart, dayStem, ageStyle),
 		});
 	}
 	dirs.forEach((dir, idx)=>{
@@ -234,7 +240,7 @@ function buildLuckItems(value, dayStem){
 			id: `direct-${idx}`,
 			type: 'direct',
 			top: `${startYear}`,
-			sub: `${age}岁`,
+			sub: `${ageNum(age, ageStyle)}岁`,
 			startYear,
 			age,
 			pillar,
@@ -244,26 +250,29 @@ function buildLuckItems(value, dayStem){
 	return items;
 }
 
-function buildSmallYears(value, birthYear, firstStartYear, dayStem){
+function buildSmallYears(value, birthYear, firstStartYear, dayStem, ageStyle){
 	const small = Array.isArray(value.smallDirection) ? value.smallDirection : [];
 	const total = Math.max(1, firstStartYear - birthYear);
 	return Array.from({ length: total }).map((_, idx)=>{
 		const year = birthYear + idx;
 		const src = small[idx] || small.find((item)=>num(item.year, -1) === year);
 		const pillar = normalizePillar(src || yearGanzi(year), dayStem);
+		// 该年真正的流年（小运期：小运干支入「大运」列、流年入「流年」列）。
+		const liunianPillar = normalizePillar((src && src.yearGanzi) ? src.yearGanzi : yearGanzi(year), dayStem);
 		return {
 			id: `small-year-${year}`,
 			top: `${year}`,
-			sub: `${idx + 1}岁`,
+			sub: `${ageNum(idx + 1, ageStyle)}岁`,
 			year,
 			age: idx + 1,
 			pillar,
+			liunianPillar,
 			foot: pillar.naYin,
 		};
 	});
 }
 
-function buildYearItems(luck, dayStem){
+function buildYearItems(luck, dayStem, ageStyle){
 	if(!luck){
 		return [];
 	}
@@ -278,7 +287,7 @@ function buildYearItems(luck, dayStem){
 		return {
 			id: `year-${year}`,
 			top: `${year}`,
-			sub: `${luck.age + idx}岁`,
+			sub: `${ageNum(luck.age + idx, ageStyle)}岁`,
 			year,
 			age: luck.age + idx,
 			pillar,
@@ -298,8 +307,20 @@ function buildMonthItems(yearItem, dayStem, jieqiYears){
 	if(!yearItem){
 		return [];
 	}
-	if(Array.isArray(yearItem.flowMonths) && yearItem.flowMonths.length){
-		return yearItem.flowMonths.map((item, idx, arr)=>{
+	// perf 惰性化：本地引擎只对「当前公历年所在大运」eager 算 flowMonths，其余流年 flowMonths=null。
+	// 读到 null 时按公历年 on-demand 补算（buildFlowMonthsByYear，与 eager 逐字等价），令展示口径与
+	// 当前大运一致；补算不到（后端盘无 year / 异常）才退回下方 BaziMonthTime 静态表 fallback。
+	let flowMonths = Array.isArray(yearItem.flowMonths) ? yearItem.flowMonths : null;
+	if(flowMonths === null && Number.isFinite(Number(yearItem.year)) && dayStem){
+		try{
+			const recomputed = buildFlowMonthsByYear(Number(yearItem.year), null, dayStem);
+			if(Array.isArray(recomputed) && recomputed.length){
+				flowMonths = recomputed;
+			}
+		}catch(e){ /* 落回 BaziMonthTime fallback */ }
+	}
+	if(Array.isArray(flowMonths) && flowMonths.length){
+		return flowMonths.map((item, idx, arr)=>{
 			const startSolar = Solar.fromYmd(item.year, item.month, item.day || 1);
 			const next = arr[idx + 1];
 			const endSolar = next ? Solar.fromYmd(next.year, next.month, next.day || 1) : startSolar.next(30);
@@ -431,7 +452,7 @@ class BaZiLuckFlowPanel extends Component{
 
 	resetSelection(value){
 		const dayStem = this.getDayStem(value);
-		const luckItems = buildLuckItems(value, dayStem);
+		const luckItems = buildLuckItems(value, dayStem, this.props.showXiaoyun !== false, this.props.ageStyle);
 		const now = new Date();
 		let luck = luckItems.find((item)=>{
 			if(item.type === 'small'){
@@ -440,7 +461,7 @@ class BaZiLuckFlowPanel extends Component{
 			}
 			return now.getFullYear() >= item.startYear && now.getFullYear() < item.startYear + 10;
 		}) || luckItems[0];
-		const years = buildYearItems(luck, dayStem);
+		const years = buildYearItems(luck, dayStem, this.props.ageStyle);
 		const year = years.find((item)=>item.year === now.getFullYear()) || years[0];
 		const months = buildMonthItems(year, dayStem, this.state.jieqiYears);
 		const month = months.find((item)=>now >= item.startDate && now < item.endDate) || months[0];
@@ -465,14 +486,15 @@ class BaZiLuckFlowPanel extends Component{
 		}
 		const value = this.props.fullValue || {};
 		const dayStem = this.getDayStem(value);
-		const luckItems = buildLuckItems(value, dayStem);
+		const luckItems = buildLuckItems(value, dayStem, this.props.showXiaoyun !== false, this.props.ageStyle);
 		const luck = luckItems.find((item)=>item.id === this.state.luckId) || luckItems[0];
-		const yearItems = buildYearItems(luck, dayStem);
+		const yearItems = buildYearItems(luck, dayStem, this.props.ageStyle);
 		const year = yearItems.find((item)=>item.id === this.state.yearId) || yearItems[0];
 		const monthItems = buildMonthItems(year, dayStem, this.state.jieqiYears);
 		const month = monthItems.find((item)=>item.id === this.state.monthId) || monthItems[0];
 		const dayItems = buildDayItems(month, dayStem);
 		const day = dayItems.find((item)=>item.id === this.state.dayId) || dayItems[0];
+		const isSmall = luck && luck.type === 'small';
 		this.props.onSelectionChange({
 			luckId: luck ? luck.id : '',
 			yearId: year ? year.id : '',
@@ -482,9 +504,10 @@ class BaZiLuckFlowPanel extends Component{
 			luckStartYear: luck ? luck.startYear : null,
 			year: year ? year.year : null,
 			luckRaw: luck && luck.raw ? luck.raw : null,
-			yearRaw: year && year.raw ? year.raw : null,
-			luckPillar: luck && luck.pillar ? luck.pillar : null,
-			yearPillar: year && year.pillar ? year.pillar : null,
+			yearRaw: (isSmall || !(year && year.raw)) ? null : year.raw,
+			// 小运期：小运干支(year.pillar)入大运列、当年流年(year.liunianPillar)入流年列。
+			luckPillar: (luck && luck.pillar) ? luck.pillar : (isSmall && year ? year.pillar : null),
+			yearPillar: year ? ((isSmall && year.liunianPillar) ? year.liunianPillar : year.pillar) : null,
 			monthPillar: month && month.pillar ? month.pillar : null,
 			dayPillar: day && day.pillar ? day.pillar : null,
 		});
@@ -493,9 +516,9 @@ class BaZiLuckFlowPanel extends Component{
 	currentSelectedYear(){
 		const value = this.props.fullValue || {};
 		const dayStem = this.getDayStem(value);
-		const luckItems = buildLuckItems(value, dayStem);
+		const luckItems = buildLuckItems(value, dayStem, this.props.showXiaoyun !== false, this.props.ageStyle);
 		const luck = luckItems.find((item)=>item.id === this.state.luckId) || luckItems[0];
-		const yearItems = buildYearItems(luck, dayStem);
+		const yearItems = buildYearItems(luck, dayStem, this.props.ageStyle);
 		const year = yearItems.find((item)=>item.id === this.state.yearId) || yearItems[0];
 		return year && year.year ? year.year : null;
 	}
@@ -624,9 +647,9 @@ class BaZiLuckFlowPanel extends Component{
 			);
 		}
 		const dayStem = this.getDayStem(value);
-		const luckItems = buildLuckItems(value, dayStem);
+		const luckItems = buildLuckItems(value, dayStem, this.props.showXiaoyun !== false, this.props.ageStyle);
 		const luck = luckItems.find((item)=>item.id === this.state.luckId) || luckItems[0];
-		const yearItems = buildYearItems(luck, dayStem);
+		const yearItems = buildYearItems(luck, dayStem, this.props.ageStyle);
 		const year = yearItems.find((item)=>item.id === this.state.yearId) || yearItems[0];
 		const monthItems = buildMonthItems(year, dayStem);
 		const month = monthItems.find((item)=>item.id === this.state.monthId) || monthItems[0];
@@ -638,7 +661,7 @@ class BaZiLuckFlowPanel extends Component{
 				style={{ maxHeight: typeof height === 'number' ? height - 22 : undefined }}
 			>
 				{this.renderAxis('大运', '起运', luckItems, luck ? luck.id : '', (item)=>{
-					const years = buildYearItems(item, dayStem);
+					const years = buildYearItems(item, dayStem, this.props.ageStyle);
 					const months = buildMonthItems(years[0], dayStem, this.state.jieqiYears);
 					const days = buildDayItems(months[0], dayStem);
 					this.setState({

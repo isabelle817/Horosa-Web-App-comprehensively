@@ -9,11 +9,13 @@ import WuZhaoMain from '../wuzhao/WuZhaoMain';
 import TaiXuanMain from '../taixuan/TaiXuanMain';
 import JingJueMain from '../jingjue/JingJueMain';
 import ShenYiShuMain from '../shenyishu/ShenYiShuMain';
+import GeomancyMain from '../geomancy/GeomancyMain';
+import TarotMain from '../tarot/TarotMain';
 import XQIcon from '../xq-icons';
 
 
 const TabPane = Tabs.TabPane;
-const CNYIBU_VALID_TABS = ['suzhan', 'jinkou', 'tongshefa', 'huangji', 'wuzhao', 'taixuan', 'jingjue', 'shenyishu'];
+const CNYIBU_VALID_TABS = ['suzhan', 'jinkou', 'tongshefa', 'huangji', 'wuzhao', 'taixuan', 'jingjue', 'shenyishu', 'geomancy', 'tarot'];
 
 function getRuntimeCnYiBuTab(){
 	if(typeof window === 'undefined'){
@@ -64,6 +66,12 @@ class CnYiBuMain extends Component{
 				},
 				shenyishu:{
 					fun: null
+				},
+				geomancy:{
+					fun: null
+				},
+				tarot:{
+					fun: null
 				}
 			},
 		};
@@ -77,6 +85,8 @@ class CnYiBuMain extends Component{
 			taixuan: createRef(),
 			jingjue: createRef(),
 			shenyishu: createRef(),
+			geomancy: createRef(),
+			tarot: createRef(),
 		};
 
 		this.changeTab = this.changeTab.bind(this);
@@ -175,6 +185,7 @@ class CnYiBuMain extends Component{
 				{ label: '太玄', icon: 'quickNote', onClick: ()=>this.changeTab('taixuan') },
 				{ label: '荆诀', icon: 'book', onClick: ()=>this.changeTab('jingjue') },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 				{ label: '太乙', icon: 'quickReturn', onClick: ()=>this.navigateFeature('taiyi') },
 				{ label: '遁甲', icon: 'quickTransit', onClick: ()=>this.navigateFeature('dunjia') },
 				{ label: 'AI助手', icon: 'quickAi', onClick: ()=>this.navigateFeature('aianalysis') },
@@ -194,6 +205,7 @@ class CnYiBuMain extends Component{
 				{ label: '太玄', icon: 'quickNote', onClick: ()=>this.changeTab('taixuan') },
 				{ label: '荆诀', icon: 'book', onClick: ()=>this.changeTab('jingjue') },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 				{ label: 'AI助手', icon: 'quickAi', onClick: ()=>this.navigateFeature('aianalysis') },
 			];
 		}else if(tab === 'tongshefa'){
@@ -213,6 +225,7 @@ class CnYiBuMain extends Component{
 				{ label: '太玄', icon: 'quickNote', onClick: ()=>this.changeTab('taixuan') },
 				{ label: '荆诀', icon: 'book', onClick: ()=>this.changeTab('jingjue') },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 			];
 		}else if(tab === 'huangji'){
 			const rightPanelTab = activeChild && activeChild.state ? activeChild.state.rightPanelTab : 'overview';
@@ -229,6 +242,7 @@ class CnYiBuMain extends Component{
 				{ label: '太玄', icon: 'quickNote', onClick: ()=>this.changeTab('taixuan') },
 				{ label: '荆诀', icon: 'book', onClick: ()=>this.changeTab('jingjue') },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 			];
 		}else if(tab === 'wuzhao'){
 			const rightPanelTab = activeChild && activeChild.state ? activeChild.state.rightPanelTab : 'overview';
@@ -244,6 +258,7 @@ class CnYiBuMain extends Component{
 				{ label: '太玄', icon: 'quickNote', onClick: ()=>this.changeTab('taixuan') },
 				{ label: '荆诀', icon: 'book', onClick: ()=>this.changeTab('jingjue') },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 			];
 		}else if(tab === 'taixuan'){
 			const rightPanelTab = activeChild && activeChild.state ? activeChild.state.rightPanelTab : 'overview';
@@ -258,6 +273,7 @@ class CnYiBuMain extends Component{
 				{ label: '快照', icon: 'quickAi', active: rightPanelTab === 'snapshot', onClick: ()=>this.runChildAction((child)=>child.setRightPanelTab('snapshot')) },
 				{ label: '荆诀', icon: 'book', onClick: ()=>this.changeTab('jingjue') },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 			];
 		}else if(tab === 'jingjue'){
 			const rightPanelTab = activeChild && activeChild.state ? activeChild.state.rightPanelTab : 'overview';
@@ -270,6 +286,19 @@ class CnYiBuMain extends Component{
 				{ label: '保存', icon: 'quickReturn', onClick: ()=>this.runChildAction((child)=>child.clickSaveCase()) },
 				{ label: '快照', icon: 'quickAi', active: rightPanelTab === 'snapshot', onClick: ()=>this.runChildAction((child)=>child.setRightPanelTab('snapshot')) },
 				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
+			];
+		}else if(tab === 'tarot'){
+			const rightPanelTab = activeChild && activeChild.state ? activeChild.state.rightPanelTab : 'overview';
+			actions = [
+				{ label: '抽牌', icon: 'quickPrimary', onClick: ()=>this.runChildAction((child)=>child.drawCards()) },
+				{ label: '总览', icon: 'quickComposite', active: rightPanelTab === 'overview', onClick: ()=>this.runChildAction((child)=>child.setRightPanelTab('overview')) },
+				{ label: '牌位', icon: 'quickTransit', active: rightPanelTab === 'positions', onClick: ()=>this.runChildAction((child)=>child.setRightPanelTab('positions')) },
+				{ label: '牌义', icon: 'quickFirdaria', active: rightPanelTab === 'meanings', onClick: ()=>this.runChildAction((child)=>child.setRightPanelTab('meanings')) },
+				{ label: '锁定复现', icon: 'book', onClick: ()=>this.runChildAction((child)=>child.clickReproduce()) },
+				{ label: '保存', icon: 'quickReturn', onClick: ()=>this.runChildAction((child)=>child.clickSaveCase()) },
+				{ label: '神易数', icon: 'quickTransit', onClick: ()=>this.changeTab('shenyishu') },
+				{ label: '地占', icon: 'note', onClick: ()=>this.changeTab('geomancy') },
 			];
 		}else{
 			const rightPanelTab = activeChild && activeChild.state ? activeChild.state.rightPanelTab : 'overview';
@@ -422,6 +451,30 @@ class CnYiBuMain extends Component{
 							height={contentHeight}
 							fields={this.props.fields}
 							hook={this.state.hook.shenyishu}
+							dispatch={this.props.dispatch}
+							hideQuickDock
+						/>
+					</TabPane>
+
+					<TabPane tab="地占" key="geomancy">
+						<GeomancyMain
+							ref={this.childRefs.geomancy}
+							value={this.props.chart}
+							height={contentHeight}
+							fields={this.props.fields}
+							hook={this.state.hook.geomancy}
+							dispatch={this.props.dispatch}
+							hideQuickDock
+						/>
+					</TabPane>
+
+					<TabPane tab="塔罗" key="tarot">
+						<TarotMain
+							ref={this.childRefs.tarot}
+							value={this.props.chart}
+							height={contentHeight}
+							fields={this.props.fields}
+							hook={this.state.hook.tarot}
 							dispatch={this.props.dispatch}
 							hideQuickDock
 						/>

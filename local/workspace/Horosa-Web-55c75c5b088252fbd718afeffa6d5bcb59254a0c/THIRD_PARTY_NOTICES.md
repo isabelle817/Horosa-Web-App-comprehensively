@@ -113,3 +113,43 @@ v2.1.6 对 vendored `kinqimen`（MIT）做了历法修复（月柱交节边界�
 - **qfdk/qimen** — https://github.com/qfdk/qimen — License: **MIT**。奇门在线排盘参考。
 
 局数表、阴阳遁、三元规则以古典转盘文献及 vendored kinqimen 既有数据为准。本项目整体许可：AGPL-3.0-only。
+
+## d3-celestial（天球坐标参考数据）
+
+- Project: d3-celestial — celestial map data (constellation lines / IAU boundaries / Chinese asterisms)
+- Repository: https://github.com/ofrohn/d3-celestial
+- Copyright: Copyright (c) 2015, Olaf Frohn
+- License: BSD 3-Clause License
+- Use in Horosa: the 天文馆 3D celestial sphere uses J2000 RA/Dec polylines **derived from** this dataset for the Western 88-constellation stick figures, IAU constellation boundaries, and the Chinese Three-Enclosures (三垣) walls. The data is reshaped into Horosa's own JSON schema under `Horosa-Web/astrostudyui/src/data/{constellationLines,constellationBounds,sanyuanWalls}.json`; Horosa keeps its own renderer and styling.
+
+BSD 3-Clause requires retaining the above copyright notice in redistributions; it is preserved here.
+
+## flatlib
+
+- Project: flatlib — Python library for traditional astrology
+- Repository: https://github.com/flatangle/flatlib
+- Copyright: Copyright (c) João Ventura and contributors
+- License: MIT License
+- Use in Horosa: a maintained fork is vendored under `Horosa-Web/flatlib-ctrad2` and used by the Python calculation engine for traditional / Hellenistic chart computations. Horosa keeps its own UI and adapts flatlib output for display.
+
+The upstream flatlib MIT license applies to the vendored fork.
+
+## Swiss Ephemeris
+
+- Project: Swiss Ephemeris (used via the `pyswisseph` Python binding)
+- Repository: https://github.com/astrorigin/pyswisseph (binding); upstream https://www.astro.com/swisseph/
+- Copyright: Copyright (c) Astrodienst AG, Zürich
+- License: GNU Affero General Public License, version 3 (AGPL-3.0)
+- Use in Horosa: the Swiss Ephemeris provides the high-precision planetary and lunar ephemeris underlying Horosa's astrological and astronomical calculations (positions, houses, eclipses, declinations, etc.).
+
+Horosa is distributed under the AGPL-3.0, satisfying the Swiss Ephemeris licensing requirement; the full AGPL-3.0 license text applies.
+
+## Stellarium（界面交互设计灵感）
+
+- Project: Stellarium — open-source planetarium
+- Repository: https://github.com/Stellarium/stellarium
+- Copyright: Copyright (c) Stellarium contributors
+- License: GNU General Public License, version 2 (GPL-2.0)
+- Use in Horosa: no code, assets, or data from Stellarium are bundled or vendored. Horosa's built-in planetarium independently implements its own rendering, camera controls, and time playback; certain user-facing interaction conventions (e.g. click-to-track an object with the camera, drag-to-release tracking, seamless time-based extrapolation between server samples) are inspired by long-standing planetarium UX as exemplified by Stellarium. Source-level references to the name appear only in code comments describing the design intent.
+
+No GPL-licensed source from Stellarium is incorporated; this notice is provided as an acknowledgment of design inspiration.

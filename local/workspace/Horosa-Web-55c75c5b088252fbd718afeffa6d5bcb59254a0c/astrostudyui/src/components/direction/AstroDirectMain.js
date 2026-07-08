@@ -29,6 +29,7 @@ import AstroJaynesProgressions from '../astro/AstroJaynesProgressions';
 import AstroEphemeris from '../astro/AstroEphemeris';
 import AstroProgressions from '../astro/AstroProgressions';
 import AstroReturnTimeline from '../astro/AstroReturnTimeline';
+import AstroPrenatalSyzygy from '../astro/AstroPrenatalSyzygy';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import * as AstroHelper from '../astro/AstroHelper';
@@ -46,6 +47,7 @@ import {
 	getPdMethodLabel,
 	getPdTimeKeyLabel,
 } from '../../utils/primaryDirectionSync';
+import FreezeInactive from '../comp/FreezeInactive';
 
 const TabPane = Tabs.TabPane;
 const AI_EXPORT_PLANET_INFO = {
@@ -598,7 +600,10 @@ class AstroDirectMain extends Component{
 					returntimeline:{
 						fun: null
 					},
-		
+					prenatalsyzygy:{
+						fun: null
+					},
+
 				},
 		};
 
@@ -1115,29 +1120,36 @@ class AstroDirectMain extends Component{
 					style={{ height: height }}
 				>
 					<TabPane tab="赤纬推运" key="jaynesprog">
+						<FreezeInactive active={this.state.currentTab === "jaynesprog"}>
 							<AstroJaynesProgressions
 								value={this.props.chartObj}
 								height={height}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="恒星推运" key="vedicprog">
+						<FreezeInactive active={this.state.currentTab === "vedicprog"}>
 							<AstroVedicProgressions
 								value={this.props.chartObj}
 								height={height}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="推运" key="progressions">
+						<FreezeInactive active={this.state.currentTab === "progressions"}>
 							<AstroProgressions
 								value={this.props.chartObj}
 								height={height}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="主限法" key="primarydirect">
+						<FreezeInactive active={this.state.currentTab === "primarydirect"}>
 							<AstroPrimaryDirection
 								value={this.props.chartObj} height={height}
 								showPdBounds={this.props.fields && this.props.fields.showPdBounds ? this.props.fields.showPdBounds.value : 1}
@@ -1153,37 +1165,47 @@ class AstroDirectMain extends Component{
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="界推运" key="distributions">
+						<FreezeInactive active={this.state.currentTab === "distributions"}>
 						<AstroDistributions
 							value={this.props.chartObj}
 							height={height}
 						/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="年龄推进点" key="agepoint">
+						<FreezeInactive active={this.state.currentTab === "agepoint"}>
 						<AstroAgePoint
 							value={this.props.chartObj}
 							height={height}
 						/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="星历" key="ephemeris">
+						<FreezeInactive active={this.state.currentTab === "ephemeris"}>
 							<AstroEphemeris
 								value={this.props.chartObj}
 								height={height}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="回归轴" key="returntimeline">
+						<FreezeInactive active={this.state.currentTab === "returntimeline"}>
 							<AstroReturnTimeline
 								value={this.props.chartObj}
 								height={height}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="主限法盘" key="primarydirchart">
+						<FreezeInactive active={this.state.currentTab === "primarydirchart"}>
 							<AstroPrimaryDirectionChart
 								value={this.props.chartObj}
 								height={height}
@@ -1206,9 +1228,11 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								hook={this.state.hook.primarydirchart}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="波斯向运" key="persiandirected">
+						<FreezeInactive active={this.state.currentTab === "persiandirected"}>
 							<AstroPersianDirected
 								value={this.props.chartObj}
 								height={height}
@@ -1217,9 +1241,11 @@ class AstroDirectMain extends Component{
 								chartDisplay={this.props.chartDisplay}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="行星弧" key="planetaryarc">
+						<FreezeInactive active={this.state.currentTab === "planetaryarc"}>
 							<AstroPlanetaryArc
 								value={this.props.chartObj}
 								height={height}
@@ -1228,10 +1254,12 @@ class AstroDirectMain extends Component{
 								chartDisplay={this.props.chartDisplay}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="小限法" key="profection">
-						<AstroProfection 
+						<FreezeInactive active={this.state.currentTab === "profection"}>
+						<AstroProfection
 							value={this.props.chartObj} 
 							height={height} 
 							chartDisplay={this.props.chartDisplay}
@@ -1239,13 +1267,15 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
-								hook={this.state.hook.profection} 
+								hook={this.state.hook.profection}
 							/>
 
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="太阳弧" key="solararc">
-						<AstroSolarArc 
+						<FreezeInactive active={this.state.currentTab === "solararc"}>
+						<AstroSolarArc
 							value={this.props.chartObj} 
 							height={height} 
 							chartDisplay={this.props.chartDisplay}
@@ -1253,13 +1283,15 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
-								hook={this.state.hook.solararc} 
+								hook={this.state.hook.solararc}
 							/>
 
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="太阳返照" key="solarreturn">
-						<AstroSolarReturn 
+						<FreezeInactive active={this.state.currentTab === "solarreturn"}>
+						<AstroSolarReturn
 							value={this.props.chartObj} 
 							height={height} 
 							chartDisplay={this.props.chartDisplay}
@@ -1267,12 +1299,14 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
-								hook={this.state.hook.solarreturn} 
+								hook={this.state.hook.solarreturn}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="月亮返照" key="lunarreturn">
-						<AstroLunarReturn 
+						<FreezeInactive active={this.state.currentTab === "lunarreturn"}>
+						<AstroLunarReturn
 							value={this.props.chartObj} 
 							height={height} 
 							chartDisplay={this.props.chartDisplay}
@@ -1280,12 +1314,14 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
-								hook={this.state.hook.lunarreturn} 
+								hook={this.state.hook.lunarreturn}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="流年法" key="givenyear">
-						<AstroGivenYear 
+						<FreezeInactive active={this.state.currentTab === "givenyear"}>
+						<AstroGivenYear
 							value={this.props.chartObj} 
 							height={height} 
 							chartDisplay={this.props.chartDisplay}
@@ -1293,20 +1329,24 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
-								hook={this.state.hook.givenyear} 
+								hook={this.state.hook.givenyear}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="法达星限" key="firdaria">
-						<AstroFirdaria 
-								value={this.props.chartObj} 
+						<FreezeInactive active={this.state.currentTab === "firdaria"}>
+						<AstroFirdaria
+								value={this.props.chartObj}
 								height={height}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="十年大运" key="decennials">
+						<FreezeInactive active={this.state.currentTab === "decennials"}>
 						<AstroDecennials
 							value={this.props.chartObj}
 							height={height}
@@ -1317,12 +1357,14 @@ class AstroDirectMain extends Component{
 							showAstroMeaning={this.props.showAstroMeaning}
 							hook={this.state.hook.decennials}
 						/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="黄道星释" key="zodialrelease">
-						<AstroZR  
-							value={this.props.chartObj} 
-							height={this.props.height} 
+						<FreezeInactive active={this.state.currentTab === "zodialrelease"}>
+						<AstroZR
+							value={this.props.chartObj}
+							height={this.props.height}
 							chartDisplay={this.props.chartDisplay}
 								planetDisplay={this.props.planetDisplay}
 								lotsDisplay={this.props.lotsDisplay}
@@ -1330,9 +1372,11 @@ class AstroDirectMain extends Component{
 								showAstroMeaning={this.props.showAstroMeaning}
 								hook={this.state.hook.zodialrelease}
 							/>
+						</FreezeInactive>
 					</TabPane>
 
 					<TabPane tab="行星年龄" key="planetaryages">
+						<FreezeInactive active={this.state.currentTab === "planetaryages"}>
 							<AstroPlanetaryAges
 								value={this.props.chartObj}
 								height={height}
@@ -1342,18 +1386,22 @@ class AstroDirectMain extends Component{
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 					<TabPane tab="129年系统" key="yearsystem129">
+						<FreezeInactive active={this.state.currentTab === "yearsystem129"}>
 							<AstroYearSystem129
 								value={this.props.chartObj}
 								height={height}
 								showPlanetHouseInfo={this.props.showPlanetHouseInfo}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+						</FreezeInactive>
 						</TabPane>
 
 						<TabPane tab="Balbillus" key="balbillus">
+							<FreezeInactive active={this.state.currentTab === "balbillus"}>
 							<AstroBalbillus
 								value={this.props.chartObj}
 								height={height}
@@ -1362,38 +1410,60 @@ class AstroDirectMain extends Component{
 								lotsDisplay={this.props.lotsDisplay}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+							</FreezeInactive>
 						</TabPane>
 
 						<TabPane tab="三分主星" key="triplicityrulers">
+							<FreezeInactive active={this.state.currentTab === "triplicityrulers"}>
 							<AstroTriplicityRulers
 								value={this.props.chartObj}
 								height={height}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+							</FreezeInactive>
 						</TabPane>
 
 						<TabPane tab="数字相位" key="keypoints">
+							<FreezeInactive active={this.state.currentTab === "keypoints"}>
 							<AstroKeypoints
 								value={this.props.chartObj}
 								height={height}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+							</FreezeInactive>
 						</TabPane>
 
 						<TabPane tab="月相推运" key="lunationphase">
+							<FreezeInactive active={this.state.currentTab === "lunationphase"}>
 							<AstroLunationPhase
 								value={this.props.chartObj}
 								height={height}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+							</FreezeInactive>
+						</TabPane>
+
+						<TabPane tab="产前朔望" key="prenatalsyzygy">
+							<FreezeInactive active={this.state.currentTab === "prenatalsyzygy"}>
+							<AstroPrenatalSyzygy
+								value={this.props.chartObj}
+								height={height}
+								chartDisplay={this.props.chartDisplay}
+								planetDisplay={this.props.planetDisplay}
+								lotsDisplay={this.props.lotsDisplay}
+								showAstroMeaning={this.props.showAstroMeaning}
+							/>
+							</FreezeInactive>
 						</TabPane>
 
 						<TabPane tab="多重回归" key="extrareturns">
+							<FreezeInactive active={this.state.currentTab === "extrareturns"}>
 							<AstroExtraReturns
 								value={this.props.chartObj}
 								height={height}
 								showAstroMeaning={this.props.showAstroMeaning}
 							/>
+							</FreezeInactive>
 						</TabPane>
 
 					</Tabs>

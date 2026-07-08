@@ -39,7 +39,6 @@ import 'katex/dist/katex.min.css';
 import styles from './AIAnalysisMain.less';
 import MonacoEditor from './MonacoField';
 import XQIcon from '../xq-icons';
-import ReportPane, { ReportLaunchContext } from './ReportPane';
 import TechniqueSettingsFields from './TechniqueSettingsFields';
 import {
 	XQButton as Button,
@@ -171,7 +170,6 @@ const SECONDARY_TABS = [
 	{ key: 'history', label: '历史', icon: <XQIcon name="calendar" /> },
 	{ key: 'materials', label: '资料', icon: <XQIcon name="book" /> },
 	{ key: 'templates', label: '模版', icon: <XQIcon name="note" /> },
-	{ key: 'report', label: '报告', icon: <XQIcon name="note" /> },
 	{ key: 'settings', label: '设置', icon: <XQIcon name="aiSettings" /> },
 ];
 
@@ -980,8 +978,6 @@ function AIAnalysisMain(props){
 	const [providerForm] = Form.useForm();
 	const abortRef = React.useRef(null);
 	const streamBufferRef = React.useRef('');
-	// 报告 tab 跨组件触发器（renderReportPane 内通过 onAttachLaunch 注册，供对话栏/案例 tab 内的快捷按钮调用）
-	const reportLaunchRef = React.useRef(null);
 	const streamReasoningBufferRef = React.useRef(''); // #16:DeepSeek reasoner 思考过程(独立于答案,仅展示/存档,绝不回灌 messages)
 	const streamUsageRef = React.useRef(null); // 2A：本次流的 usage 计量(末帧到达后由 SSE usage 事件填充)
 	const chatLogRef = React.useRef(null);
@@ -2504,7 +2500,7 @@ function AIAnalysisMain(props){
 			kind: editingMaterial && editingMaterial.kind ? editingMaterial.kind : 'note',
 			folderId: values.folderId || null,
 			tags: normalizeTags(values.tags),
-			// 报告功能：资料按流派标记后，生成报告时可按流派过滤资料
+			// 资料可按流派标记后过滤
 			schools: Array.isArray(values.schools) ? values.schools.filter((s)=>`${s||''}`.trim()) : [],
 			extractedText: `${values.extractedText || ''}`.trim(),
 			searchText: buildMaterialSearchText({
@@ -4194,22 +4190,6 @@ function AIAnalysisMain(props){
 						<Tooltip title="刷新案例"><Button size="small" type="text" icon={<XQIcon name="refresh" />} onClick={()=>setSources(listAnalysisSources())} /></Tooltip>
 						<Tooltip title="添加图片（多媒体输入，仅视觉模型有效）"><Button size="small" type="text" icon={<XQIcon name="import" />} onClick={()=>{ if(imageInputRef.current){ imageInputRef.current.click(); } }} disabled={sending} /></Tooltip>
 						<input ref={imageInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e)=>{ handlePickImages(e.target.files); e.target.value = ''; }} />
-						<Tooltip title="生成报告（按当前案例 + 模板一键生成）"><Button size="small" type="text" icon={<XQIcon name="note" />} onClick={()=>{
-							// 切到 报告 tab，预填当前 active source 的技法/案例
-							setInnerTab('report');
-							setTimeout(()=>{
-								if(reportLaunchRef.current){
-									const cur = activeSource;
-									const sm = `${(cur && cur.record && (cur.record.sourceModule || cur.record.chartType)) || ''}`.toLowerCase();
-									const tech = sm === 'ziwei' ? 'ziwei' : 'bazi';
-									reportLaunchRef.current({
-										technique: tech,
-										caseId: cur ? cur.id : undefined,
-										granularity: 12,
-									});
-								}
-							}, 200);
-						}} /></Tooltip>
 						{sending ? <Tooltip title="停止生成"><Button size="small" type="text" danger icon={<XQIcon name="stop" />} onClick={handleStopStreaming} /></Tooltip> : null}
 					</Space>
 					<div className={styles.composerSend}>
@@ -4943,22 +4923,6 @@ function AIAnalysisMain(props){
 		);
 	}
 
-	function renderReportPane(){
-		const parsed = parseModelSelection(modelSelection);
-		const currentModel = parsed.model || '';
-		return (
-			<ReportPane
-				sources={sources}
-				profile={activeProviderProfile}
-				model={currentModel}
-				providerName={activeProviderProfile && activeProviderProfile.name || ''}
-				providerProfiles={providerProfiles}
-				modelSelection={modelSelection}
-				modelOptions={modelOptions}
-				onAttachLaunch={(fn)=>{ reportLaunchRef.current = fn; }}
-			/>
-		);
-	}
 
 	function renderSettingsPane(){
 		const healthSummary = providerProfiles.reduce((acc, item)=>{
@@ -5113,10 +5077,7 @@ function AIAnalysisMain(props){
 					<TabPane tab={<span>{SECONDARY_TABS[3].icon}模版</span>} key="templates">
 						<div className={styles.pane}>{renderTemplatesPane()}</div>
 					</TabPane>
-					<TabPane tab={<span>{SECONDARY_TABS[4].icon}报告</span>} key="report">
-						<div className={styles.pane}>{renderReportPane()}</div>
-					</TabPane>
-					<TabPane tab={<span>{SECONDARY_TABS[5].icon}设置</span>} key="settings">
+					<TabPane tab={<span>{SECONDARY_TABS[4].icon}设置</span>} key="settings">
 						<div className={styles.pane}>{renderSettingsPane()}</div>
 					</TabPane>
 				</Tabs>

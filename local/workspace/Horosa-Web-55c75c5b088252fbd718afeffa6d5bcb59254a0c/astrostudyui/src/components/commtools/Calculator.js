@@ -8,6 +8,7 @@ import * as Constants from '../../utils/constants';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import styles from '../../css/styles.less';
+import { safeLocalStorageGet, safeLocalStorageSet } from '../../utils/safeStorage';
 
 const Option = Select.Option;
 const { TextArea } = Input;
@@ -123,7 +124,7 @@ export default class Calculator extends Component{
             formula: result.formula,
             time: now.getTime(),
         }
-        localStorage.setItem("CalculatorFormula", JSON.stringify(formulajson));
+        safeLocalStorageSet("CalculatorFormula", JSON.stringify(formulajson));
 
 		this.setState(st);
 	}
@@ -308,7 +309,7 @@ export default class Calculator extends Component{
     componentDidMount(){
         let formula = null;
         try{
-            formula = localStorage.getItem("CalculatorFormula")
+            formula = safeLocalStorageGet("CalculatorFormula")
             if(formula){
                 let obj = JSON.parse(formula);
                 let now = new Date();

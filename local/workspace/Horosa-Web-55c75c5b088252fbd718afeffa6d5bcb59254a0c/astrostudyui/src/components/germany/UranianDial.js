@@ -4,7 +4,10 @@ import { randomStr } from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import * as AstroText from '../../constants/AstroText';
 import { projectToDial, cursorReadout, spreadDialAngles, antiscion } from '../../utils/uranianDial';
+import { factorLabel } from '../../data/uranianMeanings';
 
+// 字形 hover 名(增强):原名 · 因子义(factorLabel 缺则只剩原名)。
+const glyphTip = (id) => { const n = AstroText.AstroMsgCN[id] || id; const lab = factorLabel(id); return lab && lab !== n ? n + ' · ' + lab : n; };
 const TAU = Math.PI * 2;
 const norm360 = (x) => ((x % 360) + 360) % 360;
 // 逆时针(0°在正上、度数向左增)，与全站星盘一致(AstroHelper.signsBand 用负角=逆时针)。
@@ -20,7 +23,10 @@ const SECTORS = [
 ];
 
 // 概念环颜色（与本命区分；本命用图表描边色 currentColor）。
-const RING_TONE = { natal: 'currentColor', transit: '#c0392b', solararc: '#1f7a5a' };
+// 行运/太阳弧改用语义令牌(凶红/玉绿),暗黑/明亮自适应,且与右栏读数 tag(UranianDialMain.ringTone)同色一致。
+const RING_TONE = { natal: 'currentColor', transit: 'var(--horosa-jx-xiong, #c0392b)', solararc: 'var(--horosa-jade, #1f7a5a)',
+	// WP-9 合盘叠盘人(最多 4):取应用既有强调色族,四人以蓝/紫/青/琥珀区分(与本命 currentColor/行运红/太阳弧绿 不撞)。
+	syn0: 'var(--horosa-accent, #2f7df1)', syn1: '#8e6fd0', syn2: '#1f8a8a', syn3: '#c08a2f' };
 const POINTER_COLOR = '#e23b3b';
 
 export default class UranianDial extends Component {
@@ -38,8 +44,12 @@ export default class UranianDial extends Component {
 	}
 	componentDidMount(){ this.draw(); }
 	componentDidUpdate(prev){
-		if (prev.base !== this.props.base || prev.rings !== this.props.rings || prev.size !== this.props.size || prev.showTnp !== this.props.showTnp || prev.showAntiscia !== this.props.showAntiscia) {
+		if (prev.base !== this.props.base || prev.rings !== this.props.rings || prev.size !== this.props.size || prev.showTnp !== this.props.showTnp || prev.showAntiscia !== this.props.showAntiscia
+			|| prev.crossPointer !== this.props.crossPointer || prev.showHouseFrames !== this.props.showHouseFrames) {
 			this.draw();
+		} else if (prev.showSumPoints !== this.props.showSumPoints || prev.showArcOpenings !== this.props.showArcOpenings || prev.orb !== this.props.orb || prev.orbPersonal !== this.props.orbPersonal) {
+			// WP-5:和点/差距开关或容许度变 → 仅按当前指针位重发读数(几何不变,无需重 draw)。
+			this.emitReadout();
 		}
 	}
 	componentWillUnmount(){ if(this._raf){ cancelAnimationFrame(this._raf); this._raf = null; } this._detach(); }
@@ -58,17 +68,45 @@ export default class UranianDial extends Component {
 	}
 
 	emitReadout(){
-		const { base, orb, personal, onlyPersonal } = this.props;
-		const out = [];
+		const { base, orb, personal, onlyPersonal, showSumPoints, showArcOpenings, orbPersonal, crossPointer } = this.props;
+		// WP-5:和点/差距读数 + 个人点放宽容许度透传;均缺省时 cursorReadout 行为零回归(只产 body/mid)。
+		const ro = { personal, onlyPersonal, sum: !!showSumPoints, arc: !!showArcOpenings, orbPersonal };
+		// WP-6 十字指针:四臂(主 + ±22.5° + ±67.5° 视觉副臂)各取一次读数,合并去重。
+		// 视觉副臂偏移(度)→ 该臂指向的折叠黄经 = (指针角 + 偏移 − 环旋转) 映射回 0..base;
+		// crossPointer 关时只有主臂(arm 偏移=[0]),与历史逐位等价(零回归)。
+		const armOffsets = crossPointer ? [0, 22.5, -22.5, 67.5, -67.5] : [0];
+		const raw = [];
 		this.rings().forEach((ring) => {
 			const rot = this.rotations[ring.key] || 0;
-			// 指针所指处、该环内容对应的折叠黄经 = (指针角 − 环旋转) 映射回 0..base。
-			const rel = norm360(this.pointerAngle - rot);
-			const lonBase = ((rel / 360 * base) % base + base) % base;
-			cursorReadout(ring.points || [], lonBase, base, orb, { personal, onlyPersonal }).forEach((h) => out.push({ ...h, ring: ring.label, ringKey: ring.key }));
+			armOffsets.forEach((off) => {
+				// 指针(臂)所指处、该环内容对应的折叠黄经 = (指针角 + 副臂偏移 − 环旋转) 映射回 0..base。
+				const rel = norm360(this.pointerAngle + off - rot);
+				const lonBase = ((rel / 360 * base) % base + base) % base;
+				cursorReadout(ring.points || [], lonBase, base, orb, ro).forEach((h) => raw.push({ ...h, ring: ring.label, ringKey: ring.key, cross: off !== 0 }));
+			});
 		});
+		// 合并去重:同环+同类+同因子(body 按 id;mid/sum/arc 按无序对)取最小 sep;任一命中来自副臂则标 [十字]。
+		const out = crossPointer ? this._mergeCrossHits(raw) : raw;
 		out.sort((a, b) => a.sep - b.sep);
 		if (this.props.onCursorChange) this.props.onCursorChange(out);
+	}
+
+	// WP-6:四臂读数合并去重。键 = ring|kind|因子(无序对);保留最小 sep 项;cross 标记保留(任一臂含副臂则 true)。
+	_mergeCrossHits(raw){
+		const keyOf = (h) => {
+			const ids = h.kind === 'body' ? [h.id] : [h.a, h.b].slice().sort();
+			return `${h.ringKey}|${h.kind}|${ids.join('+')}`;
+		};
+		const byKey = new Map();
+		raw.forEach((h) => {
+			const k = keyOf(h);
+			const prev = byKey.get(k);
+			if (!prev) { byKey.set(k, { ...h }); return; }
+			// 同一组多臂命中:保留更近的,cross 取「是否仍标十字」——主臂(cross=false)优先去标。
+			if (h.sep < prev.sep) byKey.set(k, { ...h, cross: h.cross && prev.cross });
+			else prev.cross = prev.cross && h.cross;
+		});
+		return Array.from(byKey.values());
 	}
 
 	applyRingRotation(key, R, emit){
@@ -160,6 +198,14 @@ export default class UranianDial extends Component {
 		}
 		root.append('circle').attr('cx', cx).attr('cy', cy).attr('r', Rtick).attr('fill', 'none').attr('stroke', stroke).attr('stroke-width', 0.9).attr('opacity', 0.6);
 		root.append('circle').attr('cx', cx).attr('cy', cy).attr('r', Rin).attr('fill', 'none').attr('stroke', stroke).attr('stroke-width', 0.9).attr('opacity', 0.45);
+		// —— 六宫框(流派可选;汉堡/美国对称开)：盘面六等分细径向线,辅助读「宫位象限」结构,不旋转 ——
+		if (this.props.showHouseFrames){
+			for (let h = 0; h < 6; h++){
+				const vis = h / 6 * 360;
+				const [hx1, hy1] = polar(cx, cy, Rhole, vis), [hx2, hy2] = polar(cx, cy, Rin, vis);
+				root.append('line').attr('x1', hx1).attr('y1', hy1).attr('x2', hx2).attr('y2', hy2).attr('stroke', stroke).attr('stroke-width', 0.8).attr('stroke-dasharray', '3 3').attr('opacity', 0.22);
+			}
+		}
 		// 自适应刻度(支持任意盘基/谐波 H1..H512)：d3.ticks 取整齐主刻度,主刻度间均分次刻度;比旧版更明显。
 		const majors = d3.ticks(0, base, 9);
 		const majorStep = majors.length > 1 ? (majors[1] - majors[0]) : (base / 9);
@@ -211,7 +257,7 @@ export default class UranianDial extends Component {
 					.attr('font-family', tnp ? 'inherit' : AstroConst.AstroChartFont).attr('font-weight', tnp ? 600 : 400)
 					.style('letter-spacing', tnp ? '0.3px' : '0').style('pointer-events', 'none')
 					.text(glyphCh);
-				gl.append('title').text(ring.label + ' · ' + (AstroText.AstroMsgCN[p.id] || p.id));
+				gl.append('title').text(ring.label + ' · ' + glyphTip(p.id));
 				labels.push({ node: gl, x: lx, y: ly });
 				// 逆行 ℞ 小标(lonspeed<0,主要用于 TNP/行星):随环标签反向旋转保持竖直。
 				if (p.speed != null && p.speed < 0){
@@ -246,22 +292,30 @@ export default class UranianDial extends Component {
 		// —— 可拖红指针（含东西 ±22.5° 标记）——
 		const pg = root.append('g').style('cursor', 'grab');
 		this._pointerG = pg;
-		const drawArrow = (group, deg, col, w, op) => {
+		// dash 可选:为真时主干画虚线(WP-6 十字副臂,强调辅助性);缺省=实线(主臂,零回归)。
+		const drawArrow = (group, deg, col, w, op, dash) => {
 			const [tipx, tipy] = polar(cx, cy, R + 3, deg), [bx, by] = polar(cx, cy, R - 16, deg);
 			// polar 是反向极坐标(x=cx-R·sin a, y=cy-R·cos a),其切向单位向量为 (cos a, -sin a)。
 			// 原 perp=a+π/2 套标准圆 sin/cos 偏出来的是「径向」→ 三点共线,箭头零面积不可见。
 			const a = deg / 360 * TAU;
 			const tx = Math.cos(a), ty = -Math.sin(a);
-			group.append('line').attr('x1', cx).attr('y1', cy).attr('x2', bx).attr('y2', by).attr('stroke', col).attr('stroke-width', w).attr('opacity', op);
+			const ln = group.append('line').attr('x1', cx).attr('y1', cy).attr('x2', bx).attr('y2', by).attr('stroke', col).attr('stroke-width', w).attr('opacity', op);
+			if (dash) ln.attr('stroke-dasharray', '4 3');
 			group.append('polygon').attr('points', `${tipx},${tipy} ${bx + 7 * tx},${by + 7 * ty} ${bx - 7 * tx},${by - 7 * ty}`).attr('fill', col).attr('opacity', op);
 		};
 		drawArrow(pg, 0, POINTER_COLOR, 1.6, 0.9);
 		drawArrow(pg, 180, POINTER_COLOR, 1.2, 0.5);
-		// 东西 22.5° 标记（物理 ±90°，= 16 分相族半个 45°，spec §4.3）
+		// 东西 22.5° 标记（物理 ±90°，= 16 分相族半个 45°）
 		[22.5, -22.5, 157.5, 202.5].forEach((d) => {
 			const [a1, b1] = [polar(cx, cy, R, d), polar(cx, cy, R - 12, d)];
 			pg.append('line').attr('x1', a1[0]).attr('y1', a1[1]).attr('x2', b1[0]).attr('y2', b1[1]).attr('stroke', POINTER_COLOR).attr('stroke-width', 1).attr('opacity', 0.45);
 		});
+		// —— 十字指针(流派可选;纯净派默认开)：±22.5°/±67.5° 完整副臂(16 次谐波四向),随 pg 的 rotate(-A) 同转 ——
+		// 物理偏移 22.5°/67.5° 即 16 分相族在 90°盘上的四档折叠对位(主臂=0/对侧 180 已画)。
+		// 关时一根副臂都不画(零回归);副臂虚线 + 较细 + 半透明,与主臂(实心箭头)区分。
+		if (this.props.crossPointer){
+			[22.5, -22.5, 67.5, -67.5].forEach((d) => drawArrow(pg, d, POINTER_COLOR, 0.9, 0.55, true));
+		}
 		// 指针外圈抓手（在外刻度区，明示可拖）
 		const [hx, hy] = polar(cx, cy, R - 6, 0);
 		pg.append('circle').attr('cx', hx).attr('cy', hy).attr('r', 5).attr('fill', POINTER_COLOR).attr('opacity', 0.92).append('title').text('拖动红指针扫描对齐');

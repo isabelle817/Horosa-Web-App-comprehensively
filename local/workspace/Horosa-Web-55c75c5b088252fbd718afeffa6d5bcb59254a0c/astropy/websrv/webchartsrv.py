@@ -30,14 +30,14 @@ for _cand in reversed(_FLATLIB_CANDIDATES):
     if os.path.isdir(os.path.join(_cand, "flatlib")) and _cand not in sys.path:
         sys.path.insert(0, _cand)
 
-from astrostudy.perchart import PerChart
+from astrostudy.perchart import PerChart, push_request_terms, pop_request_terms, parse_terms_variant, push_request_trip, pop_request_trip
 from astrostudy.guostarsect.guostarsect import GuoStarSect
-from astrostudy.thirteenthchart import ThirteenthChart
+from astrostudy.thirteenthchart import ThirteenthChart, HarmonicChart
 from astrostudy.helper import getPredictivesObj
 from websrv.helper import enable_crossdomain
 from websrv._guards import validate_geo
 from websrv.webpredictsrv import PredictSrv
-from websrv.webindiasrv import IndiaAstroSrv
+from websrv.webindiasrv import IndiaAstroSrv, warmup_india
 from websrv.webmodernsrv import ModernAstroSrv
 from websrv.webgermanysrv import GermanyAstroSrv
 from websrv.webjieqisrv import JieQiSrv
@@ -46,6 +46,8 @@ from websrv.webcalc import WebCalcSrv
 from websrv.webacgsrv import AcgSrv
 from websrv.webastroextrasrv import AstroExtraSrv
 from websrv.webplanetariumsrv import PlanetariumSrv
+# 策天飞星:已按《十八飞星策天紫微斗数》全面重写为自有引擎,从 kentang 摘出,直接挂载(不再走 kentang registry)。
+from websrv.webcetiansrv import CeTianSrv
 from websrv.kentang.registry import mount_kentang_services
 
 
@@ -96,6 +98,9 @@ class WebChartSrv:
                 'service': 'chart',
                 'pdSyncRev': self.PD_SYNC_REV,
             }, unpicklable=False)
+        # 界系(termsVariant)请求级临界区:push 取锁+换 essential.TERMS,整盘计算(尊贵/界主/互容接纳/
+        # 围攻日木互容/predictives)都用所选界,finally 必还原+释放锁(防并发串界)。默认埃及=零回归。
+        _terms_orig = None
         try:
             data = cherrypy.request.json
 
@@ -110,6 +115,8 @@ class WebChartSrv:
                 return jsonpickle.encode(_geoerr, unpicklable=False)
             print(data)
 
+            _terms_orig = push_request_terms(data.get('termsVariant', 0), data.get('leoBoundFirst'))
+            _trip_orig = push_request_trip(data.get('triplicity'))
             perchart = PerChart(data)
             guostar = GuoStarSect(perchart)
             guolao_sunrise_time = None
@@ -131,6 +138,7 @@ class WebChartSrv:
                     'zodiacal': perchart.zodiacal,
                     'siderealAyanamsa': perchart.siderealAyanamsa,
                     'doubingSu28': perchart.su28Mode,
+                    'termsVariant': parse_terms_variant(data.get('termsVariant', 0)),
                     'showPdBounds': data.get('showPdBounds', 1),
                     'pdtype': perchart.pdtype,
                     'pdMethod': perchart.pdMethod,
@@ -177,17 +185,23 @@ class WebChartSrv:
                 'err': 'param error'
             }
             return jsonpickle.encode(obj, unpicklable=False)
+        finally:
+            pop_request_trip(_trip_orig)
+            pop_request_terms(_terms_orig)
 
     @cherrypy.expose
     @cherrypy.config(**{'tools.cors.on': True})
     @cherrypy.tools.json_in()
     def chart13(self):
         enable_crossdomain()
+        _terms_orig = None
         try:
             data = cherrypy.request.json
 
             data['tradition'] = False
             data['predictive'] = False
+            _terms_orig = push_request_terms(data.get('termsVariant', 0), data.get('leoBoundFirst'))
+            _trip_orig = push_request_trip(data.get('triplicity'))
             perchart = PerChart(data)
             chart13 = ThirteenthChart(perchart)
             chart13.fractal()
@@ -204,6 +218,7 @@ class WebChartSrv:
                     'zone': data['zone'],
                     'tradition': perchart.tradition,
                     'zodiacal': perchart.zodiacal,
+                    'termsVariant': parse_terms_variant(data.get('termsVariant', 0)),
                     'showPdBounds': data.get('showPdBounds', 1),
                     'pdtype': perchart.pdtype,
                     'pdMethod': perchart.pdMethod,
@@ -247,6 +262,86 @@ class WebChartSrv:
                 'err': 'param error'
             }
             return jsonpickle.encode(obj, unpicklable=False)
+        finally:
+            pop_request_trip(_trip_orig)
+            pop_request_terms(_terms_orig)
+
+    @cherrypy.expose
+    @cherrypy.config(**{'tools.cors.on': True})
+    @cherrypy.tools.json_in()
+    def chart12(self):
+        # 十二分盘(Dwadasamsa):newlon = (lon × 12) mod 360,与十三分盘同结构,仅换 HarmonicChart(perchart, 12)。
+        enable_crossdomain()
+        _terms_orig = None
+        try:
+            data = cherrypy.request.json
+
+            data['tradition'] = False
+            data['predictive'] = False
+            _terms_orig = push_request_terms(data.get('termsVariant', 0), data.get('leoBoundFirst'))
+            _trip_orig = push_request_trip(data.get('triplicity'))
+            perchart = PerChart(data)
+            HarmonicChart(perchart, 12).apply()
+
+            guostar = GuoStarSect(perchart)
+
+            obj = {
+                'params': {
+                    'birth': perchart.getBirthStr(),
+                    'ad': -1 if perchart.isBC else 1,
+                    'lat': data['lat'],
+                    'lon': data['lon'],
+                    'hsys': data['hsys'],
+                    'zone': data['zone'],
+                    'tradition': perchart.tradition,
+                    'zodiacal': perchart.zodiacal,
+                    'termsVariant': parse_terms_variant(data.get('termsVariant', 0)),
+                    'showPdBounds': data.get('showPdBounds', 1),
+                    'pdtype': perchart.pdtype,
+                    'pdMethod': perchart.pdMethod,
+                    'pdTimeKey': perchart.pdTimeKey,
+                    'pdDirect': 1 if perchart.pdDirect else 0,
+                    'pdConverse': 1 if perchart.pdConverse else 0,
+                    'pdAntiscia': 1 if perchart.pdAntiscia else 0,
+                    'pdTerms': 1 if perchart.pdTerms else 0,
+                    'pdSyncRev': self.PD_SYNC_REV,
+                },
+                'chart': perchart.getChartObj(),
+                'receptions': perchart.getReceptions(),
+                'mutuals': perchart.getMutuals(),
+                'declParallel': perchart.getParallel(),
+                'aspects': {
+                    'normalAsp': perchart.getAspects(),
+                    'immediateAsp': perchart.getImmediateAspects(),
+                    'signAsp': perchart.getSignAspects()
+                },
+                'lots': perchart.getPars(perchart.chart),
+                'surround': {
+                    'planets': perchart.surroundPlanets(),
+                    'attacks': perchart.surroundAttacks(),
+                    'houses': perchart.surroundHouses(),
+                    'besiegement': perchart.besiegementDetail()
+                },
+                'guoStarSect': {
+                    'houses': guostar.allTerm()
+                }
+            }
+
+            predictives = getPredictivesObj(data, perchart)
+            if predictives is not None:
+                obj['predictives'] = predictives
+
+            res = jsonpickle.encode(obj, unpicklable=False)
+            return res
+        except:
+            traceback.print_exc()
+            obj = {
+                'err': 'param error'
+            }
+            return jsonpickle.encode(obj, unpicklable=False)
+        finally:
+            pop_request_trip(_trip_orig)
+            pop_request_terms(_terms_orig)
 
 
 def CORS():
@@ -373,6 +468,16 @@ if __name__ == '__main__':
     except Exception:
         traceback.print_exc()
 
+    # 印度盘后端预热:同步跑一个 dummy 印度盘(复用上面 PD 预热已热的 swisseph/星历),把 india
+    # 各子算法的冷计算路径载入,消除每次重启软件后首次进入印度占星的 ~3s 冷启动。同步(非后台线程)
+    # 以避免与首个真实请求并发改 swisseph 全局 sid_mode 致错盘;失败静默不影响服务。
+    try:
+        t1 = time.perf_counter()
+        warmup_india()
+        print('india warmup ready in {0:.3f}s'.format(time.perf_counter() - t1))
+    except Exception:
+        traceback.print_exc()
+
     chart_port = int(os.environ.get('HOROSA_CHART_PORT', '8899'))
     cherrypy.config.update({'server.socket_host': '127.0.0.1',
                             'server.socket_port': chart_port,
@@ -391,6 +496,7 @@ if __name__ == '__main__':
     cherrypy.tree.mount(WebJdnSrv(), '/jdn')
     cherrypy.tree.mount(WebCalcSrv(), '/calc')
     cherrypy.tree.mount(AcgSrv(), '/location')
+    cherrypy.tree.mount(CeTianSrv(), '/cetian')
     cherrypy.tree.mount(AstroExtraSrv(), '/astroextra')
     cherrypy.tree.mount(PlanetariumSrv(), '/planetarium')
     mount_kentang_services(cherrypy)

@@ -42,6 +42,16 @@ class AstroExtraSrv:
     @cherrypy.expose
     @cherrypy.config(**{'tools.cors.on': True})
     @cherrypy.tools.json_in()
+    def prenatal_syzygy(self, **params):
+        enable_crossdomain()
+        try:
+            return self._json(astroextra.compute_prenatal_syzygy(self._payload(params)))
+        except Exception:
+            return self._error()
+
+    @cherrypy.expose
+    @cherrypy.config(**{'tools.cors.on': True})
+    @cherrypy.tools.json_in()
     def ephemeris(self, **params):
         enable_crossdomain()
         try:
@@ -102,6 +112,16 @@ class AstroExtraSrv:
     @cherrypy.expose
     @cherrypy.config(**{'tools.cors.on': True})
     @cherrypy.tools.json_in()
+    def relocation(self, **params):
+        enable_crossdomain()
+        try:
+            return self._json(astroextra.build_relocation(self._payload(params)))
+        except Exception:
+            return self._error()
+
+    @cherrypy.expose
+    @cherrypy.config(**{'tools.cors.on': True})
+    @cherrypy.tools.json_in()
     def greatconj(self, **params):
         enable_crossdomain()
         try:
@@ -116,6 +136,16 @@ class AstroExtraSrv:
         enable_crossdomain()
         try:
             return self._json(astroextra.compute_planet_cycles(self._payload(params)))
+        except Exception:
+            return self._error()
+
+    @cherrypy.expose
+    @cherrypy.config(**{'tools.cors.on': True})
+    @cherrypy.tools.json_in()
+    def barbault(self, **params):
+        enable_crossdomain()
+        try:
+            return self._json(astroextra.compute_barbault(self._payload(params)))
         except Exception:
             return self._error()
 

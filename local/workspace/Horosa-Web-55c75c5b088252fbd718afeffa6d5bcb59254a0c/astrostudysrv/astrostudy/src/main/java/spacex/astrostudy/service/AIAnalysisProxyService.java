@@ -575,6 +575,11 @@ public class AIAnalysisProxyService {
 					return;
 				}
 				Map<String, Object> payload = JsonUtility.toDictionary(dataText);
+				// #54-G：先抽思考增量(thinking_delta)走 reasoning 通道，再抽正文 delta；二者互斥(同一 delta 只命中其一)。
+				String reasoning = extractAnthropicStreamThinking(eventName, payload);
+				if(!StringUtility.isNullOrEmpty(reasoning)) {
+					sendEvent(channel, "reasoning", buildMap("reasoning", reasoning));
+				}
 				String delta = extractAnthropicStreamDelta(eventName, payload);
 				if(!StringUtility.isNullOrEmpty(delta)) {
 					sendEvent(channel, "delta", buildMap("delta", delta));
@@ -600,6 +605,11 @@ public class AIAnalysisProxyService {
 					return;
 				}
 				Map<String, Object> payload = JsonUtility.toDictionary(dataText);
+				// #54-G：先抽思考增量(part.thought==true)走 reasoning 通道，再抽正文 delta(已剔除思考 part)。
+				String reasoning = extractGeminiThinking(payload);
+				if(!StringUtility.isNullOrEmpty(reasoning)) {
+					sendEvent(channel, "reasoning", buildMap("reasoning", reasoning));
+				}
 				String delta = extractGeminiContent(payload);
 				if(!StringUtility.isNullOrEmpty(delta)) {
 					sendEvent(channel, "delta", buildMap("delta", delta));
@@ -952,23 +962,49 @@ public class AIAnalysisProxyService {
 	}
 
 	static String extractGeminiContent(Map<String, Object> payload){
+		// #54-G：Gemini 思考模型把思维链放在 part.thought==true 的 part(其 text 是思考、非正文)；
+		// 正文只取非思考 part(thought 缺省/为 false)，思考增量由 extractGeminiThinking 走 reasoning 通道。
+		return joinGeminiParts(geminiParts(payload), false);
+	}
+
+	// #54-G：抽 Gemini 思考增量(part.thought==true 的 text)→ 与 OpenAI/DeepSeek/Anthropic 同口径走 reasoning 通道。
+	// thinkingConfig.includeThoughts=true 时上游才回 thought part；否则恒空，零回归(普通响应无 thought 字段)。
+	static String extractGeminiThinking(Map<String, Object> payload){
+		return joinGeminiParts(geminiParts(payload), true);
+	}
+
+	// 取 candidates[0].content.parts(缺则空列表)。
+	private static List geminiParts(Map<String, Object> payload){
+		if(payload == null) {
+			return java.util.Collections.emptyList();
+		}
 		Object candidatesObj = payload.get("candidates");
 		if(!(candidatesObj instanceof List) || ((List)candidatesObj).isEmpty()) {
-			return "";
+			return java.util.Collections.emptyList();
 		}
 		Object first = ((List)candidatesObj).get(0);
 		if(!(first instanceof Map)) {
-			return "";
+			return java.util.Collections.emptyList();
 		}
 		Object content = ((Map)first).get("content");
 		if(!(content instanceof Map)) {
-			return "";
+			return java.util.Collections.emptyList();
 		}
 		Object parts = ((Map)content).get("parts");
-		if(!(parts instanceof List)) {
-			return "";
+		return (parts instanceof List) ? (List)parts : java.util.Collections.emptyList();
+	}
+
+	// 按 thought 标志筛 parts 再拼接：wantThought=true 取思考 part；false 取正文 part(thought 缺省/为 false、
+	// 以及纯字符串 part 均视作正文，沿用 joinTextParts 既有行为)。筛后复用 joinTextParts 抽 text/output_text 并 \n 拼接。
+	private static String joinGeminiParts(List parts, boolean wantThought){
+		List<Object> picked = new ArrayList<Object>();
+		for(Object item : parts) {
+			boolean isThought = (item instanceof Map) && Boolean.TRUE.equals(((Map)item).get("thought"));
+			if(isThought == wantThought) {
+				picked.add(item);
+			}
 		}
-		return joinTextParts((List)parts);
+		return joinTextParts(picked);
 	}
 
 	static String extractOpenAIStreamDelta(Map<String, Object> payload){
@@ -1053,7 +1089,36 @@ public class AIAnalysisProxyService {
 		if("content_block_delta".equals(type)) {
 			Object delta = payload.get("delta");
 			if(delta instanceof Map) {
+				// extended thinking 的思考块走 thinking_delta(delta.thinking)，不是正文 text → 此处只取正文，
+				// 思考增量由 extractAnthropicStreamThinking 单独抽出走 reasoning 通道(与 OpenAI/DeepSeek 同口径)。
+				String dt = stringFromAny(((Map)delta).get("type"));
+				if("thinking_delta".equals(dt)) {
+					return "";
+				}
 				return stringFromAny(((Map)delta).get("text"));
+			}
+		}
+		return "";
+	}
+
+	// #54-G：Anthropic extended thinking 的思维链在 content_block_delta.delta.type=='thinking_delta' 的 delta.thinking，
+	// 旧实现只取 delta.text → 思考期前端零输出(明明预算照发、更慢更贵却看不到思考过程)。这里单独抽出思考增量，
+	// 走与 OpenAI/DeepSeek/Ollama 相同的 "reasoning" SSE 通道(前端既有「思考过程」渲染 + 看门狗续命)。
+	static String extractAnthropicStreamThinking(String eventName, Map<String, Object> payload){
+		if(payload == null) {
+			return "";
+		}
+		String type = stringVal(payload, "type");
+		if(StringUtility.isNullOrEmpty(type)) {
+			type = eventName;
+		}
+		if("content_block_delta".equals(type)) {
+			Object delta = payload.get("delta");
+			if(delta instanceof Map) {
+				Map deltaMap = (Map)delta;
+				if("thinking_delta".equals(stringFromAny(deltaMap.get("type")))) {
+					return stringFromAny(deltaMap.get("thinking"));
+				}
 			}
 		}
 		return "";

@@ -91,3 +91,97 @@ def test_tnp_ephemeris_eight_available():
     pc = _perchart()
     got = [flatlib_ephem.getObject(uid, pc.dateTime, pc.pos).id for uid in const.LIST_URANIAN]
     assert len(got) == 8
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WP-1 四流派软预设:includeTnp / personalOrb 新参数。
+# 铁律:uranian=False(合盘 chartcomp 复用)绝对字节不变;新参数仅 uranian=True 生效、默认=现行为。
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _calc_payload(mp):
+    """把 calculate() 结果摊平成可逐元素比对的纯量元组列表(midpoints + aspects),
+    用于 uranian=False 路径的字节级守护:任何字段漂移都会让相等断言失败。"""
+    res = mp.calculate()
+    mids = tuple(
+        (m['idA'], m['idB'], m['lon'], m['signlon'], m['sign'])
+        for m in res['midpoints']
+    )
+    asp_keys = tuple(sorted(res['aspects'].keys()))
+    asp_flat = tuple(
+        (k,) + tuple(
+            (a['idA'], a['idB'], a['aspect'], a.get('delta'))
+            for a in res['aspects'][k]
+        )
+        for k in asp_keys
+    )
+    return mids, asp_flat
+
+
+def test_composite_path_byte_identical_with_new_params_default():
+    # 合盘路径(uranian=False):无论新参数默认与否,calculate() 逐元素必须完全相等。
+    # 钉死「includeTnp/personalOrb 默认值绝不污染 uranian=False」(chartcomp.py MidPoint(chartB) 复用)。
+    base = _calc_payload(MidPoint(_perchart()))
+    with_defaults = _calc_payload(
+        MidPoint(_perchart(), uranian=False, includeTnp=True, personalOrb=None)
+    )
+    assert base == with_defaults, 'uranian=False 路径在新参数默认下逐元素字节不变'
+
+
+def test_composite_path_ignores_new_params_when_set():
+    # 即便显式给 includeTnp=False / personalOrb=5(本应只影响 uranian=True),
+    # uranian=False 分支也必须无视它们 → 与历史输出逐元素相等。
+    base = _calc_payload(MidPoint(_perchart()))
+    forced = _calc_payload(
+        MidPoint(_perchart(), uranian=False, includeTnp=False, personalOrb=5.0)
+    )
+    assert base == forced, 'uranian=False 路径无视 includeTnp/personalOrb(合盘零侵入)'
+
+
+def test_include_tnp_default_contains_eight_tnp():
+    # includeTnp 默认 True:8 颗 TNP 必进中点对(现状口径)。
+    mids = MidPoint(_perchart(), uranian=True).getMidpoints()
+    present = [u for u in const.LIST_URANIAN if u in _pair_ids(mids)]
+    assert len(present) == 8
+
+
+def test_include_tnp_false_drops_tnp_from_pairs():
+    # includeTnp=False(宇宙生物学):TNP 既不入中点对、也不作相位目标;Asc/MC 仍在。
+    mp = MidPoint(_perchart(), uranian=True, includeTnp=False)
+    ids = _pair_ids(mp.getMidpoints())
+    assert not any(u in ids for u in const.LIST_URANIAN), 'includeTnp=False 时 8 TNP 不入中点对'
+    assert const.ASC in ids and const.MC in ids, 'Asc/MC 仍应在(仅去虚星)'
+    # 相位目标也不含 TNP。
+    targets = set(MidPoint(_perchart(), uranian=True, includeTnp=False).calculate()['aspects'].keys())
+    assert not any(u in targets for u in const.LIST_URANIAN)
+
+
+def test_personal_orb_widens_basic_five_only():
+    # personalOrb 放宽仅作用于「相位目标落 Basic Five(Asc/MC/日/月/北交)」;
+    # 同一中点对此时对 Basic Five 用宽 orb、对其他目标用窄 orb。
+    from astrostudy.germany.midpoint import BASIC_FIVE
+
+    class _Obj:
+        def __init__(self, oid, lon):
+            self.id = oid
+            self.lon = lon
+
+    # 构造一个与目标差 2.5° 的中点:窄 orb(1°)判不到,Basic Five 宽 orb(5°)判到「合」。
+    mids = [{'idA': 'a', 'idB': 'b', 'lon': 102.5}]
+    mp = MidPoint(_perchart(), orb=1.0, uranian=True, personalOrb=5.0)
+    sun = const.SUN
+    assert sun in BASIC_FIVE
+    hit_personal = mp.getAspects(_Obj(sun, 100.0), mids)[sun]
+    assert len(hit_personal) == 1 and hit_personal[0]['aspect'] == 0, 'Basic Five 用放宽 orb 命中'
+    # 非 Basic Five 目标(如 Mercury)同样 2.5° 差,窄 orb 下判不到。
+    merc = const.MERCURY
+    assert merc not in BASIC_FIVE
+    hit_other = mp.getAspects(_Obj(merc, 100.0), mids)[merc]
+    assert len(hit_other) == 0, '非 Basic Five 目标仍用窄 orb,2.5° 不命中'
+
+
+def test_personal_orb_none_no_fork():
+    # personalOrb=None:全程用 orb,Basic Five 与其他目标口径一致(无分叉,零回归)。
+    mids = [{'idA': 'a', 'idB': 'b', 'lon': 102.5}]
+    mp = MidPoint(_perchart(), orb=1.0, uranian=True, personalOrb=None)
+    sun_hits = mp.getAspects(type('O', (), {'id': const.SUN, 'lon': 100.0})(), mids)[const.SUN]
+    assert len(sun_hits) == 0, 'personalOrb=None 时 Basic Five 也用窄 orb(2.5° 不命中)'

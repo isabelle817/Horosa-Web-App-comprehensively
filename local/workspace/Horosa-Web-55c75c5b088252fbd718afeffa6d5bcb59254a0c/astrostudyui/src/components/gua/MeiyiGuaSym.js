@@ -40,9 +40,9 @@ export default class MeiyiGuaSym extends Component{
 				body: JSON.stringify(params),
 			});
 	
-			const descresult = descdata[Constants.ResultKey];
-	
-			desc = descresult[gua];
+			const descresult = descdata && descdata[Constants.ResultKey];
+
+			desc = descresult ? descresult[gua] : null;
  		}
 
 		return desc;
@@ -116,6 +116,8 @@ export default class MeiyiGuaSym extends Component{
                     guamap = val;
                     gua = getGua8(guamap.name);
                 }
+                // 🔒 防崩:getGua8 对未登记名返 undefined → gua.name 抛 TypeError(setTimeout 内,React 边界捕不到)。缺即跳过。
+                if(!gua){ return; }
                 let st = this.state;
                 st.gua = gua.name;
                 st.guaMap = guamap;

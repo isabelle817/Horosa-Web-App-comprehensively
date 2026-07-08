@@ -121,6 +121,12 @@ class Taiyi:
             self.cache['lunar_date'] = config.lunar_date_d(self.year, self.month, self.day)
         return self.cache['lunar_date']
 
+    def _taiyi_year(self):
+        """年神虚星(五福/大游/小游)所用的「年」:取农历年,与年家积数同一年口径(保证同盘局数/太岁/游神同年)。"""
+        if 'taiyi_year' not in self.cache:
+            self.cache['taiyi_year'] = self._get_lunar_date().get("年")
+        return self.cache['taiyi_year']
+
     def jigod(self, ji_style):
         """計神"""
         yy = self.kook( ji_style,0)["文"][0]
@@ -373,38 +379,9 @@ class Taiyi:
         return config.new_list(config.gong1, wc)[len(start[:start.index(ts) + 1]) - 1]
 
     def home_cal(self, ji_style, taiyi_acumyear):
-        """主算"""
-        l_num= [8,8,3,3,4,4,9,9,2,2,7,7,6,6,1,1]
-        wancheong = self.skyeyes(ji_style, taiyi_acumyear)
-        wc_num= dict(zip(config.new_list(config.sixteen, "亥"), l_num)).get(wancheong)
-        taiyi = self.ty(ji_style, taiyi_acumyear)
-        wc_jc = list(map(lambda x: x == wancheong, config.jc)).count(True)
-        ty_jc = list(map(lambda x: x == taiyi, config.tyjc)).count(True)
-        wc_jc1  = list(map(lambda x: x == wancheong, config.jc1)).count(True)
-        wc_order = config.new_list(config.num, wc_num)
-        #if wc_jc == 1 and ty_jc != 1 and wc_jc1 !=1 :
-        #    return sum(wc_order[: wc_order.index(taiyi)]) +1
-        #if wc_jc !=1 and ty_jc != 1 and wc_jc1 ==1:
-        #    return sum(wc_order[: wc_order.index(taiyi)])
-        #if wc_jc != 1 and ty_jc ==1 and wc_jc1 !=1:
-        #    return sum(wc_order[: wc_order.index(taiyi)])
-        #if wc_jc ==1 and ty_jc ==1 and wc_jc1 !=1 and wc_jc == ty_jc and wc_jc1 == wc_jc:
-        #    return sum(wc_order[wc_order.index(taiyi):])+1
-        #if wc_jc ==1 and ty_jc ==1 and wc_jc1 !=1 and wc_jc == ty_jc and wc_jc1 != wc_jc:
-        #    return sum(wc_order[:wc_order.index(taiyi)])+1
-        #if wc_jc ==1 and ty_jc ==1 and wc_jc1 !=1 and wc_jc != ty_jc:
-        #    return sum(wc_order[wc_order.index(ty_jc):])+1
-        #if wc_jc !=1 and ty_jc ==1 and wc_jc1 ==1 and taiyi != wc_order[wc_jc] and wc_jc1 != wc_jc:
-        #    return sum(wc_order[: wc_order.index(taiyi)])
-        #if wc_jc !=1 and ty_jc ==1 and wc_jc1 ==1 and taiyi == wc_order[wc_jc] and wc_jc1 == wc_jc:
-        #    return taiyi
-        #if wc_jc !=1 and ty_jc !=1 and wc_jc1 !=1 and taiyi != wc_num:
-        #    return sum(wc_order[: wc_order.index(taiyi)])
-        #if wc_jc !=1 and ty_jc !=1 and wc_jc1 !=1 and taiyi == wc_num:
-            #return taiyi
-        #else:
-        #    return taiyi
-        return sum(wc_order[: wc_order.index(taiyi)])
+        """主算(立成表,与主大将同源)"""
+        kook = self.kook(ji_style, taiyi_acumyear)
+        return config.find_cal(kook.get("文")[0], kook.get("數"))[0]
     def home_general(self, ji_style, taiyi_acumyear):
         """主大將"""
         kook = self.kook(ji_style, taiyi_acumyear)
@@ -424,24 +401,9 @@ class Taiyi:
         return 5 if home_vg == 0 else home_vg
 
     def away_cal(self, ji_style, taiyi_acumyear):
-        """客算"""
-        shiji = self.sf(ji_style, taiyi_acumyear)
-        sf_num = dict(zip(config.new_list(config.sixteen, "亥"), self.l_num)).get(shiji)
-        taiyi = self.ty(ji_style, taiyi_acumyear)
-        sf_jc = shiji in config.jc
-        ty_jc = taiyi in config.tyjc
-        sf_jc1 = shiji in config.jc1
-        sf_order = config.new_list(config.num, sf_num)
-
-        logic_map = {
-            (True, False, False): lambda: sum(sf_order[:sf_order.index(taiyi)]) + 1 if sf_jc == ty_jc else sum(sf_order[:config.jc.index(shiji) + 1]) + 1,
-            (False, False, True): lambda: sum(sf_order[taiyi - 2:]) if sf_jc == ty_jc and 5 < taiyi < 7 else sum(sf_order[:taiyi + 1]) if sf_jc == ty_jc and taiyi < 5 else sum(sf_order[:sf_order.index(taiyi)]),
-            (False, True, False): lambda: sum(sf_order[sf_order.index(taiyi):]) if sf_jc == ty_jc else sum(sf_order[:sf_order.index(config.tyjc[0])] if ty_jc else sf_order[:sf_order.index(taiyi)]),
-            (True, True, False): lambda: sum(sf_order[:sf_order.index(taiyi)]) + 1 if sf_jc == ty_jc else sum(sf_order[:taiyi]),
-            (False, True, True): lambda: sum(sf_order[:sf_order.index(taiyi)]),
-            (False, False, False): lambda: taiyi if sf_num == taiyi else sum(sf_order[:sf_order.index(taiyi)])
-        }
-        return logic_map.get((sf_jc, ty_jc, sf_jc1), lambda: taiyi)()
+        """客算(立成表,与客大将同源)"""
+        kook = self.kook(ji_style, taiyi_acumyear)
+        return config.find_cal(kook.get("文")[0], kook.get("數"))[1]
 
     def away_general(self, ji_style, taiyi_acumyear):
         """客大將"""
@@ -470,24 +432,9 @@ class Taiyi:
         return dict(zip(config.new_list(self.di_zhi if self.kook(ji_style, taiyi_acumyear).get("文")[0] == "陽" else self.di_zhi_reversed, tiany), general))
 
     def set_cal(self, ji_style, taiyi_acumyear):
-        """定算"""
-        setcal = self.se(ji_style, taiyi_acumyear)
-        se_num = dict(zip(config.new_list(config.sixteen, "亥"), self.l_num)).get(setcal)
-        taiyi = self.ty(ji_style, taiyi_acumyear)
-        se_jc = setcal in config.jc
-        ty_jc = taiyi in config.tyjc
-        se_jc1 = setcal in config.jc1
-        se_order = config.new_list(config.num, se_num)
-
-        logic_map = {
-            (True, False, False): lambda: 1 if sum(se_order[:se_order.index(taiyi)]) == 0 else sum(se_order[:se_order.index(taiyi)]) + 1,
-            (False, False, True): lambda: sum(se_order[:se_order.index(taiyi)]),
-            (False, True, False): lambda: sum(se_order[:se_order.index(taiyi)]),
-            (True, True, False): lambda: sum(se_order[:se_order.index(taiyi)]) + 1,
-            (False, True, True): lambda: 1 if sum(se_order[:se_order.index(taiyi)]) == 0 else sum(se_order[:se_order.index(taiyi)]),
-            (False, False, False): lambda: taiyi if se_num == taiyi else sum(se_order[:se_order.index(taiyi)])
-        }
-        return logic_map.get((se_jc, ty_jc, se_jc1), lambda: sum(se_order[:se_order.index(taiyi)]))()
+        """定算(立成表,与定大将同源)"""
+        kook = self.kook(ji_style, taiyi_acumyear)
+        return config.find_cal(kook.get("文")[0], kook.get("數"))[2]
 
     def set_general(self, ji_style, taiyi_acumyear):
         """定大將"""
@@ -520,7 +467,7 @@ class Taiyi:
                      {config.wuxing(self.accnum(ji_style,taiyi_acumyear)):"五行"},
                      {config.kingfu(self.accnum(ji_style,taiyi_acumyear)):"帝符"},
                      {config.taijun(self.accnum(ji_style,taiyi_acumyear)):"太尊"},
-                     {config.num2gong(config.wufu(self.accnum(ji_style,taiyi_acumyear))):"五福"},
+                     {config.num2gong(config.wufu_year(self._taiyi_year())):"五福"},
                      #{self.ty_gong(ji_style, taiyi_acumyear):"太乙"},
                      {config.num2gong(self.home_general(ji_style, taiyi_acumyear)):"主大"},  
                      {config.num2gong(self.home_vgen(ji_style, taiyi_acumyear)):"主參"},
@@ -530,8 +477,8 @@ class Taiyi:
                      {config.num2gong(config.fivewind(self.accnum(ji_style,taiyi_acumyear))):"五風"},
                      {config.num2gong(config.eightwind(self.accnum(ji_style,taiyi_acumyear))):"八風"},  
                      {config.num2gong(config.flybird(self.accnum(ji_style,taiyi_acumyear))):"飛鳥"},
-                     {config.num2gong(config.bigyo(self.accnum(ji_style,taiyi_acumyear))):"大游"},
-                     {config.num2gong(config.smyo(self.accnum(ji_style,taiyi_acumyear))):"小游"},  
+                     {config.num2gong(config.bigyo_year(self._taiyi_year())):"大游"},
+                     {config.num2gong(config.smyo_year(self._taiyi_year())):"小游"},  
                      #{config.leigong(self.ty(ji_style, taiyi_acumyear)):"雷公"},  
                      {config.yangjiu(self.year, self.month, self.day):"陽九"}, 
                      {config.baliu(self.year, self.month, self.day):"百六"},
@@ -559,7 +506,7 @@ class Taiyi:
                      {config.wuxing(self.accnum(ji_style,taiyi_acumyear)):"五行"},
                      {config.kingfu(self.accnum(ji_style,taiyi_acumyear)):"帝符"},
                      {config.taijun(self.accnum(ji_style,taiyi_acumyear)):"太尊"},
-                     {config.num2gong(config.wufu(self.accnum(ji_style,taiyi_acumyear))):"五福"},
+                     {config.num2gong(config.wufu_year(self._taiyi_year())):"五福"},
                      {config.num2gong(self.home_general(ji_style, taiyi_acumyear)):"主大"},  
                      {config.num2gong(self.home_vgen(ji_style, taiyi_acumyear)):"主參"},
                      {config.num2gong(self.away_general(ji_style, taiyi_acumyear)):"客大"},  
@@ -601,12 +548,12 @@ class Taiyi:
                  {self.earthyi(ji_style, taiyi_acumyear).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥").replace("中", "辰"):"地乙"},
                  {self.flyfu1(ji_style, taiyi_acumyear).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥").replace("中", "辰"):"飛符"},
                  {self.zhifu(ji_style, taiyi_acumyear).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥").replace("中", "辰"):"直符"},
-                 {config.num2gong_life(config.wufu(self.accnum(ji_style,taiyi_acumyear))).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"五福"},
+                 {config.num2gong_life(config.wufu_year(self._taiyi_year())).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"五福"},
                  {config.num2gong_life(self.home_general(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"主大"},  
                  {config.num2gong_life(self.home_vgen(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"主參"},
                  {config.num2gong_life(self.away_general(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"客大"},  
                  {config.num2gong_life(self.away_vgen(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"客參"},
-                 {config.num2gong_life(config.smyo(self.accnum(ji_style,taiyi_acumyear))).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"小游"},  
+                 {config.num2gong_life(config.smyo_year(self._taiyi_year())).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"小游"},  
                  ]
         res = {"巳":"", "午":"", "未":"", "申":"", "酉":"", "戌":"", "亥":"", "子":"", "丑":"", "寅":"", "卯":"", "辰":"","中":""}
         for dict in dict1:
@@ -638,12 +585,12 @@ class Taiyi:
                  {self.skyyi(ji_style, taiyi_acumyear).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥").replace("中", "辰"):"天乙"},
                  {self.earthyi(ji_style, taiyi_acumyear).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥").replace("中", "辰"):"地乙"},
                  {self.flyfu1(ji_style, taiyi_acumyear).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥").replace("中", "辰"):"飛符"},
-                 {config.num2gong_life(config.wufu(self.accnum(ji_style,taiyi_acumyear))).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"五福"},
+                 {config.num2gong_life(config.wufu_year(self._taiyi_year())).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"五福"},
                  {config.num2gong_life(self.home_general(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"主大"},  
                  {config.num2gong_life(self.home_vgen(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"主參"},
                  {config.num2gong_life(self.away_general(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"客大"},  
                  {config.num2gong_life(self.away_vgen(ji_style, taiyi_acumyear)).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"客參"},
-                 {config.num2gong_life(config.smyo(self.accnum(ji_style,taiyi_acumyear))).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"小游"},  
+                 {config.num2gong_life(config.smyo_year(self._taiyi_year())).replace("巽","辰").replace("坤","申").replace("艮","丑").replace("乾","亥"):"小游"},  
                  ]
         res = {"巳":"", "午":"", "未":"", "申":"", "酉":"", "戌":"", "亥":"", "子":"", "丑":"", "寅":"", "卯":"", "辰":"","中":""}
         for dict in dict1:
@@ -680,14 +627,14 @@ class Taiyi:
                      {self.earthyi(ji_style, taiyi_acumyear):"地乙"},
                      {self.zhifu(ji_style, taiyi_acumyear):"直符"},
                      {self.flyfu(ji_style, taiyi_acumyear):"飛符"},
-                     {config.num2gong(config.wufu(self.accnum(ji_style,taiyi_acumyear))):"五福"},
+                     {config.num2gong(config.wufu_year(self._taiyi_year())):"五福"},
                      #{self.ty_gong(ji_style, taiyi_acumyear):"太乙"},
                      {config.num2gong(self.home_general(ji_style, taiyi_acumyear)):"主大"},  
                      {config.num2gong(self.home_vgen(ji_style, taiyi_acumyear)):"主參"},
                      {config.num2gong(self.away_general(ji_style, taiyi_acumyear)):"客大"},  
                      {config.num2gong(self.away_vgen(ji_style, taiyi_acumyear)):"客參"},
-                     {config.num2gong(config.bigyo(self.accnum(ji_style,taiyi_acumyear))):"大游"},
-                     {config.num2gong(config.smyo(self.accnum(ji_style,taiyi_acumyear))):"小游"},  
+                     {config.num2gong(config.bigyo_year(self._taiyi_year())):"大游"},
+                     {config.num2gong(config.smyo_year(self._taiyi_year())):"小游"},  
                      #{config.leigong(self.ty(ji_style, taiyi_acumyear)):"雷公"},  
                      {config.yangjiu(self.year, self.month, self.day):"陽九"}, 
                      {config.baliu(self.year, self.month, self.day):"百六"},
@@ -706,7 +653,7 @@ class Taiyi:
                      {self.earthyi(ji_style, taiyi_acumyear):"地乙"},
                      {self.zhifu(ji_style, taiyi_acumyear):"直符"},
                      {self.flyfu(ji_style, taiyi_acumyear):"飛符"},
-                     {config.num2gong(config.wufu(self.accnum(ji_style,taiyi_acumyear))):"五福"},
+                     {config.num2gong(config.wufu_year(self._taiyi_year())):"五福"},
                      {config.num2gong(self.home_general(ji_style, taiyi_acumyear)):"主大"},  
                      {config.num2gong(self.home_vgen(ji_style, taiyi_acumyear)):"主參"},
                      {config.num2gong(self.away_general(ji_style, taiyi_acumyear)):"客大"},  
@@ -830,14 +777,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if kingb == wufu:
             result.append("君基與五福同宮，皇國鞏固，宇內清寧，家有祥瑞，福祿並慶。")
@@ -864,14 +811,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if officerb == wufu:
             result.append("臣基與五福同宮，利於輔宰，貴極人臣，常親帝座，能大任以定治亂，所以臨於分野之方，人民豐稔，其出英俊。")
@@ -896,14 +843,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if pplb == wufu:
             result.append("民基與五福同宮，民富而壽家，出賢良。")
@@ -926,14 +873,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if wufu == kingb:
             result.append("五福與君基同宮，人君福壽祚享，如同宮在初爻之始合，生賢儲。如遇君基相衝之所，乃生草寇之君。")
@@ -969,14 +916,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if tiany == ty:
             result.append("天乙與太乙同宮，即有勝負，以金能決斷也。其神經行之分，兵戈大起，多主暴。金兵戮，人民流血千里及霜雪而肅物也。")
@@ -997,14 +944,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if earthy == zhifu:
             result.append("地乙與值符同宮，其分大旱、兵盜，土工興，人民受病，五穀不成，農人受困。")
@@ -1021,14 +968,14 @@ class Taiyi:
         kingb = self.kingbase(ji_style, taiyi_acumyear)
         officerb = self.officerbase(ji_style, taiyi_acumyear)
         pplb =  self.pplbase(ji_style, taiyi_acumyear)
-        wufu = config.num2gong(config.wufu(self.accnum(ji_style, taiyi_acumyear)))
+        wufu = config.num2gong(config.wufu_year(self._taiyi_year()))
         ty = self.ty_gong(ji_style, taiyi_acumyear)
         tiany = self.skyyi(ji_style, taiyi_acumyear)
         earthy = self.earthyi(ji_style, taiyi_acumyear)
         fgod = self.fgd(ji_style, taiyi_acumyear)
         zhifu = self.zhifu(ji_style, taiyi_acumyear)
-        big = config.num2gong(config.bigyo(self.accnum(ji_style, taiyi_acumyear)))
-        small = config.num2gong(config.smyo(self.accnum(ji_style, taiyi_acumyear)))
+        big = config.num2gong(config.bigyo_year(self._taiyi_year()))
+        small = config.num2gong(config.smyo_year(self._taiyi_year()))
         result = []
         if zhifu == fgod:
             result.append("值符與四神同宮，其分旱涸乾不均，四時失節，民飢疾疫多生，兵盜溺於水火刀兵之厄。")
@@ -1581,15 +1528,15 @@ class Taiyi:
                 "君基":self.kingbase(0,0),
                 "臣基":self.officerbase(0,0),
                 "民基":self.pplbase(0,0),
-                "五福":config.wufu(self.accnum(0,0)),
+                "五福":config.wufu_year(self._taiyi_year()),
                 "帝符":config.kingfu(self.accnum(0,0)),
                 "太尊":config.taijun(self.accnum(0,0)),
                 "飛鳥":config.flybird(self.accnum(0,0)),
                 "三風":config.threewind(self.accnum(0,0)),
                 "五風":config.fivewind(self.accnum(0,0)),
                 "八風":config.eightwind(self.accnum(0,0)),
-                "大游":config.bigyo(self.accnum(0,0)),
-                "小游":config.smyo(self.accnum(0,0))}
+                "大游":config.bigyo_year(self._taiyi_year()),
+                "小游":config.smyo_year(self._taiyi_year())}
         return pan
     
     def pan(self, ji_style, taiyi_acumyear, enable_game_theory: bool = False):
@@ -1640,15 +1587,15 @@ class Taiyi:
                 "君基":self.kingbase(ji_style, taiyi_acumyear),
                 "臣基":self.officerbase(ji_style, taiyi_acumyear),
                 "民基":self.pplbase(ji_style, taiyi_acumyear),
-                "五福":config.wufu(self.accnum(ji_style, taiyi_acumyear)),
+                "五福":config.wufu_year(self._taiyi_year()),
                 "帝符":config.kingfu(self.accnum(ji_style, taiyi_acumyear)),
                 "太尊":config.taijun(self.accnum(ji_style, taiyi_acumyear)),
                 "飛鳥":config.flybird(self.accnum(ji_style, taiyi_acumyear)),
                 "三風":config.threewind(self.accnum(ji_style, taiyi_acumyear)),
                 "五風":config.fivewind(self.accnum(ji_style, taiyi_acumyear)),
                 "八風":config.eightwind(self.accnum(ji_style, taiyi_acumyear)),
-                "大游":config.bigyo(self.accnum(ji_style, taiyi_acumyear)),
-                "小游":config.smyo(self.accnum(ji_style, taiyi_acumyear)),
+                "大游":config.bigyo_year(self._taiyi_year()),
+                "小游":config.smyo_year(self._taiyi_year()),
                 "金函玉鏡":config.gpan(self.year, self.month, self.day, self.hour, self.minute),
                 "二十八宿值日":config.starhouse(self.year, self.month, self.day, self.hour, self.minute),
                 "太歲二十八宿":self.year_chin(),

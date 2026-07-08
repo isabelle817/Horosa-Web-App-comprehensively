@@ -105,6 +105,44 @@ public class AIAnalysisProxyServiceTest {
 	}
 
 	@Test
+	public void extractAnthropicStreamThinkingReadsThinkingDelta() {
+		// #54-G：extended thinking 的思考块 delta.type=='thinking_delta'、文本在 delta.thinking。
+		Map<String, Object> think = buildMap(
+			"type", "content_block_delta",
+			"delta", buildMap("type", "thinking_delta", "thinking", "正在推演本命")
+		);
+		assertEquals("正在推演本命", AIAnalysisProxyService.extractAnthropicStreamThinking("content_block_delta", think));
+		// 思考块不应被当作正文 delta(避免思维链混入正文)。
+		assertEquals("", AIAnalysisProxyService.extractAnthropicStreamDelta("content_block_delta", think));
+		// 正文块(text_delta)不应被当作思考。
+		Map<String, Object> body = buildMap(
+			"type", "content_block_delta",
+			"delta", buildMap("type", "text_delta", "text", "正文")
+		);
+		assertEquals("", AIAnalysisProxyService.extractAnthropicStreamThinking("content_block_delta", body));
+		assertEquals("正文", AIAnalysisProxyService.extractAnthropicStreamDelta("content_block_delta", body));
+	}
+
+	@Test
+	public void extractGeminiContentExcludesThoughtParts() {
+		// #54-G：Gemini 思考模型把思维链放在 part.thought==true；正文只取非思考 part，思考走 reasoning。
+		Map<String, Object> payload = buildMap("candidates", Arrays.asList(
+			buildMap("content", buildMap("parts", Arrays.asList(
+				buildMap("text", "正在思考", "thought", Boolean.TRUE),
+				buildMap("text", "正文内容")
+			)))
+		));
+		assertEquals("正文内容", AIAnalysisProxyService.extractGeminiContent(payload));
+		assertEquals("正在思考", AIAnalysisProxyService.extractGeminiThinking(payload));
+		// 普通响应(无 thought 字段)零回归:全部当正文、思考为空。
+		Map<String, Object> plain = buildMap("candidates", Arrays.asList(
+			buildMap("content", buildMap("parts", Arrays.asList(buildMap("text", "纯正文"))))
+		));
+		assertEquals("纯正文", AIAnalysisProxyService.extractGeminiContent(plain));
+		assertEquals("", AIAnalysisProxyService.extractGeminiThinking(plain));
+	}
+
+	@Test
 	public void extractEmbeddingVectorsSupportsOpenAIShape() {
 		Map<String, Object> payload = buildMap(
 			"data", Arrays.asList(

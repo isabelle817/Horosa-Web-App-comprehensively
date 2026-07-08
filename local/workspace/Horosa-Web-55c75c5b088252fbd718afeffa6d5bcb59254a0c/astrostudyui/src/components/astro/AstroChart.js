@@ -3,8 +3,38 @@ import { Component } from 'react';
 import {randomStr} from '../../utils/helper';
 import * as AstroConst from '../../constants/AstroConst';
 import * as Constants from '../../utils/constants';
-import { chartDrawGuardEnabled } from '../../utils/perfFlags';
+import { chartDrawGuardEnabled, chartSCUEnabled } from '../../utils/perfFlags';
+import { sameDisplayList, shallowPropsEqual } from '../../utils/chartUpdateGuard';
 import AstroChartCircle from './AstroChartCircle';
+
+// sCU(根因 E):本组件 render 输出 + drawChart/AstroChartCircle 消费的「全部影响盘面输出的 props」。
+// 逐项核(grep this.props.* 全集 = 12 项,见 drawChart 转发与 render):
+//   value          → drawChart 的 chartObj(盘数据,大对象引用比:后端每次新对象捕获任意字段变更)
+//   chartDisplay   → drawChart 的 disp(显示项数组,内容比)
+//   planetDisplay  → planetDisp 集来源(数组,内容比)
+//   lotsDisplay    → planetDisp 集来源(数组,内容比)
+//   keyPlanets     → drawChart 的 keyplanets(数组,内容比)
+//   chartStyle     → drawChart 末参(标量/字符串,Object.is)
+//   zrHighlightSign→ chartCircle.setZRHighlight(标量,Object.is)
+//   showAstroMeaning→ getShowAstroMeaning→setShowAstroMeaning(标量;localStorage 回退由 GlobalSetup
+//                     写入后另路重绘,不在本组件 props 流内,故按 prop 值比即可)
+//   width / height / style / id → render 出的 <svg> 尺寸/内联样式/id(影响容器,进而影响 draw 的 clientW/H)
+// AstroChartCircle 不读任何 this.props(纯类,drawChart 全量入参 + 两 setter),故上列即闭包,无隐藏输入。
+const ASTROCHART_SCU_KEYS = [
+	'value', 'chartDisplay', 'planetDisplay', 'lotsDisplay', 'keyPlanets', 'aspects',
+	'chartStyle', 'zrHighlightSign', 'showAstroMeaning', 'width', 'height', 'style', 'id',
+];
+const ASTROCHART_SCU_COMPARATORS = {
+	chartDisplay: sameDisplayList,
+	planetDisplay: sameDisplayList,
+	lotsDisplay: sameDisplayList,
+	keyPlanets: sameDisplayList,
+	aspects: sameDisplayList,   // 相位选择(AspSelector)是数组字面量,父级每次新引用 → 内容比;变更须重渲触发 drawChart 重画相位线
+};
+// state 中唯一进入 render/draw 的可变量是 ox/oy/radius(resize 时由 clientW/H 派生重算)——
+// 必须纳入 sCU,否则 resize setState(props 不变)会被跳过 → 盘不跟着重排。
+// chartid/tooltipId/rStep 挂载后恒定;tips(tooltip 点击)从不被 render/draw 读取 → 不纳入 → 其 setState 被正确跳过。
+const ASTROCHART_SCU_STATE_KEYS = ['ox', 'oy', 'radius'];
 
 class AstroChart extends Component{
 
@@ -73,8 +103,19 @@ class AstroChart extends Component{
 			lotsDisplay: this.props.lotsDisplay,
 			keyPlanets: this.props.keyPlanets,
 			chartStyle: this.props.chartStyle,
+			// 相位选择纳入签名:desposeAspects 按 AstroConst.AspKey(localStorage)过滤相位线,该选择不在任何 props 数据对象内,
+			// 不纳入则切相位时签名恒等 → 守卫误判跳过、相位线不重画(死选项)。取 localStorage 同源,与实际绘制依据一致。
+			aspKey: (typeof window !== 'undefined' && window.localStorage) ? (window.localStorage.getItem(AstroConst.AspKey) || '') : '',
+			zrHl: this.props.zrHighlightSign || '',
 			meaning: this.getShowAstroMeaning(),
 			rStep: this.state.rStep,
+			// 主题纳入签名:黄道带 fill-opacity 等按当前调色板(AstroConst.AstroColor)在绘制时一次性烘焙进 SVG。
+			// 真根因是「调色板滞后一帧」:setColorTheme 在 app.js(新 resolvedAppearance)与 index.js(读 model
+			// 的 resolvedAppearance,滞后一帧)各调一次,index 用旧值覆写;故仅看 <html data-horosa-appearance>
+			// 不够——属性已 settle 但调色板尚未刷新到位的「正确重绘」会被守卫误判相同而 skip,黄道环停在旧主题。
+			// 解法:签名直接纳入调色板指纹(ChartBackgroud),调色板真正切换到位的那次重绘必不被跳过。
+			appearance: (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.getAttribute('data-horosa-appearance') : '',
+			themeFill: (AstroConst.AstroColor && AstroConst.AstroColor.ChartBackgroud) || '',
 			w: svgdom ? svgdom.clientWidth : 0,
 			h: svgdom ? svgdom.clientHeight : 0,
 		};
@@ -84,13 +125,20 @@ class AstroChart extends Component{
 		if(!a || !b){
 			return false;
 		}
+		// 根因 G:chartDisplay/planetDisplay/lotsDisplay/keyPlanets 父级常每次传新数组字面量(引用恒变),
+		// 旧版用引用比 → 签名恒变 → 守卫形同虚设、drawChart 每次全量重建。改内容比让守卫真短路;
+		// value/chartStyle 等仍保持引用/===(大对象引用比既完整又廉价,标量直接相等)。
 		return a.value === b.value
-			&& a.chartDisplay === b.chartDisplay
-			&& a.planetDisplay === b.planetDisplay
-			&& a.lotsDisplay === b.lotsDisplay
-			&& a.keyPlanets === b.keyPlanets
+			&& sameDisplayList(a.chartDisplay, b.chartDisplay)
+			&& sameDisplayList(a.planetDisplay, b.planetDisplay)
+			&& sameDisplayList(a.lotsDisplay, b.lotsDisplay)
+			&& sameDisplayList(a.keyPlanets, b.keyPlanets)
 			&& a.chartStyle === b.chartStyle
+			&& a.aspKey === b.aspKey
+			&& a.zrHl === b.zrHl
 			&& a.meaning === b.meaning
+			&& a.appearance === b.appearance
+			&& a.themeFill === b.themeFill
 			&& a.rStep === b.rStep
 			&& a.w === b.w
 			&& a.h === b.h;
@@ -135,6 +183,7 @@ class AstroChart extends Component{
 		let drawOk = false;
 		if(this.chartCircle){
 			this.chartCircle.setShowAstroMeaning(this.getShowAstroMeaning());
+			if(this.chartCircle.setZRHighlight){ this.chartCircle.setZRHighlight(this.props.zrHighlightSign || null); }
 			try{
 				this.chartCircle.drawChart(this.state.chartid, chartobj, this.state.rStep, disp, planetDisp, keyplanets, this.props.chartStyle);
 				drawOk = true;
@@ -191,6 +240,24 @@ class AstroChart extends Component{
 
 		this.drawChart();
 		this.scheduleDrawRetry();
+
+		// 主题切换(亮↔暗)只改 <html data-horosa-appearance>;本组件未订阅 appearanceMode、componentDidUpdate 不触发,
+		// 而黄道带等颜色/透明度在绘制时一次性读取烘焙 → 不重绘则停在旧主题。挂 observer 主动重绘(签名已含 appearance 故真重画)。
+		if(typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.documentElement){
+			this._appearanceObserver = new MutationObserver(()=>{ this.drawChart(); });
+			this._appearanceObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-horosa-appearance'] });
+		}
+	}
+
+	shouldComponentUpdate(nextProps, nextState){
+		if(!chartSCUEnabled()){
+			return true; // kill-switch:回到无条件渲染的旧行为
+		}
+		// 影响盘面输出的 props 全部相等(显示数组内容比、其余引用/===)且 resize 派生 state 相等 → 跳过冗余 re-render。
+		// 任一变化 → true 照常 componentDidUpdate → drawChart(其内部再过重绘签名守卫,双层零漏渲)。
+		const propsSame = shallowPropsEqual(this.props, nextProps, ASTROCHART_SCU_KEYS, ASTROCHART_SCU_COMPARATORS);
+		const stateSame = shallowPropsEqual(this.state, nextState, ASTROCHART_SCU_STATE_KEYS);
+		return !(propsSame && stateSame);
 	}
 
 	componentDidUpdate(){
@@ -203,6 +270,10 @@ class AstroChart extends Component{
 		if(this.redrawTimer){
 			clearTimeout(this.redrawTimer);
 			this.redrawTimer = null;
+		}
+		if(this._appearanceObserver){
+			this._appearanceObserver.disconnect();
+			this._appearanceObserver = null;
 		}
 		d3.select('#' + this.state.tooltipId).remove();
 	}

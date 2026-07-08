@@ -4,6 +4,7 @@
 import { Component } from 'react';
 import buildFacts from '../../divination/engine/chartFacts';
 import { runLifespan } from '../../divination/lifespan/lifespanEngine';
+import { PLANETARY_YEARS } from '../../divination/lifespan/lifespanData';
 import { SIGNS } from '../../divination/data/signs';
 import { chartIdOfKey } from '../../divination/engine/utils';
 import { astroSymbol, fmtNum, cardStyle, SmallTable } from './AstroExtraCommon';
@@ -18,6 +19,11 @@ const BAND_CN = { greatest: '大限', mean: '中限', least: '小限' };
 const HAYYIZ_CN = { Hayyiz: '得时得地', DemiHayyiz: '得时不得地', InWrongPos: '失位', None: '—' };
 const SUNSTATE_CN = { cazimi: '日心', combust: '焦伤', under_beams: '日光束下' };
 const ORIENT_CN = { oriental: '东出', occidental: '西入' };
+// 向运凶光类型 → 中文（杀星本体合 / 四分凶光 / 对分凶光）。
+const RAY_CN = { 0: '合（本体）', 90: '刑（四分凶光）', 180: '冲（对分凶光）' };
+const RAYKIND_CN = { 'body': '本体', 'dexter-square': '右四分', 'sinister-square': '左四分', 'opposition': '对分' };
+// 行星年三档键 → 中文短标。
+const YEARBAND_CN = { least: '小限', mean: '中限', greatest: '大限' };
 
 const sym = (key) => astroSymbol(chartIdOfKey(key) || key);
 const sn = (sign) => (SIGNS[sign] && SIGNS[sign].cn) || sign || '-';
@@ -47,7 +53,7 @@ const kv = { display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 12, l
 class AstroLifespan extends Component {
 	constructor(props){
 		super(props);
-		this.state = { method: 'ptolemy' };
+		this.state = { method: 'ptolemy', timelineOpen: false };
 	}
 
 	render(){
@@ -68,7 +74,7 @@ class AstroLifespan extends Component {
 		const alc = res.alcocoden;
 		// 分区渲染:reorg 后古典tab把 行星状态盘 放「状态」节、其余寿命卡放「寿命」节(各自一个实例)。
 		// 默认(无 parts)= 全渲染,向后兼容。
-		const parts = this.props.parts || ['method', 'life', 'status', 'medical'];
+		const parts = this.props.parts || ['method', 'life', 'status', 'medical', 'timeline'];
 		const show = (k) => parts.indexOf(k) >= 0;
 		const activeMethod = METHODS.find((m) => m.value === this.state.method) || METHODS[0];
 
@@ -198,6 +204,92 @@ class AstroLifespan extends Component {
 					<div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>{res.medical.note}</div>
 				</div>
 				) : null}
+
+					{/* 向运至杀星时间轴（G1：折叠卡，默认折叠） */}
+					{show('timeline') ? this.renderTimeline(res, hy, alc, activeMethod) : null}
+			</div>
+		);
+	}
+
+	// 向运至杀星时间轴（折叠卡）：①释放星+取法注明 ②寿命主+行星年三档 ③向运时间轴表。
+	renderTimeline(res, hy, alc, activeMethod){
+		const open = this.state.timelineOpen;
+		const head = (
+			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}
+				onClick={() => this.setState({ timelineOpen: !open })}>
+				<span style={{ fontWeight: 700 }}>向运至杀星 · 寿命时间轴 <span style={{ fontSize: 11, fontWeight: 400, opacity: 0.6 }}>Direction to Anareta</span></span>
+				<span style={{ fontSize: 12, opacity: 0.6 }}>{open ? '收起 ▲' : '展开 ▼'}</span>
+			</div>
+		);
+		if(!open){ return <div style={{ ...cardStyle, marginTop: 8 }}>{head}</div>; }
+
+		// 优雅降级：缺生命主 → 不报错，提示数据不足。
+		if(!hy){
+			return (
+				<div style={{ ...cardStyle, marginTop: 8 }}>
+					{head}
+					<div style={{ fontSize: 12, opacity: 0.7, marginTop: 8 }}>数据不足，无法定释放星（缺当宗派发光体或上升），向运时间轴不可推算。</div>
+				</div>
+			);
+		}
+
+		const tl = res.timeline || { rows: [], note: '' };
+		const predicted = (alc && alc.predictedYears != null) ? alc.predictedYears : null;
+		// 寿命主行星年三档（least/mean/greatest）。
+		const py = alc && alc.alcocoden ? PLANETARY_YEARS[alc.alcocoden] : null;
+		const timelineRows = (tl.rows || []).map((r, i) => ({ ...r, _key: `${r.planet}-${r.aspectKind}-${i}` }));
+
+		return (
+			<div style={{ ...cardStyle, marginTop: 8 }}>
+				{head}
+				<div style={{ marginTop: 8 }}>
+					{/* ① 释放星 + 取法注明 */}
+					<div style={{ ...kv, marginBottom: 8 }}>
+						<span style={{ fontWeight: 600 }}>释放星（Hyleg）：{sym(hy.key)} {posText(hy.sign, hy.signlon)}（{houseText(hy.house)}）</span>
+						<span style={{ opacity: 0.7 }}>取法：{activeMethod.label}（{activeMethod.en}）法</span>
+					</div>
+
+					{/* ② 寿命主 + 行星年三档 */}
+					<div style={{ ...kv, marginBottom: 4 }}>
+						<span style={{ fontWeight: 600 }}>寿命主（Alcocoden）：{alc && alc.alcocoden ? sym(alc.alcocoden) : '未定'}</span>
+						{py ? (
+							<>
+								<span>小限 {py.least} 年</span>
+								<span>中限 {py.mean} 年</span>
+								<span>大限 {py.greatest} 年</span>
+								{alc && alc.band ? <span style={{ opacity: 0.7 }}>（本盘取 {YEARBAND_CN[alc.band] || alc.band}）</span> : null}
+							</>
+						) : <span style={{ opacity: 0.7 }}>—（生命主无具尊贵且相照之星，行星年不可取）</span>}
+						{predicted != null ? <span style={{ fontWeight: 700 }}>预测寿数 ≈ {predicted} 年</span> : null}
+					</div>
+
+					{/* ③ 向运时间轴表 */}
+					<div style={{ fontSize: 12, fontWeight: 600, margin: '10px 0 2px' }}>向运至杀星时间轴（升序）</div>
+					{timelineRows.length ? (
+						<SmallTable
+							rowKey={(r) => r._key}
+							rows={timelineRows}
+							rowStyle={(r) => (predicted != null && r.age <= predicted ? { background: 'rgba(207,19,32,.08)' } : undefined)}
+							columns={[
+								{ key: 'planet', title: '杀星', render: (v) => sym(v) },
+								{ key: 'aspect', title: '相位', render: (v, r) => <span style={{ opacity: 0.9 }}>{RAY_CN[v] || `${v}°`}{r.aspectKind && RAYKIND_CN[r.aspectKind] && v !== 0 ? <span style={{ fontSize: 10, opacity: 0.55, marginLeft: 3 }}>{RAYKIND_CN[r.aspectKind]}</span> : null}</span> },
+								{ key: 'dangerSign', title: '危险度', render: (v, r) => `${sn(v)} ${fmtNum(r.dangerLon % 30, 1)}°` },
+								{ key: 'arc', title: '向运弧', render: (v) => `${fmtNum(v, 1)}°` },
+								{ key: 'age', title: '对应岁数', render: (v, r) => (
+									<span style={{ fontWeight: 700, color: (predicted != null && v <= predicted) ? '#cf1322' : 'inherit' }}>
+										{fmtNum(v, 1)} 岁{r.aspect === 0 ? <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 3 }}>合</span> : null}
+									</span>
+								) },
+							]}
+						/>
+					) : (
+						<div style={{ fontSize: 12, opacity: 0.7 }}>数据不足，无法定杀星位置（缺土星/火星黄经）。</div>
+					)}
+					<div style={{ fontSize: 11, opacity: 0.6, marginTop: 6 }}>
+						{tl.note}
+						{predicted != null && timelineRows.length ? <span>　淡红行 = 落在预测寿数（约 {predicted} 岁）之内的危险窗口。</span> : null}
+					</div>
+				</div>
 			</div>
 		);
 	}

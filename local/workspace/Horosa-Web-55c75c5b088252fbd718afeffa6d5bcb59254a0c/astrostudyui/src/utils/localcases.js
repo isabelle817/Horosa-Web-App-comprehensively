@@ -93,6 +93,8 @@ export const CASE_TYPE_OPTIONS = [
 	{ value: 'taixuan', label: '太玄', subTab: 'taixuan', tab: 'cnyibu', module: 'taixuan' },
 	{ value: 'jingjue', label: '荆诀', subTab: 'jingjue', tab: 'cnyibu', module: 'jingjue' },
 	{ value: 'shenyishu', label: '神易数', subTab: 'shenyishu', tab: 'cnyibu', module: 'shenyishu' },
+	{ value: 'geomancy', label: '天文地占', subTab: 'geomancy', tab: 'cnyibu', module: 'geomancy' },
+	{ value: 'tarot', label: '塔罗', subTab: 'tarot', tab: 'cnyibu', module: 'tarot' },
 	{ value: 'sanshiunited', label: '三式合一', subTab: null, tab: 'sanshiunited', module: 'sanshiunited' },
 	{ value: 'horary', label: '卜卦', subTab: 'horary', tab: 'auxchart', module: 'horary' },
 	{ value: 'election', label: '择日', subTab: 'election', tab: 'auxchart', module: 'election' },
@@ -130,6 +132,9 @@ const CASE_TYPE_ALIASES = {
 	'荊訣': 'jingjue',
 	'神易数': 'shenyishu',
 	'神易數': 'shenyishu',
+	'天文地占': 'geomancy',
+	'地占': 'geomancy',
+	'塔罗': 'tarot',
 };
 
 function safeParseJson(txt, defVal){

@@ -11,8 +11,9 @@ import { saveModuleAISnapshot, } from '../../utils/moduleAiSnapshot';
 import { defaultAfter23NewDay, defaultLateZiHourUseNextDay } from '../../utils/dayBoundary';
 
 const indiaChartCache = new Map();
+const INDIA_CHART_CACHE_MAX = 64;   // LRU 上限:印占 payload 大(yogas+多级dasha+varga+shadbala),会话内键空间随分盘/过运日/大运派别/ayanamsa 发散,须封顶防越用越占内存(全仓唯一曾漏上限者)。
 const indiaChartInflight = new Map();
-const INDIA_CHART_CACHE_REV = 'india_kernel_varga_v2_yoga_v1';
+const INDIA_CHART_CACHE_REV = 'india_kernel_v4_dasha_selected';
 
 export function fieldsToParams(fields, overrides = {}){
 	const indiaHsys = overrides.indiaHsys !== undefined && overrides.indiaHsys !== null
@@ -21,6 +22,9 @@ export function fieldsToParams(fields, overrides = {}){
 	const indiaAyanamsa = overrides.indiaAyanamsa !== undefined && overrides.indiaAyanamsa !== null
 		? AstroConst.normalizeIndiaAyanamsa(overrides.indiaAyanamsa)
 		: (fields.indiaAyanamsa ? AstroConst.normalizeIndiaAyanamsa(fields.indiaAyanamsa.value) : AstroConst.INDIA_AYANAMSA_DEFAULT);
+	const indiaNodeType = overrides.indiaNodeType !== undefined && overrides.indiaNodeType !== null
+		? AstroConst.normalizeIndiaNodeType(overrides.indiaNodeType)
+		: (fields.indiaNodeType ? AstroConst.normalizeIndiaNodeType(fields.indiaNodeType.value) : AstroConst.INDIA_NODE_TYPE_DEFAULT);
 	const params = {
 		date: fields.date.value.format('YYYY/MM/DD'),
 		time: fields.time.value.format('HH:mm:ss'),
@@ -51,6 +55,38 @@ export function fieldsToParams(fields, overrides = {}){
 	if(fields.chartnum){
 		params.chartnum = fields.chartnum.value;
 	}
+
+	// 仅非默认('true')才下发,默认 mean 保持与历史请求一致(零缓存 churn / 零回归)。
+	if(indiaNodeType === 'true'){
+		params.nodeType = 'true';
+	}
+
+	// 印度功能扩展可选参数：分盘集/过运日期/年度盘(年份+近似)/大运派别。
+	// 仅在 overrides 或对应字段提供时下发；缺省 undefined → 不入请求体与 cache key(零 churn)。
+	const pickOpt = (key, field)=>{
+		if(overrides[key] !== undefined && overrides[key] !== null){
+			return overrides[key];
+		}
+		return (fields[field] && fields[field].value !== undefined && fields[field].value !== null)
+			? fields[field].value : undefined;
+	};
+	const vargaSet = pickOpt('vargaSet', 'indiaVargaSet');
+	if(vargaSet){ params.vargaSet = vargaSet; }
+	const transitDate = pickOpt('transitDate', 'indiaTransitDate');
+	if(transitDate){ params.transitDate = transitDate; }
+	const tajakaYear = pickOpt('tajakaYear', 'indiaTajakaYear');
+	// 年度盘(Varshaphal)默认取当前公历年(用户未显式选年时);随过运盘同为服务器侧轻量补算。
+	params.tajakaYear = tajakaYear || new Date().getFullYear();
+	const tajakaApprox = pickOpt('tajakaApprox', 'indiaTajakaApprox');
+	if(tajakaApprox){ params.tajakaApprox = tajakaApprox; }
+	const dashaSystem = pickOpt('dashaSystem', 'indiaDashaSystem');
+	if(dashaSystem){ params.dashaSystem = dashaSystem; }
+	// 大运起点(seed):仅非默认 'moon' 才下发 → 默认 moon 零 cache churn / 零回归。
+	const dashaSeed = pickOpt('dashaSeed', 'indiaDashaSeed');
+	if(dashaSeed && dashaSeed !== 'moon'){ params.dashaSeed = dashaSeed; }
+	// Sthira 起座:仅非默认 'lagna' 才下发 → 默认零 cache churn / 零回归。
+	const sthiraStart = pickOpt('sthiraStart', 'indiaSthiraStart');
+	if(sthiraStart && sthiraStart !== 'lagna'){ params.sthiraStart = sthiraStart; }
 
 	return params;
 }
@@ -94,6 +130,7 @@ function buildIndiaChartCacheKey(params){
 		hsys: params.hsys,
 		indiaHsys: params.indiaHsys,
 		indiaAyanamsa: params.indiaAyanamsa || AstroConst.INDIA_AYANAMSA_DEFAULT,
+		nodeType: params.nodeType || AstroConst.INDIA_NODE_TYPE_DEFAULT,
 		jyotishRev: params._jyotishRev || INDIA_CHART_CACHE_REV,
 		zodiacal: params.zodiacal,
 		tradition: params.tradition,
@@ -104,6 +141,14 @@ function buildIndiaChartCacheKey(params){
 		name: params.name || '',
 		pos: params.pos || '',
 		chartnum: params.chartnum || 1,
+		// 扩展可选参数：未提供时为 undefined → JSON.stringify 自动略过 → 既有请求 cache key 不变。
+		vargaSet: params.vargaSet,
+		transitDate: params.transitDate,
+		tajakaYear: params.tajakaYear,
+		tajakaApprox: params.tajakaApprox,
+		dashaSystem: params.dashaSystem,
+		dashaSeed: params.dashaSeed,
+		sthiraStart: params.sthiraStart,
 	};
 	return JSON.stringify(normalized);
 }
@@ -124,13 +169,22 @@ export async function requestIndiaChartData(params){
 		if(!inflight){
 			inflight = request(`${Constants.ServerRoot}/india/chart`, {
 				body: JSON.stringify(params),
+				// silent:不触发全局工作区「载入中」满屏压暗遮罩。印度有 keep-stale(旧盘留存 + 「更新中…」角标)
+				// + 首屏本地 dashaLoading/「等待排盘数据」占位,自带加载反馈;否则每次真重算都全屏 loading(用户报的)。
+				silent: true,
 			}).then((data)=>{
 				if(!data || data[Constants.ResultKey] === undefined || data[Constants.ResultKey] === null){
 					return null;
 				}
 				const resolved = data[Constants.ResultKey];
 				if(resolved && hasCurrentJyotishPayload(resolved)){
+					if(indiaChartCache.has(cacheKey)){ indiaChartCache.delete(cacheKey); }
 					indiaChartCache.set(cacheKey, resolved);
+					while(indiaChartCache.size > INDIA_CHART_CACHE_MAX){
+						const oldest = indiaChartCache.keys().next().value;
+						if(oldest === undefined){ break; }
+						indiaChartCache.delete(oldest);
+					}
 				}
 				return resolved;
 			}).finally(()=>{
@@ -178,8 +232,17 @@ function ensureSection(lines, title, body){
 
 // Vimshottari 大运（120 年周期）：后端 jyotish.dasha.vimshottari 已算好，挂载快照一并输出。
 // 字段形态与命盘 Dasha 面板(buildVimshottariDasha)一致;无数据则返回空(快照跳过该段)。
-function buildDashaSnapshotLines(chartObj){
-	const v = chartObj && chartObj.jyotish && chartObj.jyotish.dasha && chartObj.jyotish.dasha.vimshottari;
+const DASHA_SYSTEM_SNAPSHOT_LABEL = {
+	vimshottari: 'Vimshottari（120 年周期）',
+	yogini: 'Yogini（36 年 · 8 女神）',
+	ashtottari: 'Ashtottari（108 年 · Ardradi）',
+	tribhagi: 'Tribhāgī（Vimśottarī÷3 · 3 遍×40=120 年）',
+};
+
+function buildDashaSnapshotLines(chartObj, system){
+	const sys = AstroConst.normalizeIndiaDashaSystem(system);
+	const dashaRoot = chartObj && chartObj.jyotish && chartObj.jyotish.dasha;
+	const v = dashaRoot && (dashaRoot[sys] || dashaRoot.vimshottari);
 	if(!v || !v.available || !Array.isArray(v.mahadashas) || !v.mahadashas.length){
 		return [];
 	}
@@ -188,7 +251,7 @@ function buildDashaSnapshotLines(chartObj){
 	const n1 = (x)=>(Number.isFinite(+x) ? (+x) : 0);
 	const out = [];
 	const nak = v.moonNakshatra || {};
-	out.push('系统：Vimshottari（120 年周期）');
+	out.push(`系统：${DASHA_SYSTEM_SNAPSHOT_LABEL[sys] || DASHA_SYSTEM_SNAPSHOT_LABEL.vimshottari}`);
 	out.push(`月宿：${nak.label || nak.name || nak.key || '—'}（宿主星 ${nameOf(v.firstLord)}）`);
 	out.push(`首运：已历 ${n1(v.firstElapsedYears).toFixed(1)} 年、余 ${n1(v.firstBalanceYears).toFixed(1)} 年`);
 	const active = v.mahadashas.find((m)=>m && m.active);
@@ -211,6 +274,387 @@ function buildDashaSnapshotLines(chartObj){
 		const mark = m.active ? '▶ ' : (m.birthBalance ? '· ' : '  ');
 		out.push(`${mark}${nameOf(m.lord)} ${fmtDate(m.start)} → ${fmtDate(m.end)}（${n1(m.years).toFixed(1)} 年，${n1(m.startAge).toFixed(0)}–${n1(m.endAge).toFixed(0)} 岁）`);
 	});
+	return out;
+}
+
+// AI 挂载补充：把后端 jyotish 真值(Panchanga / 8 卡拉卡 / 节点主照)一并写进快照。
+// 全部读 chartObj.jyotish.*（单一真值源），缺省则该段跳过；不硬编码任何常量。
+export function buildJyotishSnapshotLines(chartObj){
+	const j = chartObj && chartObj.jyotish;
+	if(!j){ return {}; }
+	const fx = (x, d)=>(typeof x === 'number' && Number.isFinite(x)) ? x.toFixed(d) : (x !== undefined && x !== null ? `${x}` : '—');
+	const lordOf = (l)=>(l && (l.label || l.key)) || '—';
+	const out = {};
+
+	const p = j.panchanga;
+	if(p){
+		const pl = [];
+		if(p.vara){ pl.push(`星期(Vara)：${p.vara.label || p.vara.name || '—'}（主 ${lordOf(p.vara.lord)}）`); }
+		if(p.tithi){ pl.push(`月相(Tithi)：${`${p.tithi.paksha || ''} ${p.tithi.name || ''}`.trim() || '—'}（第 ${p.tithi.index} 日）`); }
+		if(p.nakshatra){
+			pl.push(`月宿(Nakshatra)：${p.nakshatra.label || p.nakshatra.name || p.nakshatra.key || '—'}`);
+			const nd = p.nakshatra.detail;
+			if(nd){
+				const bits = [];
+				if(nd.deity){ bits.push(`司神 ${nd.deity}`); }
+				if(nd.symbol){ bits.push(`象征 ${nd.symbol}`); }
+				if(nd.gana){ bits.push(`族类 ${nd.gana}`); }
+				if(nd.yoniAnimal){ bits.push(`瑜尼 ${nd.yoniAnimal}`); }
+				if(nd.gunas){ bits.push(`三德 ${nd.gunas}`); }
+				if(nd.purushartha){ bits.push(`人生目标 ${nd.purushartha}`); }
+				if(bits.length){ pl.push(`　月宿详情：${bits.join('·')}`); }
+			}
+		}
+		if(p.yoga){ pl.push(`瑜伽(Yoga)：${p.yoga.name || '—'}`); }
+		if(p.karana){ pl.push(`半日(Karana)：${(p.karana.name || p.karana.label) || '—'}`); }
+		if(pl.length){ out['Panchanga 五要素'] = pl; }
+	}
+
+	const ck = j.jaimini && j.jaimini.charaKarakas;
+	if(Array.isArray(ck) && ck.length){
+		out['卡拉卡（8 Chara Karakas）'] = ck.map((k)=>(
+			`${k.karakaLabel || ''} ${k.karaka || ''}：${k.label || k.planet}（${k.signLabel || k.sign} ${fx(k.signlon, 2)}°，用度 ${fx(k.karakaDegree, 2)}°）`
+		));
+	}
+
+	const nd = j.nodeRasiDrishti;
+	if(Array.isArray(nd) && nd.length){
+		out['节点主照（Rasi Drishti）'] = nd.map((d)=>`${d.giverLabel || d.giver} → ${d.targetSignLabel || d.targetSign}`);
+	}
+
+	const ps = j.strengths && j.strengths.planetaryStates;
+	if(Array.isArray(ps) && ps.length){
+		out['星曜状态'] = ps.map((s)=>{
+			const flags = [];
+			if(s.vargottama){ flags.push('Vargottama'); }
+			if(s.retrograde){ flags.push('逆行'); }
+			if(s.combust){ flags.push('燃烧'); }
+			const baladi = s.baladi ? `·${s.baladi.label}` : '';
+			const nak = s.nakshatra ? `·${s.nakshatra.name}P${s.nakshatra.pada}` : '';
+			const lajj = Array.isArray(s.lajjitadi) && s.lajjitadi.length ? `·态[${s.lajjitadi.map((la)=>la.label).join('')}]` : '';
+			return `${s.label}：${s.signLabel || s.sign} ${fx(s.signlon, 1)}°·宫${s.house || '—'}·${s.dignity}${baladi}${lajj}${nak}${flags.length ? '·' + flags.join('/') : ''}`;
+		});
+	}
+
+	// WP-E1 Vimśopaka（§5.7）：各 varga 组居自/友/旺的分盘数 → 吉位名(越多越吉)。
+	const vd = j.strengths && j.strengths.vargaDignity;
+	if(Array.isArray(vd) && vd.length){
+		out['分盘吉位 Vimśopaka'] = vd.map((row)=>{
+			const a = row.amsa || {};
+			const parts = [];
+			const grp = (label, g)=>{ const x = a[g]; if(x && x.count){ parts.push(`${label}${x.count}${x.amsa ? '·' + x.amsa : ''}`); } };
+			grp('六', 'shadvarga'); grp('七', 'saptavarga'); grp('十', 'dasavarga'); grp('十六', 'shodasavarga');
+			return `${row.label}（本盘${row.d1}）：${parts.length ? parts.join(' ') : '无连座吉位'}`;
+		});
+	}
+
+	const av = j.ashtakavarga;
+	if(av && av.available && Array.isArray(av.sarvaBySign)){
+		const total = av.sarvaBySign.reduce((s, x)=>s + (x.bindu || 0), 0);
+		out['八分点 SAV'] = [
+			`总点数 ${total}（标准 337）`,
+			av.sarvaBySign.map((x)=>`${x.label}${x.bindu}`).join(' '),
+		];
+	}
+
+	// P0-6 Sodhya Pinda 凝量（削减后 BAV × 座/曜乘数）。
+	if(av && av.sodhyaPinda){
+		const PCN = { Sun: '日', Moon: '月', Mars: '火', Mercury: '水', Jupiter: '木', Venus: '金', Saturn: '土' };
+		const spLines = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
+			.filter((p)=>av.sodhyaPinda[p])
+			.map((p)=>`${PCN[p]}：${av.sodhyaPinda[p].total}（座${av.sodhyaPinda[p].rasiPinda}+曜${av.sodhyaPinda[p].grahaPinda}）`);
+		if(spLines.length){ out['Sodhya Pinda 凝量'] = spLines; }
+	}
+
+	const sb = j.shadbala && j.shadbala.planets;
+	if(Array.isArray(sb) && sb.length){
+		out['Shadbala 六力'] = sb.map((x)=>`${x.label}：${fx(x.totalRupa, 2)} Rupa`);
+		// QW8 Ishta/Kashta（吉果/凶果）：仅在引擎给出时输出。
+		const ik = sb.filter((x)=>x.ishta !== undefined && x.ishta !== null);
+		if(ik.length){
+			out['Ishta/Kashta 吉凶果'] = ik.map((x)=>`${x.label}：吉果 ${fx(x.ishta, 1)} / 凶果 ${fx(x.kashta, 1)}（出曜力 ${fx(x.uchchaBala, 1)}）`);
+		}
+	}
+
+	// P0-8 Vimśopaka 分盘 20 分力（四组）。读 shadbalaBphs[planet].vimsopaka。
+	const bphsAll = j.shadbalaBphs;
+	if(bphsAll){
+		const PCN = { Sun: '日', Moon: '月', Mars: '火', Mercury: '水', Jupiter: '木', Venus: '金', Saturn: '土' };
+		const vpLines = ['Sun', 'Moon', 'Mars', 'Mercury', 'Jupiter', 'Venus', 'Saturn']
+			.filter((p)=>bphsAll[p] && bphsAll[p].vimsopaka)
+			.map((p)=>{ const v = bphsAll[p].vimsopaka; return `${PCN[p]}：六${v.shadvarga.total}/七${v.saptavarga.total}/十${v.dasavarga.total}/十六${v.shodasavarga.total}`; });
+		if(vpLines.length){ out['Vimśopaka 分盘 20 分力'] = vpLines; }
+	}
+
+	// P0-7 Hora 行星时（昼夜各 12 段，日出首段=当日 vara 主）。
+	const mu = j.muhurta;
+	if(mu && mu.horaTable && Array.isArray(mu.horaTable.rows) && mu.horaTable.rows.length){
+		const fmt = (s)=>{ const m = String(s || '').match(/(\d{1,2}:\d{2})/); return m ? m[1] : (s || '—'); };
+		out['Hora 行星时'] = mu.horaTable.rows.map((r)=>`${r.index}.${r.lordCN || r.lord} ${fmt(r.start)}`);
+	}
+
+	// P1 Choghadia 民用择时（昼夜各 8 段，吉/凶）。
+	if(mu && mu.choghadia && Array.isArray(mu.choghadia.rows) && mu.choghadia.rows.length){
+		const fmt = (s)=>{ const m = String(s || '').match(/(\d{1,2}:\d{2})/); return m ? m[1] : (s || '—'); };
+		const NAT = { good: '吉', bad: '凶' };
+		out['Choghadia 民用择时'] = mu.choghadia.rows.map((r)=>`${r.period === 'day' ? '昼' : '夜'}${r.index}.${r.cn}(${NAT[r.nature] || ''}) ${fmt(r.start)}`);
+	}
+
+	// §24.2 Panchaka 五忌 + Abhijit 须臾。
+	if(mu && (mu.panchaka || mu.abhijit)){
+		const lines = [];
+		if(mu.panchaka){ lines.push(`Panchaka：${mu.panchaka.typeLabel}（余${mu.panchaka.remainder}，${mu.panchaka.isPanchaka ? '忌' : '吉'}）`); }
+		if(mu.abhijit){ lines.push(`Abhijit：第 8 昼须臾${mu.abhijit.auspicious ? '·大吉' : '·周三不取'}`); }
+		out['择时 Panchaka/Abhijit'] = lines;
+	}
+
+	// P1 Mūla 大运（Lagna Kendrādi Graha · 首轮年龄段）。
+	const mula = j.dasha && j.dasha.mula;
+	if(mula && mula.available && Array.isArray(mula.mahadashas) && mula.mahadashas.length){
+		out['Mūla 大运'] = mula.mahadashas.filter((m)=>m.round === 1)
+			.map((m)=>`${m.planetCN}（宫${m.house}）${m.years}年`);
+	}
+
+	// P1 Sudarśana Chakra（3 轮·当前年）。
+	const sudc = j.dasha && j.dasha.sudarshanaChakra;
+	if(sudc && sudc.available && Array.isArray(sudc.rows)){
+		const cur = sudc.rows.find((r)=>r.current);
+		const lines = sudc.rows.map((r)=>`年${r.year}${r.current ? '◀' : ''}：日${r.slLabel}/月${r.clLabel}/升${r.jlLabel}`);
+		if(cur){ lines.unshift(`当前年${cur.year}：日轮${cur.slLabel}·月轮${cur.clLabel}·升轮${cur.jlLabel}（三处并读,全合最强）`); }
+		out['Sudarśana Chakra 大运'] = lines;
+	}
+
+	// P1 Naisargika 自然大运（7 曜固定 120 年 · 年龄段）。
+	const naisargika = j.dasha && j.dasha.naisargika;
+	if(naisargika && naisargika.available && Array.isArray(naisargika.periods) && naisargika.periods.length){
+		out['Naisargika 自然大运'] = naisargika.periods.map((p)=>`${p.planetCN} ${p.years}年（${p.startAge}–${p.endAge}岁）${p.start || ''}→${p.end || ''}`);
+	}
+
+	// P1 补充上升（含 Indu 财富上升）。
+	const supL = j.supplementaryLagnas;
+	if(supL && supL.available){
+		const items = [supL.chandraLagna, supL.paakaLagna, supL.karakamsa, supL.swamsa, supL.induLagna, supL.varnadaLagna].filter((x)=>x && x.sign);
+		if(items.length){
+			out['补充上升（Supplementary Lagnas）'] = items.map((it)=>`${it.label}：${it.signLabel || it.sign}${it.key === 'induLagna' && it.sumKala ? `（Kala和 ${it.sumKala}·第${it.stepS}座）` : (it.key === 'varnadaLagna' && it.step ? `（A${it.countLagna}/B${it.countHora}·N${it.step}）` : '')}`);
+		}
+	}
+
+	// P2 Nāḍī · Bhrigu Bindu（Rahu/Moon 短弧中点）。
+	const nadi = j.nadi;
+	if(nadi && nadi.available && nadi.bhriguBindu){
+		const bb = nadi.bhriguBindu;
+		const nk = bb.nakshatra || {};
+		out['Nāḍī · Bhrigu Bindu 福点'] = [`${bb.signLabel || bb.sign}${nk.name ? '·' + nk.name + (nk.pada ? 'P' + nk.pada : '') : ''}（黄经 ${(+bb.lon).toFixed(2)}°）`];
+	}
+	if(nadi && nadi.available && nadi.d150 && nadi.d150.length){
+		const PCN = { Sun: '日', Moon: '月', Mars: '火', Mercury: '水', Jupiter: '木', Venus: '金', Saturn: '土', Rahu: '罗', Ketu: '计', 'North Node': '罗', 'South Node': '计' };
+		out['Nāḍī · D150 纳地盘'] = nadi.d150.map((x)=>`${PCN[x.planet] || x.planet}：第${x.nadiamsa}/150·${x.signLabel || x.sign}`);
+	}
+
+	// P2 Āyurdāya 寿命基础（Piṇḍāyu 度式贡献 + Nisargāyu;未施 haraṇa）。
+	const ayu = j.ayurdaya;
+	if(ayu && ayu.available && ayu.pindayu){
+		const lines = [`基础 Piṇḍāyu：${ayu.pindayu.baseYears} 年（未施 haraṇa 减）`];
+		(ayu.pindayu.contributions || []).forEach((c)=>{ lines.push(`${c.planetCN}：满${c.fullYears} → ${c.years} 年`); });
+		if(ayu.nisargayu){ lines.push(`Nisargāyu 自然寿表 120 年（${(ayu.nisargayu.naturalYears || []).map((n)=>n.planetCN + n.years).join(' ')}）`); }
+		if(ayu.amsayu){ lines.push(`Aṁśāyu（÷200·Bharaṇa）基础 ${ayu.amsayu.baseYears} 年（${(ayu.amsayu.contributions || []).map((c)=>c.planetCN + c.years + (c.multiplier > 1 ? '×' + c.multiplier : '')).join(' ')}）`); }
+		if(ayu.harana && ayu.harana.available && Array.isArray(ayu.harana.profiles)){
+			ayu.harana.profiles.forEach((p)=>{ lines.push(`haraṇa·${p.label}：${p.solarYears} 太阳年`); });
+			if(ayu.haranaNisarga && Array.isArray(ayu.haranaNisarga.profiles)){
+				ayu.haranaNisarga.profiles.forEach((p)=>{ lines.push(`Nisargāyu haraṇa·${p.label}：${p.solarYears} 太阳年`); });
+			}
+			if(ayu.amsayu && Array.isArray(ayu.amsayu.bharanaVariants)){
+				lines.push('Aṁśāyu Bharaṇa 流派：' + ayu.amsayu.bharanaVariants.map((v)=>`${v.label.replace(/（[^）]*）/, '')}${v.baseYears}`).join(' · '));
+			}
+			const kr = ayu.harana.krurodaya;
+			if(kr && kr.applies){ lines.push(`Krurodaya ${kr.planetCN} 升 Lagna${kr.mitigated ? '（吉星望减半）' : ''}：式A −${kr.formulaA}`); }
+		}
+		out['Āyurdāya 寿命基础'] = lines;
+	}
+
+	// D60 六十分盘吉凶（Krūra 恶段为凶）。
+	// 特殊上升 BL/HL/GL/SL + Praṇapada(日出/出生太阳双变体)。
+	const upagrahaObj = j.upagraha;
+	const splag = upagrahaObj && upagrahaObj.specialLagnas;
+	if(splag){
+		const SPLSIGN = ['白羊','金牛','双子','巨蟹','狮子','处女','天秤','天蝎','射手','摩羯','水瓶','双鱼'];
+		const flag = (l)=>{ const v = (((l % 360) + 360) % 360); return `${SPLSIGN[Math.floor(v / 30)]} ${(v % 30).toFixed(1)}°`; };
+		const splLines = [];
+		['bhavaLagna','horaLagna','ghatikaLagna','sreeLagna'].forEach((k)=>{ if(splag[k]){ splLines.push(`${splag[k].label}：${flag(splag[k].lon)}`); } });
+		if(splag.pranapada){
+			splLines.push(`Praṇapada·日出太阳(BPHS)：${flag(splag.pranapada.variantSunrise)}`);
+			if(splag.pranapada.variantBirth !== undefined){ splLines.push(`Praṇapada·出生太阳(PyJHora)：${flag(splag.pranapada.variantBirth)}`); }
+		}
+		if(splLines.length){ out['特殊上升 Special Lagnas'] = splLines; }
+	}
+
+	const shashti = j.shashtiamsa;
+	if(shashti && shashti.available && shashti.planets && shashti.planets.length){
+		const SPCN = { Sun: '日', Moon: '月', Mars: '火', Mercury: '水', Jupiter: '木', Venus: '金', Saturn: '土', Rahu: '罗', Ketu: '计', 'North Node': '罗', 'South Node': '计' };
+		out['D60 六十分盘吉凶'] = shashti.planets.map((x)=>`${SPCN[x.planet] || x.planet}：第${x.segment}/60·${x.signLabel || x.sign}·${x.nature === 'malefic' ? '凶' : '吉'}`)
+			.concat([`合计 吉${shashti.beneficCount}·凶${shashti.maleficCount}`]);
+	}
+
+	// 分盘变体对照（D2/D3/D24/D30 各流派落座差异）。
+	const vargaVar = j.vargaVariants;
+	if(vargaVar && vargaVar.available && Array.isArray(vargaVar.charts)){
+		const VPCN = { Sun: '日', Moon: '月', Mars: '火', Mercury: '水', Jupiter: '木', Venus: '金', Saturn: '土', Rahu: '罗', Ketu: '计', 'North Node': '罗', 'South Node': '计' };
+		const lines = [];
+		vargaVar.charts.forEach((ch)=>{
+			const diff = (ch.planets || []).filter((r)=>r.differs);
+			if(!diff.length){ return; }
+			lines.push(`${ch.label}（${ch.variants.map((v)=>v.label).join('/')}）：${diff.map((r)=>`${VPCN[r.planet] || r.planet}${r.cells.map((c)=>c.signLabel).join('→')}`).join('，')}`);
+		});
+		if(lines.length){ out['分盘变体对照'] = lines; }
+	}
+
+	// QW1 功能吉凶（按命主星落舍判每曜功能性质）。
+	const fn = j.functionalNature && j.functionalNature.grahas;
+	if(Array.isArray(fn) && fn.length){
+		const FN_CN = { benefic: '功能吉', malefic: '功能凶', neutral: '功能中', yogakaraka: '瑜伽点', maraka: '马拉卡' };
+		out['功能吉凶（Functional Nature）'] = fn.map((g)=>{
+			const tags = [];
+			if(g.isYogakaraka){ tags.push('Yogakaraka'); }
+			if(g.isMaraka){ tags.push('Maraka'); }
+			if(g.isBadhaka){ tags.push('Badhaka'); }
+			const ruled = Array.isArray(g.housesRuled) && g.housesRuled.length ? `主${g.housesRuled.join('/')}宫` : '';
+			return `${g.planetLabel || g.planet}：${FN_CN[g.functionalNature] || g.functionalNature}${ruled ? '·' + ruled : ''}${tags.length ? '·' + tags.join('/') : ''}`;
+		});
+	}
+
+	// QW7 Bhava Bala（宫位力，12 宫排名 + 最强/最弱）。
+	const bb = j.bhavaBala;
+	if(bb && bb.available && Array.isArray(bb.houses) && bb.houses.length){
+		const bl = bb.houses.map((h)=>`第${h.house}宫：${fx(h.rupas, 2)} Rupa（名次 ${h.rank}）`);
+		if(bb.strongest){ bl.push(`最强宫：第 ${bb.strongest} 宫`); }
+		if(bb.weakest){ bl.push(`最弱宫：第 ${bb.weakest} 宫`); }
+		out['宫位力（Bhava Bala）'] = bl;
+	}
+
+	// QW3 Graha Yuddha（星曜战，<1° 同宫近战）。
+	const gy = j.grahaYuddha;
+	if(gy && gy.available && Array.isArray(gy.pairs) && gy.pairs.length){
+		out['星曜战（Graha Yuddha）'] = gy.pairs.map((pr)=>(
+			`${(pr.winnerLabel || pr.winner)} 胜 ${(pr.loserLabel || pr.loser)}（相距 ${fx(pr.sepDeg, 2)}°）`
+		));
+	}
+
+	// QW10/11 扩展大运（8 条件 Nakshatra 大运 + Chara Jaimini）：仅列可用与首主星。
+	const ed = j.extendedDashas;
+	if(ed){
+		const el = [];
+		const cond = ed.conditional || {};
+		Object.keys(cond).forEach((key)=>{
+			const c = cond[key];
+			if(!c){ return; }
+			const fl = c.firstLord ? (c.firstLord.label || c.firstLord.key) : '—';
+			el.push(`${c.label || key}（${c.totalYears || '?'} 年）：${c.available ? '条件满足·启用' : '条件未满足·仅备览'}，首主星 ${fl}`);
+		});
+		if(ed.chara && Array.isArray(ed.chara.mahadashas) && ed.chara.mahadashas.length){
+			const first = ed.chara.mahadashas[0];
+			el.push(`Chara（耆那 ${ed.chara.seedLabel || ed.chara.seed} 起·${ed.chara.direction === 'reverse' ? '逆' : '顺'}行）：首运 ${first.rasiLabel || first.rasi}（${first.years} 年）`);
+		}
+		if(el.length){ out['扩展大运（Conditional / Chara）'] = el; }
+	}
+
+	// QW4 Kartari 夹击格局。
+	const kt = j.kartari;
+	if(kt && kt.available && Array.isArray(kt.yogas) && kt.yogas.length){
+		out['Kartari 夹击格局'] = kt.yogas.map((y)=>`${y.targetLabel}：${y.typeLabel}（${(y.prevLabels || []).join('')} 夹 ${(y.nextLabels || []).join('')}）`);
+	}
+	// QW4 Sudarshana 三盘合参(命/日/月分别为上升)。
+	const sdc = j.sudarshana;
+	if(sdc && sdc.available && Array.isArray(sdc.rows) && sdc.rows.length){
+		out['Sudarshana 三盘（命/日/月起）'] = sdc.rows.map((r)=>`${r.planetLabel}：命第${r.houseFromLagna}宫 · 日第${r.houseFromSun}宫 · 月第${r.houseFromMoon}宫`);
+	}
+
+	// QW6 KP 六级细分 + 当令星(供 AI 择时/事项判定)。
+	const kp = j.kp;
+	if(kp){
+		const kl = [];
+		const rp = kp.rulingPlanets;
+		if(rp && Array.isArray(rp.set) && rp.set.length){ kl.push(`当令星 Ruling Planets：${rp.set.join('、')}`); }
+		const lv = kp.kpLevels;
+		if(lv && typeof lv === 'object'){
+			Object.keys(lv).forEach((pk)=>{
+				const x = lv[pk];
+				if(x){ kl.push(`${pk}：${x.Nak} ⊃ ${x.Sub} ⊃ ${x.Prati} ⊃ ${x.Sook} ⊃ ${x.Praana} ⊃ ${x.Deha}`); }
+			});
+		}
+		const csl = kp.cuspalSubLords;
+		if(Array.isArray(csl) && csl.length){
+			out['KP 宫头次主星 CSL'] = csl.map((c)=>`第${c.house}宫：${c.starLord} / ${c.subLord}`);
+		}
+		const sig = kp.significators;
+		if(sig && typeof sig === 'object'){
+			const sl = Object.keys(sig).map((pk)=>`${pk}：司宫 ${(sig[pk].ranked || []).join('·')}`);
+			if(sl.length){ out['KP 意义者 Significators'] = sl; }
+		}
+		if(kl.length){ out['KP 六级细分 / 当令星'] = kl; }
+	}
+
+	// WP-G 敌友 复合五分(Pañcadhā Maitrī,非对称) — 手册第6章。
+	const gm = j.grahaMaitri;
+	if(gm && gm.available && Array.isArray(gm.matrix) && gm.matrix.length){
+		out['敌友（复合五分）'] = gm.matrix.map((row)=>{
+			const rel = (row.cells || []).filter((c)=>!c.self && c.compoundCn).map((c)=>`${c.planetLabel} ${c.compoundCn}`).join('、');
+			return `${row.planetLabel} 看：${rel}`;
+		});
+	}
+
+	// WP-E4 行运 Gochara（从月 + 八分点 SAV/BAV + Sade Sati）→ AI 挂载。
+	const goc = j.gochara;
+	if(goc && goc.available && Array.isArray(goc.fromMoon) && goc.fromMoon.length){
+		const sa = goc.saturnAfflictions || {};
+		const ss = sa.sadeSati || {};
+		const gl = goc.fromMoon.map((it)=>{
+			const av = it.av && it.av.savBindu !== undefined ? ` SAV${it.av.savBindu}/BAV${it.av.bavBindu}` : '';
+			return `${it.planetLabel || it.planet}：${it.signLabel || ''} 从月第${it.house}宫·${(it.good || it.auspicious) ? '吉' : '凶'}${it.effective === false ? '(Vedha遮)' : ''}${av}`;
+		});
+		if(ss.active){ gl.unshift(`Sade Sati 进行中（${ss.phaseLabel || ss.phase || ''}）`); }
+		out['行运 Gochara（从月·八分点）'] = gl;
+	}
+
+	// WP-E2 化解（信息·非处方）→ AI 挂载。
+	const rem = j.remedies;
+	if(rem && Array.isArray(rem.table) && rem.table.length){
+		out['化解（信息·非处方）'] = rem.table.map((g)=>`${g.planetCn || g.planet}：${g.gem}/${g.metal || ''}${g.mantraCount ? '·诵' + g.mantraCount : ''}${Array.isArray(g.deity) && g.deity.length ? '·守护' + g.deity.join('/') : ''}`);
+	}
+
+	// 印占 P0 接 UI 同步进 AI 挂载:Argala / 座运 Rasi Dashas / 年盘强度·年内大运 / Gochara 从命。
+	const SIGN_CN_S = { Aries: '白羊', Taurus: '金牛', Gemini: '双子', Cancer: '巨蟹', Leo: '狮子', Virgo: '处女', Libra: '天秤', Scorpio: '天蝎', Sagittarius: '射手', Capricorn: '摩羯', Aquarius: '水瓶', Pisces: '双鱼' };
+	const scS = (s)=>SIGN_CN_S[s] || s || '—';
+	const arg = j.arudha && j.arudha.argala;
+	if(arg && typeof arg === 'object'){
+		const argLines = Object.keys(arg).sort((a, b)=>(Number(a) - Number(b))).map((h)=>{
+			const g = arg[h] || {};
+			const net = g.netStronger === 'argala' ? '干涉占优' : (g.netStronger === 'virodha' ? '反制占优' : '势均');
+			return `第${h}宫：${net}（干涉${g.argalaCount || 0}/反制${g.virodhaCount || 0}）`;
+		});
+		if(argLines.length){ out['Jaimini Argala 干涉'] = argLines; }
+	}
+	const rdj = j.rasiDasha;
+	if(rdj){
+		[['narayana', 'Narayana'], ['lagnaKendradi', 'Lagna-Kendradi'], ['sudasa', 'Sudasa'], ['drigdasa', 'Drig'], ['shoola', 'Shoola'], ['niryanaShoola', 'Niryana-Shoola'], ['kalachakra', 'Kalachakra'], ['taraLagna', 'Tara-Lagna'], ['sthira', 'Sthira-固定'], ['yogardha', 'Yogardha-平均'], ['manduka', 'Manduka-蛙跳']].forEach((pair)=>{
+			const d = rdj[pair[0]];
+			if(d && d.available !== false && Array.isArray(d.mahadashas) && d.mahadashas.length){
+				out[`座运·${pair[1]}`] = d.mahadashas.slice(0, 12).map((m)=>`${scS(m.rasi)}：${fx(m.years, 1)}年${m.deity ? '·' + m.deity : ''}`);
+			}
+		});
+	}
+	const tjj = j.tajaka;
+	if(tjj){
+		if(tjj.harshaBala){ out['Tajika Harsha Bala'] = Object.keys(tjj.harshaBala).map((pk)=>`${pk}：${fx(tjj.harshaBala[pk].total, 1)}`); }
+		if(tjj.panchaVargeeyaBala){ out['Tajika Pancha-Vargeeya'] = Object.keys(tjj.panchaVargeeyaBala).map((pk)=>`${pk}：${fx((tjj.panchaVargeeyaBala[pk] || {}).total, 2)}`); }
+		if(tjj.dasas && tjj.dasas.mudda && tjj.dasas.mudda.available && Array.isArray(tjj.dasas.mudda.sequence)){
+			out['Tajika Mudda 年运'] = tjj.dasas.mudda.sequence.map((m)=>`${m.key}：${fx(m.days, 1)}天`);
+		}
+	}
+	const gocL = j.gochara && j.gochara.fromLagna;
+	if(Array.isArray(gocL) && gocL.length){
+		out['行运 Gochara（从命）'] = gocL.map((it)=>`${it.planetLabel || it.label || it.planet}：从命第${it.house}宫${(it.good || it.auspicious) ? '·吉位' : '·凶位'}`);
+	}
+
 	return out;
 }
 
@@ -248,10 +692,15 @@ function buildIndiaSnapshotText(chartObj, fields, chartnum, hook){
 	ensureSection(lines, '行星', planets);
 	ensureSection(lines, '希腊点', lots);
 	ensureSection(lines, '可能性', possibility);
-	const dashaLines = buildDashaSnapshotLines(chartObj);
+	const dashaSystem = fields && fields.indiaDashaSystem ? fields.indiaDashaSystem.value : undefined;
+	const dashaLines = buildDashaSnapshotLines(chartObj, dashaSystem);
 	if(dashaLines.length){
 		ensureSection(lines, '大运Dasha', dashaLines);
 	}
+	const jyotishSections = buildJyotishSnapshotLines(chartObj);
+	Object.keys(jyotishSections).forEach((title)=>{
+		ensureSection(lines, title, jyotishSections[title]);
+	});
 	return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -285,7 +734,9 @@ class IndiaChart extends Component{
 		this.getIndiaOptionOverrides = this.getIndiaOptionOverrides.bind(this);
 
 		if(this.props.hook){
-			this.props.hook.fun = (fields)=>{
+			// suppressFetch:本实例不自取(数据由父层 chartObj prop 提供,避免单盘模式重复取数+二次渲染)。
+			// hook.fun 设为 noop,使父层 hook.fun() 调用不触发本实例 fetch。
+			this.props.hook.fun = this.props.suppressFetch ? (()=>{}) : (fields)=>{
 				this.requestChartObj(fields);
 			};
 		}
@@ -299,6 +750,9 @@ class IndiaChart extends Component{
 		}
 		if(this.props.indiaAyanamsa !== undefined && this.props.indiaAyanamsa !== null){
 			overrides.indiaAyanamsa = this.props.indiaAyanamsa;
+		}
+		if(this.props.indiaNodeType !== undefined && this.props.indiaNodeType !== null){
+			overrides.indiaNodeType = this.props.indiaNodeType;
 		}
 		return overrides;
 	}
@@ -372,6 +826,10 @@ class IndiaChart extends Component{
 
 	componentDidMount(){
 		this._mounted = true;
+		// suppressFetch:不自取,数据走父层 chartObj prop。
+		if(this.props.suppressFetch){
+			return;
+		}
 		this.requestChartObj();
 	}
 
@@ -380,6 +838,10 @@ class IndiaChart extends Component{
 	}
 
 	componentDidUpdate(prevProps){
+		// suppressFetch:不自取,数据走父层 chartObj prop(父层在同一 inflight resolve 时写入)。
+		if(this.props.suppressFetch){
+			return;
+		}
 		let prevKey = '';
 		let nextKey = '';
 		try{
@@ -389,6 +851,9 @@ class IndiaChart extends Component{
 			}
 			if(prevProps.indiaAyanamsa !== undefined && prevProps.indiaAyanamsa !== null){
 				prevOverrides.indiaAyanamsa = prevProps.indiaAyanamsa;
+			}
+			if(prevProps.indiaNodeType !== undefined && prevProps.indiaNodeType !== null){
+				prevOverrides.indiaNodeType = prevProps.indiaNodeType;
 			}
 			const prevParams = fieldsToParams(prevProps.fields, prevOverrides);
 			if(prevProps.chartnum){
@@ -406,7 +871,8 @@ class IndiaChart extends Component{
 
 	render(){
 		let fields = this.props.fields;
-		let chartObj = this.state.chartObj;
+		// suppressFetch:渲染用父层提供的 chartObj(本实例不自取);为 null/falsy 时下游渲染器显占位/载入态。
+		let chartObj = this.props.suppressFetch ? this.props.chartObj : this.state.chartObj;
 		let height = this.props.height ? this.props.height : 760;
 		let fractal = resolveIndiaFractal(this.props.chartnum, this.props.hook);
 		let label = resolveIndiaLabel(fractal, this.props.hook);
@@ -426,6 +892,13 @@ class IndiaChart extends Component{
 						planetDisplay={this.props.planetDisplay}
 						lotsDisplay={this.props.lotsDisplay}
 						degreeDisplayMode={this.props.degreeDisplayMode}
+						aspectSourceId={this.props.aspectSourceId}
+						aspectParadigm={this.props.aspectParadigm}
+						onPlanetClick={this.props.onPlanetClick}
+						planetGlyphMode={this.props.planetGlyphMode}
+						counterClockwise={this.props.counterClockwise}
+						lockAquarius={this.props.lockAquarius}
+						lagnaRef={this.props.lagnaRef}
 					/>
 				</div>
 			);
@@ -450,6 +923,12 @@ class IndiaChart extends Component{
 							planetDisplay={this.props.planetDisplay}
 							lotsDisplay={this.props.lotsDisplay}
 							degreeDisplayMode={this.props.degreeDisplayMode}
+							aspectSourceId={this.props.aspectSourceId}
+							onPlanetClick={this.props.onPlanetClick}
+							planetGlyphMode={this.props.planetGlyphMode}
+							counterClockwise={this.props.counterClockwise}
+							lockAquarius={this.props.lockAquarius}
+							lagnaRef={this.props.lagnaRef}
 						/>
 					)}
 						chartDisplay={this.props.chartDisplay}

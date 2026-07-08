@@ -185,7 +185,9 @@ class YogaEngine:
         items.extend(self.viparita_raja_yogas())
         items.extend(self.parivartana_yogas())
         items.extend(self.neecha_bhanga_yogas())
+        items.extend(self.extra_classical_yogas())
         items.extend(self.nabhasa_yogas())
+        items.extend(self.aakriti_yogas())
         items.extend(self.dosha_yogas())
         items.extend(self.special_association_yogas())
         items = [item for item in items if item]
@@ -843,6 +845,48 @@ class YogaEngine:
                 ))
         return items
 
+    def extra_classical_yogas(self):
+        """长尾经典瑜伽:Shakata(月在木 6/8/12 起伏)、Saraswati(木金水各居角/三方/2 且木有力)、
+        Chamara(≥2 自然吉曜共居 1/7/9/10)。条件确定可算,非臆断。"""
+        items = []
+        H = self.houses
+        good = KENDRA | TRIKONA | {2}
+        # Shakata 车轮:月在木星第 6/8/12 宫。
+        mh = self.planet_house_from(const.MOON, const.JUPITER)
+        if mh in {6, 8, 12}:
+            items.append(self.make_item(
+                'shakata', 'Shakata Yoga', '车轮瑜伽', 'Lunar',
+                self.base_score([const.MOON, const.JUPITER], 30),
+                ['月亮位于木星第{0}宫'.format(mh)],
+                '人生起伏波折、财运时盈时缺；木星入角宫或受吉照可减轻。',
+                [const.MOON, const.JUPITER], [mh], ['Phaladeepika'],
+                self.affliction_modifiers([const.MOON, const.JUPITER]), ['moon', 'jupiter']))
+        # Saraswati 辩才天:木/金/水 各居 kendra/trikona/2 宫,且木星有力。
+        if all(H.get(p) in good for p in (const.JUPITER, const.VENUS, const.MERCURY)) and self.is_strong(const.JUPITER):
+            items.append(self.make_item(
+                'saraswati', 'Saraswati Yoga', '辩才天瑜伽', 'Benefic',
+                self.base_score([const.JUPITER, const.VENUS, const.MERCURY], 62),
+                ['木/金/水分居角/三方/2 宫且木星有力'],
+                '学识、艺术、辩才、写作与智慧卓越。',
+                [const.JUPITER, const.VENUS, const.MERCURY],
+                [H.get(const.JUPITER), H.get(const.VENUS), H.get(const.MERCURY)],
+                ['Phaladeepika', 'JatakaParijata'],
+                self.affliction_modifiers([const.JUPITER, const.VENUS, const.MERCURY]),
+                ['jupiter', 'venus', 'mercury']))
+        # Chamara 拂尘:≥2 自然吉曜共居 1/7/9/10。
+        for h in (1, 7, 9, 10):
+            bens = [p for p in NATURAL_BENEFICS if H.get(p) == h]
+            if len(bens) >= 2:
+                items.append(self.make_item(
+                    'chamara', 'Chamara Yoga', '拂尘瑜伽', 'Benefic',
+                    self.base_score(bens, 52),
+                    ['{0}吉曜同居第{1}宫'.format('、'.join(planet_label(p) for p in bens), h)],
+                    '雄辩、学识、尊荣与长寿。',
+                    list(bens), [h], ['Phaladeepika'],
+                    self.affliction_modifiers(list(bens)), ['benefic', 'kendra']))
+                break
+        return items
+
     def nabhasa_yogas(self):
         items = []
         signs = [self.signs[p] for p in CLASSICAL_PLANETS if p in self.signs]
@@ -865,31 +909,191 @@ class YogaEngine:
             items.append(self.make_item('nabhasa_mala', 'Mala Yoga', '花鬘瑜伽', 'Nabhasa', self.base_score(benefic_kendra, 50), ['吉星占据角宫，且角宫少凶星干扰'], '主舒适、名声、品德与社会支持。', benefic_kendra, list(KENDRA), ['BPHS', 'BJ'], self.affliction_modifiers(benefic_kendra), ['nabhasa', 'benefic']))
         if len(malefic_kendra) >= 2 and not benefic_kendra:
             items.append(self.make_item('nabhasa_sarpa', 'Sarpa Yoga', '蛇瑜伽', 'Nabhasa', self.base_score(malefic_kendra, 38), ['凶星占据角宫，且角宫缺少吉星平衡'], '主压力、斗争、警觉和人生紧张感；强盘可转为竞争力。', malefic_kendra, list(KENDRA), ['BPHS', 'BJ'], self.affliction_modifiers(malefic_kendra), ['nabhasa', 'challenge']))
+        # Sankhya（数目）瑜伽：按七曜（不含罗睺/计都）占据的不同星座数判定，互斥（恰一）。
         sankhya_names = {
-            1: ('Gola Yoga', '球瑜伽'),
-            2: ('Yuga Yoga', '轭瑜伽'),
-            3: ('Shoola Yoga', '矛瑜伽'),
-            4: ('Kedara Yoga', '田地瑜伽'),
-            5: ('Pasha Yoga', '绳缚瑜伽'),
-            6: ('Dama Yoga', '绳索瑜伽'),
-            7: ('Veena Yoga', '维那琴瑜伽'),
+            1: ('Gola Yoga', '球瑜伽', '主体格强壮但清贫、不洁、缺乏教养，常多忧愁。Gola 意为球或天球。'),
+            2: ('Yuga Yoga', '轭瑜伽', '主背离正统、贫困、被世人冷落，缺少来自子女与母亲的福乐。Yuga 意为一对、一轭。'),
+            3: ('Shoola Yoga', '矛瑜伽', '主性情锋利、慵懒、激烈、清贫且受限，但勇武，能在征战中赢得赞誉。Shoola 为湿婆之兵器。'),
+            4: ('Kedara Yoga', '田地瑜伽', '主务农耕作，安乐富足，乐于助人。Kedara 意为田地。'),
+            5: ('Pasha Yoga', '绳缚瑜伽', '主有受拘禁之虞，办事干练、健谈、仆从众多，但品行较缺。Pasha 意为绳套。'),
+            6: ('Dama Yoga', '花环瑜伽', '主极富且有名望，子女众多，多得珍宝，乐善好施。Dama 意为花环，亦有作 Damini。'),
+            7: ('Veena Yoga', '维那琴瑜伽', '主喜好音乐、歌舞，仆从众多，富有而精巧，为众人之领袖。Veena 为弦乐器，亦有作 Vallaki。'),
         }
         if len(unique_signs) in sankhya_names:
-            name, zh = sankhya_names[len(unique_signs)]
+            name, zh, result = sankhya_names[len(unique_signs)]
             items.append(self.make_item(
                 'nabhasa_sankhya_{0}'.format(len(unique_signs)),
                 name,
                 zh,
                 'Nabhasa',
                 34 + len(unique_signs) * 3,
-                ['七曜分布在{0}个星座：{1}'.format(len(unique_signs), '、'.join(sign_label(s) for s in unique_signs))],
-                'Sankhya 类 Nabhasa Yoga 描述行星分布形态，是整体人生模式指标，不宜单独断吉凶。',
+                ['七曜（不含罗睺/计都）分布在{0}个星座：{1}'.format(len(unique_signs), '、'.join(sign_label(s) for s in unique_signs))],
+                result,
                 CLASSICAL_PLANETS,
                 [],
                 ['BPHS', 'BJ'],
                 [],
-                ['nabhasa', 'distribution'],
+                ['nabhasa', 'sankhya', 'distribution'],
             ))
+        return items
+
+    def classical_houses_from(self, base_sign):
+        # 七曜（不含罗睺/计都）从 base_sign 起的占据宫位集合（1..12）。
+        if base_sign is None:
+            return set()
+        return {
+            rel_house(base_sign, self.signs[p])
+            for p in CLASSICAL_PLANETS if p in self.signs
+        }
+
+    def aakriti_yogas(self):
+        # Aakriti（形态）瑜伽：按七曜（不含罗睺/计都）在十二宫中的几何分布判定。
+        # 七曜全部齐备方可成立；以上升为基准（部分以四宫/七宫/十宫为基准，见各条）。
+        items = []
+        present = [p for p in CLASSICAL_PLANETS if p in self.signs]
+        if len(present) < len(CLASSICAL_PLANETS):
+            return items
+
+        occ = self.classical_houses_from(self.asc_sign)            # 从上升
+        occ4 = self.classical_houses_from((self.asc_sign + 3) % 12)   # 从第 4 宫
+        occ7 = self.classical_houses_from((self.asc_sign + 6) % 12)   # 从第 7 宫
+        occ10 = self.classical_houses_from((self.asc_sign + 9) % 12)  # 从第 10 宫
+        benefic_houses = {
+            rel_house(self.asc_sign, self.signs[p])
+            for p in CLASSICAL_PLANETS if p in self.signs and p in NATURAL_BENEFICS
+        }
+        malefic_houses = {
+            rel_house(self.asc_sign, self.signs[p])
+            for p in CLASSICAL_PLANETS
+            if p in self.signs and p in NATURAL_MALEFICS and p in CLASSICAL_PLANETS
+        }
+
+        def consecutive_from(occupied_set, start):
+            # 占据宫位恰好落在自 start 起连续 7 宫之内。
+            window = {((start - 1 + k) % 12) + 1 for k in range(7)}
+            return occupied_set and occupied_set.issubset(window)
+
+        def add(yid, name, zh, evidence_houses, result, tags, score=46):
+            items.append(self.make_item(
+                yid, name, zh, 'Aakriti', score,
+                ['七曜（不含罗睺/计都）落于第{0}宫'.format(
+                    '、'.join(str(h) for h in sorted(set(evidence_houses))))],
+                result,
+                CLASSICAL_PLANETS,
+                sorted(set(evidence_houses)),
+                ['BPHS', 'BJ'],
+                [],
+                ['aakriti', 'shape'] + tags,
+            ))
+
+        PANAPHARA = {2, 5, 8, 11}
+        APOKLIMA = {3, 6, 9, 12}
+
+        # Aakriti 诸形态彼此互斥：一张盘按其几何分布归入唯一一种形态。
+        # 越“具体”的形态优先级越高，会压制范围更大的形态（如全角宫 Kamala、连续 7 宫等）。
+        # 按优先级自上而下，命中第一档即采用。
+
+        # ① 双宫/对宫族（最具体）
+        adjacent_kendra_pairs = [{1, 4}, {4, 7}, {7, 10}, {10, 1}]
+        if occ == {1, 7}:
+            add('aakriti_sakata', 'Sakata Yoga', '车瑜伽', occ,
+                '主多病、指甲难看、愚钝，缺亲少友，以拉车为生。Sakata 意为车。',
+                ['axis', 'pair'])
+        elif occ == {4, 10}:
+            add('aakriti_vihanga', 'Vihanga Yoga', '鸟瑜伽', occ,
+                '主好游荡，作信使，重情欲，不知羞且好争吵。Vihanga 意为鸟，亦作 Vihaga。',
+                ['axis', 'pair'])
+        elif occ in adjacent_kendra_pairs:
+            # 全部落于两个相邻角宫（如 4&7 或 10&1）。
+            add('aakriti_gada', 'Gada Yoga', '杵瑜伽', occ,
+                '主有财富、黄金与珍宝，行祭祀之礼，通晓经论与歌乐。Gada 意为杵或棍棒。',
+                ['kendra', 'pair'])
+
+        # ② 三角族
+        elif occ == {1, 5, 9}:
+            add('aakriti_sringataka', 'Sringataka Yoga', '三叉路瑜伽', occ,
+                '主安乐、为君王所喜，妻贤而己厌女色，富有。Sringataka 意为三岔路口。',
+                ['trikona'])
+        elif occ in ({2, 6, 10}, {3, 7, 11}, {4, 8, 12}):
+            # 彼此成三角但非上升三角的一组。
+            add('aakriti_hala', 'Hala Yoga', '犁瑜伽', occ,
+                '主为农夫，食量大而贫困，为亲友所弃，忧苦不乐。Hala 意为犁。',
+                ['trikona-set'])
+
+        # ③ 吉凶配位族（全角宫，依吉/凶星定位区分 Vajra/Yava）
+        elif occ == {1, 4, 7, 10} and {1, 7} == benefic_houses and {4, 10} == malefic_houses:
+            add('aakriti_vajra', 'Vajra Yoga', '金刚瑜伽', occ,
+                '主早年与晚年安乐，有勇力；福分一般但少欲，好争斗。Vajra 意为金刚石。',
+                ['kendra', 'benefic-malefic'])
+        elif occ == {1, 4, 7, 10} and {1, 7} == malefic_houses and {4, 10} == benefic_houses:
+            add('aakriti_yava', 'Yava Yoga', '麦粒瑜伽', occ,
+                '主守持戒律，中年安乐，有财富与佳儿，乐善而意志坚定。Yava 意为谷粒等。',
+                ['kendra', 'benefic-malefic'])
+
+        # ④ 四连宫族（自上升起的四宫连续段）
+        elif occ == {1, 2, 3, 4}:
+            add('aakriti_yupa', 'Yupa Yoga', '祭柱瑜伽', occ,
+                '主有灵性智慧与祭祀之学，妻常相伴，具善性（sattwa），谨守一切戒律。Yupa 意为柱、尤指祭祀之柱。',
+                ['quad-run'])
+        elif occ == {4, 5, 6, 7}:
+            add('aakriti_sara', 'Sara Yoga', '箭瑜伽', occ,
+                '主造箭，掌牢狱，为猎人，食肉，且好施暴于人。Sara 意为箭。',
+                ['quad-run'])
+        elif occ == {7, 8, 9, 10}:
+            add('aakriti_sakti', 'Sakti Yoga', '力瑜伽', occ,
+                '主不乐、清贫、不顺、卑微、慵懒、长寿而坚定，于战阵中心思敏锐。Sakti 意为力，亦为一种利器。',
+                ['quad-run'])
+        elif occ == {10, 11, 12, 1}:
+            add('aakriti_danda', 'Danda Yoga', '杖瑜伽', occ,
+                '主失妻丧子、为亲众所弃，常不乐而事奉卑劣之人。Danda 意为责罚之杖。',
+                ['quad-run'])
+
+        # ⑤ 隔宫族（奇/偶六宫）
+        elif occ == {1, 3, 5, 7, 9, 11}:
+            add('aakriti_chakra', 'Chakra Yoga', '轮瑜伽', occ,
+                '主为大帝，众王俯首、镶钻王冠触其足（万王朝拜）。Chakra 意为轮，Chakravarti 即转轮帝王。',
+                ['alternating'], score=60)
+        elif occ == {2, 4, 6, 8, 10, 12}:
+            add('aakriti_samudra', 'Samudra Yoga', '海瑜伽', occ,
+                '主拥有大量财富与珍宝，享受奢华，亲善于人，福禄与显达皆稳固，性情温和。Samudra 意为海洋，亦为海神之名。',
+                ['alternating'], score=58)
+
+        # ⑥ 全角宫 / 全续宫·果宫族（较宽，落于此前需未命中更具体形态）
+        elif occ.issubset(KENDRA):
+            add('aakriti_kamala', 'Kamala Yoga', '莲花瑜伽', sorted(occ),
+                '主为君王，品格刚强，有名望且长寿，纯净而多行善举。Kamala 意为莲花。',
+                ['kendra', 'all'], score=58)
+        elif occ.issubset(PANAPHARA) or occ.issubset(APOKLIMA):
+            add('aakriti_vaapi', 'Vaapi Yoga', '水池瑜伽', sorted(occ),
+                '主心思善于积财，享有诸般安逸，可成君王。Vaapi 意为池塘、水井或蓄水之所。',
+                ['panapara-apoklima', 'all'])
+
+        # ⑦ 连续 7 宫族（最宽的形态；按基准宫与起点区分）
+        elif consecutive_from(occ, 1):
+            add('aakriti_nauka', 'Nauka Yoga', '舟瑜伽', sorted(occ),
+                '主以水相关之事生财，多欲望，颇有名声，但奸狡、粗鲁而吝啬。Nauka 意为舟船。',
+                ['seven-run'])
+        elif consecutive_from(occ4, 1):
+            # 自第 4 宫起连续 7 宫。
+            add('aakriti_koota', 'Koota Yoga', '堡瑜伽', sorted(occ),
+                '主作狱卒，好说谎，居于山岭与城堡，贫困而残酷。Koota 意为群，亦有他义。',
+                ['seven-run'])
+        elif consecutive_from(occ7, 1):
+            # 自第 7 宫起连续 7 宫。
+            add('aakriti_chatra', 'Chatra Yoga', '伞瑜伽', sorted(occ),
+                '主助益己之亲众，仁慈而为众王所喜，聪慧，早年与晚年安乐，且长寿。Chatra 意为伞。',
+                ['seven-run'])
+        elif consecutive_from(occ10, 1):
+            # 自第 10 宫起连续 7 宫。
+            add('aakriti_chapa', 'Chapa Yoga', '弓瑜伽', sorted(occ),
+                '主好说谎、为盗，护守秘密，游荡于林莽，福薄，惟中年安乐。Chapa 意为弓。',
+                ['seven-run'])
+        elif any(consecutive_from(occ, start) for start in sorted(PANAPHARA | APOKLIMA)):
+            # 自某续宫或果宫起的连续 7 宫。
+            add('aakriti_ardha_chandra', 'Ardha Chandra Yoga', '半月瑜伽', sorted(occ),
+                '主为军中统帅，体魄佳美，为君王所喜，强健而拥有珍宝、黄金与诸多饰物。Ardha Chandra 意为半月。',
+                ['seven-run', 'half-moon'])
+
         return items
 
     def dosha_yogas(self):
